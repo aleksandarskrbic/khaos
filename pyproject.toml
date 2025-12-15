@@ -1,0 +1,99 @@
+[project]
+name = "khaos"
+version = "0.1.0"
+description = "Kafka chaos engineering toolkit - generate realistic workloads and failure scenarios"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "confluent-kafka>=2.3.0",
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0.3",
+]
+
+[project.scripts]
+khaos = "khaos.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/khaos"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.8.0",
+    "mypy>=1.8.0",
+    "pre-commit>=4.0.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort (import sorting)
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+    "TCH",    # flake8-type-checking
+    "PTH",    # flake8-use-pathlib
+    "ERA",    # eradicate (commented-out code)
+    "PL",     # pylint
+    "RUF",    # ruff-specific rules
+    "S",      # flake8-bandit (security)
+]
+ignore = [
+    "PLR0913",  # Too many arguments
+    "PLR2004",  # Magic value comparison
+    "PLR0912",  # Too many branches (complex validation logic)
+    "PLR0915",  # Too many statements
+    "PLR0911",  # Too many return statements
+    "PLR1704",  # Redefining argument (intentional in loop)
+    "S101",     # Use of assert (ok in tests)
+    "S110",     # Try-except-pass (intentional silent close)
+    "S112",     # Try-except-continue (intentional skip invalid files)
+    "S311",     # Pseudo-random generators (fine for test data generation)
+    "S603",     # Subprocess call (we control inputs)
+    "S607",     # Partial executable path (we use docker/compose)
+    "PLC0415",  # Import outside top-level (lazy imports are intentional)
+    "B904",     # Raise from err (not needed for typer.Exit)
+    "SIM102",   # Combine nested ifs (sometimes less readable)
+    "SIM105",   # contextlib.suppress (explicit try-except is clearer)
+    "ARG001",   # Unused function argument (required for interface consistency)
+    "ARG002",   # Unused method argument (required for interface consistency)
+    "ARG005",   # Unused lambda argument (required for callback signature)
+    "RUF006",   # asyncio.create_task reference (fire-and-forget is intentional)
+    "PLW0603",  # Global statement (singleton executor pattern)
+    "TC001",    # TYPE_CHECKING import (used at runtime for dataclasses)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "ARG001", "PLR2004"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = true
+# Note: strict mode disabled due to typer decorator limitations
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"

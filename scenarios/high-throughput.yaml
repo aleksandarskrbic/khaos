@@ -1,0 +1,41 @@
+name: high-throughput
+description: "High-throughput scenario (2 topics, 4 producers, 4 consumers)"
+
+topics:
+  - name: orders
+    partitions: 6
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 2
+    producer_rate: 1000
+    consumer_delay_ms: 0
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 50
+      min_size_bytes: 200
+      max_size_bytes: 500
+    producer_config:
+      batch_size: 32768
+      linger_ms: 10
+      acks: "1"
+      compression_type: lz4
+
+  - name: events
+    partitions: 6
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 2
+    producer_rate: 1000
+    consumer_delay_ms: 0
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 50
+      min_size_bytes: 200
+      max_size_bytes: 500
+    producer_config:
+      batch_size: 32768
+      linger_ms: 10
+      acks: "1"
+      compression_type: lz4

@@ -1,0 +1,41 @@
+name: consumer-lag
+description: "Consumer lag scenario (slow consumers, growing lag)"
+
+topics:
+  - name: payments
+    partitions: 12
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 2
+    consumers_per_group: 2
+    producer_rate: 2000
+    consumer_delay_ms: 50
+    message_schema:
+      key_distribution: round_robin
+      key_cardinality: 100
+      min_size_bytes: 300
+      max_size_bytes: 800
+    producer_config:
+      batch_size: 16384
+      linger_ms: 5
+      acks: "1"
+      compression_type: lz4
+
+  - name: notifications
+    partitions: 12
+    replication_factor: 3
+    num_producers: 3
+    num_consumer_groups: 2
+    consumers_per_group: 2
+    producer_rate: 3000
+    consumer_delay_ms: 100
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 200
+      min_size_bytes: 100
+      max_size_bytes: 300
+    producer_config:
+      batch_size: 16384
+      linger_ms: 5
+      acks: "1"
+      compression_type: snappy
