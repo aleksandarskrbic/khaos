@@ -1,19 +1,27 @@
 <div align="center">
   <img src="assets/logo.png" alt="khaos logo" width="200">
   <h1>khaos</h1>
-  <p>Kafka chaos engineering toolkit - simulate realistic traffic patterns and failure scenarios</p>
+  <p>Kafka traffic generator - realistic workloads for testing, learning, and chaos engineering</p>
 </div>
+
+## Use Cases
+
+- **Learning Stream Processing**: Generate Kafka traffic, connect your Spark/Flink/Kafka Streams app to consume
+- **Testing Monitoring & Alerts**: Validate your Grafana dashboards and alerting rules with real traffic
+- **Load Testing**: Benchmark Kafka cluster performance at different throughput levels
+- **Development & Testing**: Get realistic Kafka data for local development without production access
+- **Chaos Engineering**: Simulate failures, rebalances, and backpressure scenarios
 
 ## Features
 
-- **3-Broker KRaft Cluster**: Production-like Kafka setup with replication factor 3
-- **YAML-Based Scenarios**: Define scenarios declaratively, no code required
-- **Chaos Engineering**: Built-in incident primitives (backpressure, rebalances, broker failures)
+- **One-Command Setup**: Spin up a 3-broker Kafka cluster with traffic in seconds
+- **YAML-Based Scenarios**: Define traffic patterns declaratively, no code required
+- **Producer-Only Mode**: Generate data without built-in consumers (`--no-consumers`)
 - **External Cluster Support**: Connect to any Kafka cluster (Confluent Cloud, MSK, self-hosted)
+- **Chaos Engineering**: Built-in incident primitives (backpressure, rebalances, broker failures)
 - **Full Authentication**: SASL/PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, SSL/TLS, mTLS
-- **Multiple Scenarios**: Run multiple scenarios simultaneously
-- **Live Stats Display**: Real-time producer/consumer metrics with Rich
-- **Redpanda Console**: Web UI at localhost:8080 for cluster inspection
+- **Live Stats Display**: Real-time producer/consumer metrics
+- **Web UI**: Redpanda Console at localhost:8080 for cluster inspection
 
 ## Requirements
 
@@ -96,16 +104,41 @@ Both commands execute the **same YAML scenarios** with the same traffic patterns
 
 ---
 
+### Cluster Modes
+
+khaos supports two Kafka deployment modes:
+
+| Mode | Description |
+|------|-------------|
+| `kraft` | **Default.** Modern KRaft mode (no ZooKeeper) - Kafka 3.x+ |
+| `zookeeper` | Legacy ZooKeeper mode - for testing older deployments |
+
+Both modes run the same 3-broker cluster with identical ports and capabilities.
+
+---
+
 ### `khaos cluster-up`
 
 Start the 3-broker Kafka cluster in Docker.
 
 ```bash
+# Start with KRaft mode (default)
 uv run khaos cluster-up
+
+# Start with ZooKeeper mode
+uv run khaos cluster-up --mode zookeeper
+uv run khaos cluster-up -m zookeeper
 ```
 
+**Options:**
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--mode` | `-m` | `kraft` | Cluster mode: `kraft` or `zookeeper` |
+
 This starts:
-- 3 Kafka brokers (kafka-1, kafka-2, kafka-3) in KRaft mode
+- 3 Kafka brokers (kafka-1, kafka-2, kafka-3)
+- ZooKeeper (only in zookeeper mode)
 - Redpanda Console at http://localhost:8080
 
 ---
@@ -183,6 +216,8 @@ uv run khaos run SCENARIO [SCENARIO...] [OPTIONS]
 | `--duration` | `-d` | `0` | Duration in seconds (0 = run until Ctrl+C) |
 | `--keep-cluster` | `-k` | `false` | Keep Kafka cluster running after scenario ends |
 | `--bootstrap-servers` | `-b` | `127.0.0.1:9092,...` | Kafka bootstrap servers |
+| `--mode` | `-m` | `kraft` | Cluster mode: `kraft` or `zookeeper` |
+| `--no-consumers` | - | `false` | Disable built-in consumers (producer-only mode) |
 
 **Examples:**
 
@@ -209,6 +244,14 @@ uv run khaos run high-throughput -d 60 -k
 
 # Use custom bootstrap servers (still uses local Docker cluster)
 uv run khaos run high-throughput --bootstrap-servers localhost:9092
+
+# Run with ZooKeeper mode (instead of KRaft)
+uv run khaos run high-throughput --mode zookeeper
+uv run khaos run high-throughput -m zookeeper
+
+# Producer-only mode (no built-in consumers)
+# Useful for learning stream processing with Spark/Flink
+uv run khaos run high-throughput --no-consumers -k
 ```
 
 ---
@@ -241,6 +284,7 @@ uv run khaos simulate SCENARIO [SCENARIO...] [OPTIONS]
 | `--ssl-key-location` | - | No | - | Path to client private key (mTLS) |
 | `--ssl-key-password` | - | No | - | Password for encrypted private key |
 | `--skip-topic-creation` | - | No | `false` | Skip topic creation (topics already exist) |
+| `--no-consumers` | - | No | `false` | Disable built-in consumers (producer-only mode) |
 
 **Examples:**
 
@@ -336,6 +380,29 @@ uv run khaos simulate high-throughput \
     --ssl-cert-location /path/to/client.pem \
     --ssl-key-location /path/to/client.key \
     --ssl-key-password keypassword
+```
+
+---
+
+## Learning Stream Processing
+
+khaos is perfect for learning Apache Spark, Flink, or Kafka Streams. Use `--no-consumers` mode to generate traffic while you write your own stream processing application.
+
+### Quick Start for Learners
+
+```bash
+# 1. Start generating traffic (keep cluster running)
+uv run khaos run high-throughput --no-consumers --keep-cluster
+
+# 2. Access Redpanda Console to inspect topics
+open http://localhost:8080
+
+# 3. Connect your own consumer application to:
+#    - Bootstrap servers: 127.0.0.1:9092,127.0.0.1:9093,127.0.0.1:9094
+#    - Topics: orders, events (or check the scenario YAML)
+
+# 4. When done, stop the cluster
+uv run khaos cluster-down
 ```
 
 ---

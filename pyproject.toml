@@ -1,7 +1,7 @@
 [project]
 name = "khaos"
 version = "0.1.0"
-description = "Kafka chaos engineering toolkit - generate realistic workloads and failure scenarios"
+description = "Kafka traffic generator - realistic workloads for testing, learning, and chaos engineering"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

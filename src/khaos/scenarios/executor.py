@@ -40,9 +40,15 @@ class ExecutionResult:
 class ScenarioExecutor:
     """Executes one or more scenarios with incident scheduling."""
 
-    def __init__(self, bootstrap_servers: str, scenarios: list[Scenario]):
+    def __init__(
+        self,
+        bootstrap_servers: str,
+        scenarios: list[Scenario],
+        no_consumers: bool = False,
+    ):
         self.bootstrap_servers = bootstrap_servers
         self.scenarios = scenarios
+        self.no_consumers = no_consumers
         self.admin = KafkaAdmin(bootstrap_servers)
 
         self._stop_event = asyncio.Event()
@@ -383,18 +389,19 @@ class ScenarioExecutor:
 
                 tasks.append(producer_task())
 
-            # Consumers
-            consumers = self._create_consumers_for_topic(topic)
+            # Consumers (skip if no_consumers mode)
+            if not self.no_consumers:
+                consumers = self._create_consumers_for_topic(topic)
 
-            for _group_id, _name, consumer in consumers:
+                for _group_id, _name, consumer in consumers:
 
-                async def consumer_task(c=consumer):
-                    try:
-                        await c.consume_loop(duration_seconds=duration_seconds)
-                    except Exception as e:
-                        result.add_error(f"Consumer error: {e}")
+                    async def consumer_task(c=consumer):
+                        try:
+                            await c.consume_loop(duration_seconds=duration_seconds)
+                        except Exception as e:
+                            result.add_error(f"Consumer error: {e}")
 
-                tasks.append(consumer_task())
+                    tasks.append(consumer_task())
 
         # Schedule incidents
         ctx = IncidentContext(executor=self, bootstrap_servers=self.bootstrap_servers)

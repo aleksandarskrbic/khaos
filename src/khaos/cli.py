@@ -9,10 +9,11 @@ from rich.table import Table
 
 from khaos.errors import KhaosConnectionError
 from khaos.infrastructure import docker_manager
+from khaos.infrastructure.docker_manager import ClusterMode
 
 app = typer.Typer(
     name="khaos",
-    help="Kafka chaos engineering toolkit - generate realistic workloads and failure scenarios",
+    help="Kafka traffic generator for testing, learning, and chaos engineering",
     no_args_is_help=True,
 )
 
@@ -20,10 +21,15 @@ console = Console()
 
 
 @app.command("cluster-up")
-def cluster_up() -> None:
+def cluster_up(
+    mode: Annotated[
+        ClusterMode,
+        typer.Option("--mode", "-m", help="Cluster mode: kraft (default) or zookeeper"),
+    ] = ClusterMode.KRAFT,
+) -> None:
     """Start the 3-broker Kafka cluster."""
     try:
-        docker_manager.cluster_up()
+        docker_manager.cluster_up(mode=mode)
     except RuntimeError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(1)
@@ -62,7 +68,10 @@ def cluster_status() -> None:
         console.print("[yellow]No Kafka containers found. Run 'khaos cluster-up' first.[/yellow]")
         return
 
-    table = Table(title="Kafka Cluster Status")
+    mode = docker_manager.get_active_mode()
+    mode_label = "KRaft" if mode == ClusterMode.KRAFT else "ZooKeeper"
+
+    table = Table(title=f"Kafka Cluster Status ({mode_label} mode)")
     table.add_column("Service", style="cyan")
     table.add_column("State", style="green")
 
@@ -162,6 +171,14 @@ def run_scenario(
         str,
         typer.Option("--bootstrap-servers", "-b", help="Kafka bootstrap servers"),
     ] = "127.0.0.1:9092,127.0.0.1:9093,127.0.0.1:9094",
+    mode: Annotated[
+        ClusterMode,
+        typer.Option("--mode", "-m", help="Cluster mode: kraft (default) or zookeeper"),
+    ] = ClusterMode.KRAFT,
+    no_consumers: Annotated[
+        bool,
+        typer.Option("--no-consumers", help="Disable built-in consumers (producer-only mode)"),
+    ] = False,
 ) -> None:
     """Run one or more traffic simulation scenarios."""
     from khaos.scenarios.executor import ScenarioExecutor
@@ -175,7 +192,7 @@ def run_scenario(
     # Auto-start cluster if not running
     if not docker_manager.is_cluster_running():
         console.print("[cyan]Starting Kafka cluster...[/cyan]")
-        docker_manager.cluster_up()
+        docker_manager.cluster_up(mode=mode)
 
     # Load all requested scenarios
     loaded_scenarios = []
@@ -189,12 +206,17 @@ def run_scenario(
 
     scenario_names = ", ".join(s.name for s in loaded_scenarios)
     console.print(f"[bold blue]Running scenario(s): {scenario_names}[/bold blue]")
-    console.print(f"[dim]Duration: {duration}s | Bootstrap: {bootstrap_servers}[/dim]")
+    mode_info = " | No consumers (producer-only)" if no_consumers else ""
+    console.print(f"[dim]Duration: {duration}s | Bootstrap: {bootstrap_servers}{mode_info}[/dim]")
+
+    if no_consumers:
+        console.print("[cyan]Producer-only mode: connect your own consumers to consume data[/cyan]")
 
     try:
         executor = ScenarioExecutor(
             bootstrap_servers=bootstrap_servers,
             scenarios=loaded_scenarios,
+            no_consumers=no_consumers,
         )
         result = asyncio.run(executor.execute(duration_seconds=duration))
 
@@ -287,6 +309,10 @@ def simulate_external(
         bool,
         typer.Option("--skip-topic-creation", help="Skip topic creation (topics already exist)"),
     ] = False,
+    no_consumers: Annotated[
+        bool,
+        typer.Option("--no-consumers", help="Disable built-in consumers (producer-only mode)"),
+    ] = False,
 ) -> None:
     """Run traffic simulation against an external Kafka cluster.
 
@@ -354,14 +380,19 @@ def simulate_external(
 
     scenario_names = ", ".join(s.name for s in loaded_scenarios)
     console.print(f"[bold blue]Running scenario(s): {scenario_names}[/bold blue]")
-    console.print(f"[dim]Duration: {duration}s | Bootstrap: {bootstrap_servers}[/dim]")
+    mode_info = " | No consumers (producer-only)" if no_consumers else ""
+    console.print(f"[dim]Duration: {duration}s | Bootstrap: {bootstrap_servers}{mode_info}[/dim]")
     console.print(f"[dim]Security: {security_protocol}[/dim]")
+
+    if no_consumers:
+        console.print("[cyan]Producer-only mode: connect your own consumers to consume data[/cyan]")
 
     try:
         executor = ExternalScenarioExecutor(
             cluster_config=cluster_config,
             scenarios=loaded_scenarios,
             skip_topic_creation=skip_topic_creation,
+            no_consumers=no_consumers,
         )
         result = asyncio.run(executor.execute(duration_seconds=duration))
 

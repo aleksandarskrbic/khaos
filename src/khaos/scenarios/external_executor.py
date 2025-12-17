@@ -30,6 +30,7 @@ class ExternalScenarioExecutor(ScenarioExecutor):
         cluster_config: ClusterConfig,
         scenarios: list[Scenario],
         skip_topic_creation: bool = False,
+        no_consumers: bool = False,
     ):
         self.cluster_config = cluster_config
         self.skip_topic_creation = skip_topic_creation
@@ -41,6 +42,7 @@ class ExternalScenarioExecutor(ScenarioExecutor):
         super().__init__(
             bootstrap_servers=cluster_config.bootstrap_servers,
             scenarios=filtered_scenarios,
+            no_consumers=no_consumers,
         )
 
         # Replace admin client with security-aware version
