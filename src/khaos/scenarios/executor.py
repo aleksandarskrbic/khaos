@@ -365,6 +365,7 @@ class ScenarioExecutor:
                 max_size_bytes=topic.message_schema.max_size_bytes,
                 key_distribution=self._to_key_distribution(topic.message_schema.key_distribution),
                 key_cardinality=topic.message_schema.key_cardinality,
+                fields=topic.message_schema.fields,
             )
 
             # Producers

@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from khaos.models.schema import FieldSchema
+
 
 @dataclass
 class MessageSchemaConfig:
@@ -12,6 +14,8 @@ class MessageSchemaConfig:
     key_cardinality: int = 50
     min_size_bytes: int = 200
     max_size_bytes: int = 500
+    # Structured field schemas (optional - if not set, use random bytes)
+    fields: list[FieldSchema] | None = None
 
 
 @dataclass
@@ -84,7 +88,14 @@ class Scenario:
         for topic_data in data.get("topics", []):
             # Parse nested configs
             msg_schema_data = topic_data.pop("message_schema", {})
-            msg_schema = MessageSchemaConfig(**msg_schema_data)
+
+            # Parse field schemas if present
+            fields_data = msg_schema_data.pop("fields", None)
+            field_schemas = None
+            if fields_data:
+                field_schemas = [FieldSchema.from_dict(f) for f in fields_data]
+
+            msg_schema = MessageSchemaConfig(**msg_schema_data, fields=field_schemas)
 
             prod_config_data = topic_data.pop("producer_config", {})
             prod_config = ProducerConfigData(**prod_config_data)

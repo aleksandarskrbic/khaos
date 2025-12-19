@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from khaos.scenarios.incidents import INCIDENT_HANDLERS
+from khaos.schemas.validator import SchemaValidator
 
 
 @dataclass
@@ -203,6 +204,16 @@ def validate_message_schema(schema: dict, path: str, result: ValidationResult) -
     max_size = schema.get("max_size_bytes", 500)
     if isinstance(min_size, int) and isinstance(max_size, int) and min_size > max_size:
         result.add_error(f"{path}", "min_size_bytes cannot be greater than max_size_bytes")
+
+    # Validate field schemas if present
+    if "fields" in schema:
+        schema_validator = SchemaValidator()
+        schema_result = schema_validator.validate(schema["fields"], f"{path}.fields")
+        # Merge errors and warnings
+        for error in schema_result.errors:
+            result.add_error(error.path, error.message)
+        for warning in schema_result.warnings:
+            result.add_warning(warning.path, warning.message)
 
 
 def validate_producer_config(config: dict, path: str, result: ValidationResult) -> None:

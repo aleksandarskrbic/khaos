@@ -90,6 +90,13 @@ class FixedPayloadGenerator(PayloadGenerator):
 
 def create_payload_generator(schema: MessageSchema) -> PayloadGenerator:
     """Factory function to create payload generator based on schema."""
+    # If structured field schemas are defined, use schema-based generator
+    if schema.fields:
+        from khaos.generators.schema import SchemaPayloadGenerator
+
+        return SchemaPayloadGenerator(schema.fields)
+
+    # Otherwise, use default JSON generator with random bytes
     return JsonPayloadGenerator(
         min_size=schema.min_size_bytes,
         max_size=schema.max_size_bytes,

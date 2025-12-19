@@ -27,24 +27,45 @@
 
 - Python 3.11+
 - Docker and Docker Compose (for local cluster)
-- [uv](https://docs.astral.sh/uv/) package manager
 
 ## Installation
 
+### Using pip
+
 ```bash
-# Clone the repository
+pip install khaos
+```
+
+### Using uv (recommended)
+
+```bash
+uv tool install khaos
+```
+
+### From source
+
+```bash
 git clone https://github.com/your-username/khaos.git
 cd khaos
 
-# Install dependencies
+# Install as global command
+uv tool install -e .
+
+# Or use without installing globally
 uv sync
+khaos --help
 ```
 
 ### Development Setup
 
 ```bash
-# Install dependencies
+# Clone and install dependencies
+git clone https://github.com/your-username/khaos.git
+cd khaos
 uv sync
+
+# Install as editable global command
+uv tool install -e .
 
 # Install pre-commit hooks (required for contributors)
 uv run pre-commit install
@@ -58,7 +79,7 @@ uv run ruff format .
 
 ```bash
 # Run a scenario (auto-starts local Kafka cluster)
-uv run khaos run high-throughput
+khaos run high-throughput
 
 # Press Ctrl+C to stop
 ```
@@ -123,11 +144,11 @@ Start the 3-broker Kafka cluster in Docker.
 
 ```bash
 # Start with KRaft mode (default)
-uv run khaos cluster-up
+khaos cluster-up
 
 # Start with ZooKeeper mode
-uv run khaos cluster-up --mode zookeeper
-uv run khaos cluster-up -m zookeeper
+khaos cluster-up --mode zookeeper
+khaos cluster-up -m zookeeper
 ```
 
 **Options:**
@@ -149,11 +170,11 @@ Stop the Kafka cluster.
 
 ```bash
 # Stop cluster (keep data)
-uv run khaos cluster-down
+khaos cluster-down
 
 # Stop cluster and remove all data volumes
-uv run khaos cluster-down --volumes
-uv run khaos cluster-down -v
+khaos cluster-down --volumes
+khaos cluster-down -v
 ```
 
 **Options:**
@@ -169,7 +190,7 @@ uv run khaos cluster-down -v
 Show the status of Kafka containers.
 
 ```bash
-uv run khaos cluster-status
+khaos cluster-status
 ```
 
 ---
@@ -179,7 +200,7 @@ uv run khaos cluster-status
 List all available traffic scenarios.
 
 ```bash
-uv run khaos list
+khaos list
 ```
 
 ---
@@ -190,11 +211,11 @@ Validate scenario YAML files for errors.
 
 ```bash
 # Validate all scenarios
-uv run khaos validate
+khaos validate
 
 # Validate specific scenario(s)
-uv run khaos validate high-throughput
-uv run khaos validate consumer-lag hot-partition
+khaos validate high-throughput
+khaos validate consumer-lag hot-partition
 ```
 
 ---
@@ -206,7 +227,7 @@ Run one or more traffic simulation scenarios on the local Docker Kafka cluster.
 **Auto-starts the cluster if not running.** After the scenario completes, the cluster is stopped (unless `--keep-cluster` is specified).
 
 ```bash
-uv run khaos run SCENARIO [SCENARIO...] [OPTIONS]
+khaos run SCENARIO [SCENARIO...] [OPTIONS]
 ```
 
 **Options:**
@@ -223,35 +244,35 @@ uv run khaos run SCENARIO [SCENARIO...] [OPTIONS]
 
 ```bash
 # Run single scenario until Ctrl+C
-uv run khaos run high-throughput
+khaos run high-throughput
 
 # Run for 60 seconds
-uv run khaos run high-throughput --duration 60
-uv run khaos run high-throughput -d 60
+khaos run high-throughput --duration 60
+khaos run high-throughput -d 60
 
 # Run multiple scenarios together
-uv run khaos run partition-skew rebalance-storm
+khaos run partition-skew rebalance-storm
 
 # Run multiple scenarios for 2 minutes
-uv run khaos run consumer-lag throughput-drop --duration 120
+khaos run consumer-lag throughput-drop --duration 120
 
 # Keep cluster running after scenario (for manual inspection)
-uv run khaos run high-throughput --keep-cluster
-uv run khaos run high-throughput -k
+khaos run high-throughput --keep-cluster
+khaos run high-throughput -k
 
 # Keep cluster running with duration
-uv run khaos run high-throughput -d 60 -k
+khaos run high-throughput -d 60 -k
 
 # Use custom bootstrap servers (still uses local Docker cluster)
-uv run khaos run high-throughput --bootstrap-servers localhost:9092
+khaos run high-throughput --bootstrap-servers localhost:9092
 
 # Run with ZooKeeper mode (instead of KRaft)
-uv run khaos run high-throughput --mode zookeeper
-uv run khaos run high-throughput -m zookeeper
+khaos run high-throughput --mode zookeeper
+khaos run high-throughput -m zookeeper
 
 # Producer-only mode (no built-in consumers)
 # Useful for learning stream processing with Spark/Flink
-uv run khaos run high-throughput --no-consumers -k
+khaos run high-throughput --no-consumers -k
 ```
 
 ---
@@ -266,7 +287,7 @@ Unlike `run`, this command:
 - Supports full authentication (SASL, SSL/TLS, mTLS)
 
 ```bash
-uv run khaos simulate SCENARIO [SCENARIO...] [OPTIONS]
+khaos simulate SCENARIO [SCENARIO...] [OPTIONS]
 ```
 
 **Options:**
@@ -290,20 +311,20 @@ uv run khaos simulate SCENARIO [SCENARIO...] [OPTIONS]
 
 ```bash
 # Plain connection (no auth)
-uv run khaos simulate high-throughput \
+khaos simulate high-throughput \
     --bootstrap-servers kafka.example.com:9092
 
 # With duration
-uv run khaos simulate high-throughput \
+khaos simulate high-throughput \
     --bootstrap-servers kafka.example.com:9092 \
     --duration 120
 
 # Multiple scenarios
-uv run khaos simulate consumer-lag throughput-drop \
+khaos simulate consumer-lag throughput-drop \
     --bootstrap-servers kafka.example.com:9092
 
 # Skip topic creation (topics already exist)
-uv run khaos simulate high-throughput \
+khaos simulate high-throughput \
     --bootstrap-servers kafka.example.com:9092 \
     --skip-topic-creation
 ```
@@ -311,7 +332,7 @@ uv run khaos simulate high-throughput \
 #### Confluent Cloud
 
 ```bash
-uv run khaos simulate high-throughput \
+khaos simulate high-throughput \
     --bootstrap-servers pkc-xxxxx.us-east-1.aws.confluent.cloud:9092 \
     --security-protocol SASL_SSL \
     --sasl-mechanism PLAIN \
@@ -322,7 +343,7 @@ uv run khaos simulate high-throughput \
 #### AWS MSK (IAM auth not supported, use SCRAM)
 
 ```bash
-uv run khaos simulate high-throughput \
+khaos simulate high-throughput \
     --bootstrap-servers b-1.mycluster.kafka.us-east-1.amazonaws.com:9096 \
     --security-protocol SASL_SSL \
     --sasl-mechanism SCRAM-SHA-512 \
@@ -333,7 +354,7 @@ uv run khaos simulate high-throughput \
 #### Self-hosted with SASL/PLAIN
 
 ```bash
-uv run khaos simulate high-throughput \
+khaos simulate high-throughput \
     --bootstrap-servers kafka.example.com:9092 \
     --security-protocol SASL_PLAINTEXT \
     --sasl-mechanism PLAIN \
@@ -344,7 +365,7 @@ uv run khaos simulate high-throughput \
 #### Self-hosted with SASL/SCRAM + SSL
 
 ```bash
-uv run khaos simulate high-throughput \
+khaos simulate high-throughput \
     --bootstrap-servers kafka.example.com:9093 \
     --security-protocol SASL_SSL \
     --sasl-mechanism SCRAM-SHA-256 \
@@ -356,7 +377,7 @@ uv run khaos simulate high-throughput \
 #### Self-hosted with SSL (server auth only)
 
 ```bash
-uv run khaos simulate high-throughput \
+khaos simulate high-throughput \
     --bootstrap-servers kafka.example.com:9093 \
     --security-protocol SSL \
     --ssl-ca-location /path/to/ca.pem
@@ -365,7 +386,7 @@ uv run khaos simulate high-throughput \
 #### Self-hosted with mTLS (mutual TLS)
 
 ```bash
-uv run khaos simulate high-throughput \
+khaos simulate high-throughput \
     --bootstrap-servers kafka.example.com:9093 \
     --security-protocol SSL \
     --ssl-ca-location /path/to/ca.pem \
@@ -373,7 +394,7 @@ uv run khaos simulate high-throughput \
     --ssl-key-location /path/to/client.key
 
 # With encrypted private key
-uv run khaos simulate high-throughput \
+khaos simulate high-throughput \
     --bootstrap-servers kafka.example.com:9093 \
     --security-protocol SSL \
     --ssl-ca-location /path/to/ca.pem \
@@ -392,7 +413,7 @@ khaos is perfect for learning Apache Spark, Flink, or Kafka Streams. Use `--no-c
 
 ```bash
 # 1. Start generating traffic (keep cluster running)
-uv run khaos run high-throughput --no-consumers --keep-cluster
+khaos run high-throughput --no-consumers --keep-cluster
 
 # 2. Access Redpanda Console to inspect topics
 open http://localhost:8080
@@ -402,7 +423,7 @@ open http://localhost:8080
 #    - Topics: orders, events (or check the scenario YAML)
 
 # 4. When done, stop the cluster
-uv run khaos cluster-down
+khaos cluster-down
 ```
 
 ---
@@ -488,8 +509,114 @@ incidents:
 |-------|---------|-------------|
 | `key_distribution` | `uniform` | Key distribution: `uniform`, `zipfian`, `single_key`, `round_robin` |
 | `key_cardinality` | `100` | Number of unique keys |
-| `min_size_bytes` | `100` | Minimum message size |
-| `max_size_bytes` | `1000` | Maximum message size |
+| `min_size_bytes` | `100` | Minimum message size (used when `fields` not defined) |
+| `max_size_bytes` | `1000` | Maximum message size (used when `fields` not defined) |
+| `fields` | - | Structured field definitions (see below) |
+
+### Structured Field Schemas
+
+Define structured JSON messages with typed fields:
+
+```yaml
+message_schema:
+  fields:
+    - name: order_id
+      type: uuid
+    - name: customer_id
+      type: string
+      cardinality: 1000          # 1000 unique values, then repeat
+    - name: amount
+      type: float
+      min: 10.0
+      max: 5000.0
+    - name: status
+      type: enum
+      values: [pending, shipped, delivered]
+    - name: created_at
+      type: timestamp
+    - name: address
+      type: object
+      fields:
+        - name: city
+          type: string
+          cardinality: 50
+        - name: zip
+          type: string
+    - name: items
+      type: array
+      min_items: 1
+      max_items: 5
+      items:
+        type: object
+        fields:
+          - name: product_id
+            type: uuid
+          - name: quantity
+            type: int
+            min: 1
+            max: 10
+```
+
+#### Supported Field Types
+
+| Type | Parameters | Description |
+|------|------------|-------------|
+| `string` | `cardinality`, `min_length`, `max_length` | Random string |
+| `int` | `min`, `max`, `cardinality` | Integer in range |
+| `float` | `min`, `max` | Float in range |
+| `boolean` | - | Random true/false |
+| `uuid` | - | UUID v4 |
+| `timestamp` | - | ISO 8601 timestamp |
+| `enum` | `values` (required) | Pick from list |
+| `object` | `fields` (required) | Nested object |
+| `array` | `items`, `min_items`, `max_items` | Array of items |
+| `faker` | `provider` (required), `locale` | Realistic fake data |
+
+#### Faker Providers
+
+Generate realistic data using [Faker](https://faker.readthedocs.io/) providers:
+
+```yaml
+fields:
+  - name: customer_name
+    type: faker
+    provider: name
+  - name: email
+    type: faker
+    provider: email
+  - name: address
+    type: faker
+    provider: street_address
+  - name: city
+    type: faker
+    provider: city
+  - name: phone
+    type: faker
+    provider: phone_number
+  - name: company
+    type: faker
+    provider: company
+  - name: credit_card
+    type: faker
+    provider: credit_card_number
+  - name: job_title
+    type: faker
+    provider: job
+  - name: text
+    type: faker
+    provider: text
+  # With locale for localized data
+  - name: german_name
+    type: faker
+    provider: name
+    locale: de_DE
+```
+
+Common providers: `name`, `email`, `phone_number`, `address`, `street_address`, `city`, `country`, `postcode`, `company`, `job`, `text`, `word`, `sentence`, `url`, `ipv4`, `user_agent`, `credit_card_number`, `date`, `date_time`.
+
+See [Faker docs](https://faker.readthedocs.io/en/master/providers.html) for the full list.
+
+**Note:** If `fields` is not defined, messages are random JSON with padding to match size constraints.
 
 ### Producer Config
 

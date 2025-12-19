@@ -1,7 +1,13 @@
 """Message schema and key distribution models."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from khaos.models.schema import FieldSchema
 
 
 class KeyDistribution(Enum):
@@ -23,6 +29,8 @@ class MessageSchema:
     key_cardinality: int = 100  # Number of unique keys
     include_timestamp: bool = True
     include_sequence: bool = True
+    # Structured field schemas (optional - if not set, use random bytes)
+    fields: list[FieldSchema] | None = None
 
     def __post_init__(self):
         if self.min_size_bytes < 1:
