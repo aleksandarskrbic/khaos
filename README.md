@@ -4,6 +4,7 @@
   <p>Kafka traffic generator - realistic workloads for testing, learning, and chaos engineering</p>
 
   [![CI](https://github.com/aleksandarskrbic/khaos/actions/workflows/ci.yml/badge.svg)](https://github.com/aleksandarskrbic/khaos/actions/workflows/ci.yml)
+  [![PyPI](https://img.shields.io/pypi/v/khaos-cli.svg)](https://pypi.org/project/khaos-cli/)
   [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
   [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 </div>
@@ -34,23 +35,35 @@
 
 ## Installation
 
-### Using pip
-
-```bash
-pip install khaos
-```
-
 ### Using uv (recommended)
 
 ```bash
-uv tool install khaos
+uv tool install khaos-cli
 
-# If khaos command not found, add to PATH:
+# Add to PATH (if not already):
+uv tool update-shell
+
+# Or manually:
 export PATH="$HOME/.local/bin:$PATH"
+```
 
-# Or make it permanent:
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
+### Using pipx
+
+```bash
+pipx install khaos-cli
+```
+
+### Using pip
+
+```bash
+pip install khaos-cli
+```
+
+### Verify installation
+
+```bash
+khaos --version
+khaos --help
 ```
 
 ### From source

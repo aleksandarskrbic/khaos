@@ -11,11 +11,32 @@ from khaos.errors import KhaosConnectionError
 from khaos.infrastructure import docker_manager
 from khaos.infrastructure.docker_manager import ClusterMode, get_bootstrap_servers
 
+__version__ = "0.1.0"
+
+
+def version_callback(value: bool) -> None:
+    if value:
+        print(f"khaos {__version__}")
+        raise typer.Exit()
+
+
 app = typer.Typer(
     name="khaos",
     help="Kafka traffic generator for testing, learning, and chaos engineering",
     no_args_is_help=True,
 )
+
+
+@app.callback()
+def main(
+    version: Annotated[
+        bool,
+        typer.Option("--version", "-v", callback=version_callback, is_eager=True),
+    ] = False,
+) -> None:
+    """Kafka traffic generator for testing, learning, and chaos engineering."""
+    pass
+
 
 console = Console()
 
