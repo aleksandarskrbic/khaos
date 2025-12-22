@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from khaos.scenarios.incidents import INCIDENT_HANDLERS
+from khaos.schemas.flow_validator import FlowValidator
 from khaos.schemas.validator import SchemaValidator
 
 
@@ -33,7 +34,6 @@ class ValidationResult:
         self.warnings.append(ValidationError(path, message))
 
 
-# Valid values for various fields
 VALID_KEY_DISTRIBUTIONS = {"uniform", "zipfian", "single_key", "round_robin"}
 VALID_COMPRESSION_TYPES = {"none", "gzip", "snappy", "lz4", "zstd"}
 VALID_ACKS = {"0", "1", "all", "-1"}
@@ -44,12 +44,10 @@ def validate_scenario_file(file_path: Path) -> ValidationResult:
     """Validate a scenario YAML file."""
     result = ValidationResult(valid=True)
 
-    # Check file exists
     if not file_path.exists():
         result.add_error("file", f"File not found: {file_path}")
         return result
 
-    # Parse YAML
     try:
         with file_path.open() as f:
             data = yaml.safe_load(f)
@@ -61,24 +59,37 @@ def validate_scenario_file(file_path: Path) -> ValidationResult:
         result.add_error("root", "Scenario must be a YAML object/dict")
         return result
 
-    # Validate required fields
     if "name" not in data:
         result.add_error("name", "Missing required field 'name'")
     elif not isinstance(data["name"], str):
         result.add_error("name", "Field 'name' must be a string")
 
-    if "topics" not in data:
-        result.add_error("topics", "Missing required field 'topics'")
-    elif not isinstance(data["topics"], list):
-        result.add_error("topics", "Field 'topics' must be a list")
-    elif len(data["topics"]) == 0:
-        result.add_error("topics", "At least one topic is required")
-    else:
-        # Validate each topic
-        for i, topic in enumerate(data["topics"]):
-            validate_topic(topic, f"topics[{i}]", result)
+    topics = data.get("topics")
+    flows = data.get("flows")
+    has_topics = isinstance(topics, list) and len(topics) > 0
+    has_flows = isinstance(flows, list) and len(flows) > 0
 
-    # Validate incidents (optional)
+    if not has_topics and not has_flows:
+        result.add_error("topics", "Scenario must have at least 'topics' or 'flows'")
+
+    if "topics" in data:
+        if not isinstance(data["topics"], list):
+            result.add_error("topics", "Field 'topics' must be a list")
+        else:
+            for i, topic in enumerate(data["topics"]):
+                validate_topic(topic, f"topics[{i}]", result)
+
+    if "flows" in data:
+        if not isinstance(data["flows"], list):
+            result.add_error("flows", "Field 'flows' must be a list")
+        else:
+            flow_validator = FlowValidator()
+            flow_result = flow_validator.validate(data["flows"])
+            for error in flow_result.errors:
+                result.add_error(error.path, error.message)
+            for warning in flow_result.warnings:
+                result.add_warning(warning.path, warning.message)
+
     if "incidents" in data:
         if not isinstance(data["incidents"], list):
             result.add_error("incidents", "Field 'incidents' must be a list")
@@ -95,13 +106,11 @@ def validate_topic(topic: dict, path: str, result: ValidationResult) -> None:
         result.add_error(path, "Topic must be an object/dict")
         return
 
-    # Required fields
     if "name" not in topic:
         result.add_error(f"{path}.name", "Missing required field 'name'")
     elif not isinstance(topic["name"], str):
         result.add_error(f"{path}.name", "Field 'name' must be a string")
 
-    # Numeric fields with bounds
     if "partitions" in topic:
         if not isinstance(topic["partitions"], int) or topic["partitions"] < 1:
             result.add_error(f"{path}.partitions", "Field 'partitions' must be a positive integer")
@@ -125,9 +134,9 @@ def validate_topic(topic: dict, path: str, result: ValidationResult) -> None:
             )
 
     if "num_producers" in topic:
-        if not isinstance(topic["num_producers"], int) or topic["num_producers"] < 1:
+        if not isinstance(topic["num_producers"], int) or topic["num_producers"] < 0:
             result.add_error(
-                f"{path}.num_producers", "Field 'num_producers' must be a positive integer"
+                f"{path}.num_producers", "Field 'num_producers' must be a non-negative integer"
             )
 
     if "num_consumer_groups" in topic:
@@ -158,11 +167,9 @@ def validate_topic(topic: dict, path: str, result: ValidationResult) -> None:
                 "Field 'consumer_delay_ms' must be a non-negative integer",
             )
 
-    # Validate message_schema
     if "message_schema" in topic:
         validate_message_schema(topic["message_schema"], f"{path}.message_schema", result)
 
-    # Validate producer_config
     if "producer_config" in topic:
         validate_producer_config(topic["producer_config"], f"{path}.producer_config", result)
 
@@ -199,17 +206,14 @@ def validate_message_schema(schema: dict, path: str, result: ValidationResult) -
                 f"{path}.max_size_bytes", "Field 'max_size_bytes' must be a positive integer"
             )
 
-    # Check min <= max
     min_size = schema.get("min_size_bytes", 200)
     max_size = schema.get("max_size_bytes", 500)
     if isinstance(min_size, int) and isinstance(max_size, int) and min_size > max_size:
         result.add_error(f"{path}", "min_size_bytes cannot be greater than max_size_bytes")
 
-    # Validate field schemas if present
     if "fields" in schema:
         schema_validator = SchemaValidator()
         schema_result = schema_validator.validate(schema["fields"], f"{path}.fields")
-        # Merge errors and warnings
         for error in schema_result.errors:
             result.add_error(error.path, error.message)
         for warning in schema_result.warnings:
@@ -257,12 +261,10 @@ def validate_incident(incident: dict, path: str, result: ValidationResult) -> No
         result.add_error(path, "Incident must be an object/dict")
         return
 
-    # Check if it's a group
     if "group" in incident:
         validate_incident_group(incident["group"], f"{path}.group", result)
         return
 
-    # Regular incident
     if "type" not in incident:
         result.add_error(f"{path}.type", "Missing required field 'type'")
         return
@@ -276,7 +278,6 @@ def validate_incident(incident: dict, path: str, result: ValidationResult) -> No
         )
         return
 
-    # Check timing - need either at_seconds or every_seconds
     has_at = "at_seconds" in incident
     has_every = "every_seconds" in incident
     if not has_at and not has_every:
@@ -292,7 +293,6 @@ def validate_incident(incident: dict, path: str, result: ValidationResult) -> No
             f"{path}.every_seconds", "Field 'every_seconds' must be a positive integer"
         )
 
-    # Type-specific validation
     if incident_type in ("stop_broker", "start_broker"):
         if "broker" not in incident:
             result.add_error(
@@ -337,7 +337,6 @@ def validate_incident_group(group: dict, path: str, result: ValidationResult) ->
         result.add_error(path, "Incident group must be an object/dict")
         return
 
-    # Required fields
     if "repeat" not in group:
         result.add_error(f"{path}.repeat", "Missing required field 'repeat'")
     elif not isinstance(group["repeat"], int) or group["repeat"] < 1:
@@ -358,10 +357,8 @@ def validate_incident_group(group: dict, path: str, result: ValidationResult) ->
         result.add_error(f"{path}.incidents", "Incident group must have at least one incident")
     else:
         for i, incident in enumerate(group["incidents"]):
-            # Validate each incident in the group (but they use at_seconds relative to cycle)
             validate_group_incident(incident, f"{path}.incidents[{i}]", result)
 
-    # Check that incidents fit within interval
     if (
         "interval_seconds" in group
         and "incidents" in group
@@ -404,7 +401,6 @@ def validate_group_incident(incident: dict, path: str, result: ValidationResult)
     if "at_seconds" in incident and not isinstance(incident["at_seconds"], int):
         result.add_error(f"{path}.at_seconds", "Field 'at_seconds' must be an integer")
 
-    # Type-specific validation (same as regular incidents)
     if incident_type in ("stop_broker", "start_broker"):
         if "broker" not in incident:
             result.add_error(

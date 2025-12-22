@@ -39,12 +39,10 @@ class StringFieldGenerator(FieldGenerator):
 
     def generate(self) -> str:
         if self.cardinality:
-            # Use cached values for controlled cardinality
             if len(self._cache) < self.cardinality:
                 value = self._generate_random()
                 self._cache.append(value)
                 return value
-            # Cycle through cached values
             value = self._cache[self._index % self.cardinality]
             self._index += 1
             return value
@@ -166,8 +164,18 @@ class FakerFieldGenerator(FieldGenerator):
             raise ValueError(f"Unknown faker provider: '{provider}'")
 
     def generate(self) -> Any:
+        import datetime
+
         provider_method = getattr(self.fake, self.provider)
-        return provider_method()
+        value = provider_method()
+
+        # Convert date/datetime to ISO string for JSON serialization
+        if isinstance(value, datetime.datetime):
+            return value.isoformat()
+        if isinstance(value, datetime.date):
+            return value.isoformat()
+
+        return value
 
 
 def create_field_generator(schema: FieldSchema) -> FieldGenerator:

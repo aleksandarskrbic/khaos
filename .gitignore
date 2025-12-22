@@ -11,3 +11,8 @@ wheels/
 
 .idea
 .DS_Store
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/

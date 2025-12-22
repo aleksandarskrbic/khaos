@@ -9,7 +9,7 @@ from rich.table import Table
 
 from khaos.errors import KhaosConnectionError
 from khaos.infrastructure import docker_manager
-from khaos.infrastructure.docker_manager import ClusterMode
+from khaos.infrastructure.docker_manager import ClusterMode, get_bootstrap_servers
 
 app = typer.Typer(
     name="khaos",
@@ -74,10 +74,13 @@ def cluster_status() -> None:
     table = Table(title=f"Kafka Cluster Status ({mode_label} mode)")
     table.add_column("Service", style="cyan")
     table.add_column("State", style="green")
+    table.add_column("URL", style="blue")
 
-    for service, state in sorted(status.items()):
+    for service, info in sorted(status.items()):
+        state = info["state"]
+        url = info["url"]
         color = "green" if "running" in state.lower() else "red"
-        table.add_row(service, f"[{color}]{state}[/{color}]")
+        table.add_row(service, f"[{color}]{state}[/{color}]", url)
 
     console.print(table)
 
@@ -117,7 +120,6 @@ def validate_scenario(
     available = discover_scenarios()
 
     if scenarios:
-        # Validate specific scenarios
         to_validate = {}
         for name in scenarios:
             if name not in available:
@@ -125,7 +127,6 @@ def validate_scenario(
                 raise typer.Exit(1)
             to_validate[name] = available[name]
     else:
-        # Validate all scenarios
         to_validate = available
 
     all_valid = True
@@ -168,9 +169,9 @@ def run_scenario(
         typer.Option("--keep-cluster", "-k", help="Keep Kafka cluster running after scenario ends"),
     ] = False,
     bootstrap_servers: Annotated[
-        str,
+        str | None,
         typer.Option("--bootstrap-servers", "-b", help="Kafka bootstrap servers"),
-    ] = "127.0.0.1:9092,127.0.0.1:9093,127.0.0.1:9094",
+    ] = None,
     mode: Annotated[
         ClusterMode,
         typer.Option("--mode", "-m", help="Cluster mode: kraft (default) or zookeeper"),
@@ -189,12 +190,6 @@ def run_scenario(
         console.print("Use 'khaos list' to see available scenarios")
         raise typer.Exit(1)
 
-    # Auto-start cluster if not running
-    if not docker_manager.is_cluster_running():
-        console.print("[cyan]Starting Kafka cluster...[/cyan]")
-        docker_manager.cluster_up(mode=mode)
-
-    # Load all requested scenarios
     loaded_scenarios = []
     for scenario_name in scenarios:
         try:
@@ -203,6 +198,13 @@ def run_scenario(
         except ValueError as e:
             console.print(f"[bold red]Error: {e}[/bold red]")
             raise typer.Exit(1)
+
+    if not docker_manager.is_cluster_running():
+        console.print("[cyan]Starting Kafka cluster...[/cyan]")
+        docker_manager.cluster_up(mode=mode)
+
+    if bootstrap_servers is None:
+        bootstrap_servers = get_bootstrap_servers()
 
     scenario_names = ", ".join(s.name for s in loaded_scenarios)
     console.print(f"[bold blue]Running scenario(s): {scenario_names}[/bold blue]")
@@ -264,7 +266,6 @@ def simulate_external(
         int,
         typer.Option("--duration", "-d", help="Duration in seconds (0 = run until Ctrl+C)"),
     ] = 0,
-    # Security Protocol
     security_protocol: Annotated[
         str,
         typer.Option(
@@ -272,7 +273,6 @@ def simulate_external(
             help="Security protocol: PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL",
         ),
     ] = "PLAINTEXT",
-    # SASL Options
     sasl_mechanism: Annotated[
         str | None,
         typer.Option(
@@ -287,7 +287,6 @@ def simulate_external(
         str | None,
         typer.Option("--sasl-password", help="SASL password"),
     ] = None,
-    # SSL/TLS Options
     ssl_ca_location: Annotated[
         str | None,
         typer.Option("--ssl-ca-location", help="Path to CA certificate file"),
@@ -304,7 +303,6 @@ def simulate_external(
         str | None,
         typer.Option("--ssl-key-password", help="Password for encrypted private key"),
     ] = None,
-    # Execution options
     skip_topic_creation: Annotated[
         bool,
         typer.Option("--skip-topic-creation", help="Skip topic creation (topics already exist)"),
@@ -318,30 +316,11 @@ def simulate_external(
 
     Unlike 'run', this command does NOT manage Docker infrastructure.
     Broker incidents (stop_broker, start_broker) are automatically skipped.
-
-    Examples:
-
-        # Confluent Cloud
-        khaos simulate high-throughput \\
-            --bootstrap-servers pkc-xxx.confluent.cloud:9092 \\
-            --security-protocol SASL_SSL \\
-            --sasl-mechanism PLAIN \\
-            --sasl-username <API_KEY> \\
-            --sasl-password <API_SECRET>
-
-        # Self-hosted with mTLS
-        khaos simulate high-throughput \\
-            --bootstrap-servers kafka.example.com:9093 \\
-            --security-protocol SSL \\
-            --ssl-ca-location /path/to/ca.pem \\
-            --ssl-cert-location /path/to/client.pem \\
-            --ssl-key-location /path/to/client.key
     """
     from khaos.models.cluster import ClusterConfig, SaslMechanism, SecurityProtocol
     from khaos.scenarios.external_executor import ExternalScenarioExecutor
     from khaos.scenarios.loader import get_scenario
 
-    # Validate required parameters
     if not bootstrap_servers:
         console.print("[bold red]Error: --bootstrap-servers is required[/bold red]")
         raise typer.Exit(1)
@@ -351,7 +330,6 @@ def simulate_external(
         console.print("Use 'kafka-sim list' to see available scenarios")
         raise typer.Exit(1)
 
-    # Build ClusterConfig
     try:
         cluster_config = ClusterConfig(
             bootstrap_servers=bootstrap_servers,
@@ -368,7 +346,6 @@ def simulate_external(
         console.print(f"[bold red]Configuration error: {e}[/bold red]")
         raise typer.Exit(1)
 
-    # Load scenarios
     loaded_scenarios = []
     for scenario_name in scenarios:
         try:

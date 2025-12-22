@@ -3,14 +3,22 @@ name = "khaos"
 version = "0.1.0"
 description = "Kafka traffic generator - realistic workloads for testing, learning, and chaos engineering"
 readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "Aleksandar Skrbic", email = "aleksandarskrbic@gmail.com" }]
 requires-python = ">=3.11"
+keywords = ["kafka", "testing", "chaos-engineering", "load-testing", "streaming"]
 dependencies = [
     "confluent-kafka>=2.3.0",
-    "typer>=0.12.0",
+    "typer>=0.20.0",
     "rich>=13.0.0",
     "pyyaml>=6.0.3",
     "faker>=33.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/aleksandarskrbic/khaos"
+Repository = "https://github.com/aleksandarskrbic/khaos"
+Issues = "https://github.com/aleksandarskrbic/khaos/issues"
 
 [project.scripts]
 khaos = "khaos.cli:app"
@@ -29,6 +37,8 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.8.0",
     "pre-commit>=4.0.0",
+    "pytest-cov>=7.0.0",
+    "types-pyyaml>=6.0.12.20250915",
 ]
 
 [tool.ruff]

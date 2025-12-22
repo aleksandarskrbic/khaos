@@ -2,6 +2,7 @@
 
 import asyncio
 import random
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -13,13 +14,12 @@ from khaos.kafka.consumer import ConsumerSimulator
 if TYPE_CHECKING:
     from khaos.scenarios.executor import ScenarioExecutor
 
+IncidentHandler = Callable[..., Awaitable[None]]
+
 console = Console()
 
-# Incident categories for external cluster support
-# Infrastructure incidents require Docker control - not available on external clusters
 INFRASTRUCTURE_INCIDENTS = {"stop_broker", "start_broker"}
 
-# Client incidents control local simulators - work on any cluster
 CLIENT_INCIDENTS = {
     "increase_consumer_delay",
     "rebalance_consumer",
@@ -62,18 +62,15 @@ async def rebalance_consumer(
     n = ctx.executor.rebalance_count
     console.print(f"\n[bold red]>>> REBALANCE #{n}: Closing consumer {idx + 1}[/bold red]")
 
-    # Get consumer info before closing
     group_id = old_consumer.group_id
     topics = old_consumer.topics
     delay_ms = old_consumer.processing_delay_ms
 
-    # Close old consumer
     old_consumer.stop()
     old_consumer.close()
 
     await asyncio.sleep(3)
 
-    # Create new consumer
     new_consumer = ConsumerSimulator(
         bootstrap_servers=ctx.bootstrap_servers,
         group_id=group_id,
@@ -84,7 +81,6 @@ async def rebalance_consumer(
 
     console.print(f"[yellow]>>> Consumer {idx + 1} rejoined group[/yellow]\n")
 
-    # Start consuming in background - use duration_seconds=0 but consumer respects stop() signal
     asyncio.create_task(new_consumer.consume_loop(duration_seconds=0))
 
 
@@ -135,7 +131,6 @@ async def pause_consumer(
     """Pause all consumers for a duration (simulate GC pause)."""
     console.print(f"\n[bold red]>>> INCIDENT: Pausing consumers {duration_seconds}s[/bold red]")
 
-    # Stop all consumers
     for consumer in ctx.executor.consumers:
         consumer.stop()
 
@@ -143,14 +138,12 @@ async def pause_consumer(
 
     console.print("[bold green]>>> Consumers resuming[/bold green]\n")
 
-    # Restart consumers
     for consumer in ctx.executor.consumers:
         consumer._stop_event.clear()
         asyncio.create_task(consumer.consume_loop(duration_seconds=0))
 
 
-# Registry of incident handlers
-INCIDENT_HANDLERS = {
+INCIDENT_HANDLERS: dict[str, IncidentHandler] = {
     "increase_consumer_delay": increase_consumer_delay,
     "rebalance_consumer": rebalance_consumer,
     "stop_broker": stop_broker,

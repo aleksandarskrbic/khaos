@@ -1,0 +1,90 @@
+name: order-flow
+description: "Simulates order processing microservices with correlated events"
+
+flows:
+  - name: order-processing
+    rate: 50  # 50 order flows per second
+    correlation:
+      type: uuid
+    steps:
+      - topic: orders
+        event_type: order_created
+        consumers:               # Optional: built-in consumers for this step
+          groups: 1
+          per_group: 2
+          delay_ms: 10
+        fields:
+          - name: order_id
+            type: uuid
+          - name: customer_name
+            type: faker
+            provider: name
+          - name: customer_email
+            type: faker
+            provider: email
+          - name: amount
+            type: float
+            min: 10.0
+            max: 1000.0
+          - name: currency
+            type: enum
+            values: [USD, EUR, GBP]
+
+      - topic: payments
+        event_type: payment_initiated
+        delay_ms: 200
+        fields:
+          - name: payment_id
+            type: uuid
+          - name: payment_method
+            type: enum
+            values: [credit_card, debit_card, paypal, apple_pay]
+
+      - topic: payments
+        event_type: payment_completed
+        delay_ms: 500
+        fields:
+          - name: transaction_id
+            type: uuid
+          - name: status
+            type: enum
+            values: [success, success, success, failed]  # 75% success rate
+
+      - topic: inventory
+        event_type: inventory_reserved
+        delay_ms: 100
+        fields:
+          - name: warehouse_id
+            type: enum
+            values: [WH-001, WH-002, WH-003]
+          - name: items_count
+            type: int
+            min: 1
+            max: 10
+
+      - topic: shipments
+        event_type: shipment_created
+        delay_ms: 1000
+        consumers:
+          groups: 1
+          per_group: 2
+          delay_ms: 50           # slow consumers to build lag
+        fields:
+          - name: shipment_id
+            type: uuid
+          - name: carrier
+            type: enum
+            values: [fedex, ups, dhl, usps]
+          - name: estimated_delivery
+            type: faker
+            provider: date_this_month
+
+      - topic: notifications
+        event_type: order_confirmation_sent
+        delay_ms: 200
+        fields:
+          - name: notification_id
+            type: uuid
+          - name: channel
+            type: enum
+            values: [email, sms, push]

@@ -6,7 +6,6 @@ import yaml
 
 from khaos.scenarios.scenario import Scenario
 
-# Default scenarios directory (project root)
 SCENARIOS_DIR = Path(__file__).parent.parent.parent.parent / "scenarios"
 
 
@@ -41,7 +40,6 @@ def discover_scenarios(base_dir: Path | None = None) -> dict[str, Path]:
 
     scenarios = {}
 
-    # Recursively find all .yaml files
     for yaml_file in base_dir.rglob("*.yaml"):
         try:
             with yaml_file.open() as f:
@@ -49,7 +47,6 @@ def discover_scenarios(base_dir: Path | None = None) -> dict[str, Path]:
             if data and "name" in data:
                 scenarios[data["name"]] = yaml_file
         except Exception:
-            # Skip invalid files
             continue
 
     return scenarios

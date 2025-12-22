@@ -222,9 +222,9 @@ class TestValidateIncident:
         for incident in incidents:
             result = ValidationResult(valid=True)
             validate_incident(incident, "incidents[0]", result)
-            assert (
-                result.valid
-            ), f"'{incident['type']}' should be valid: {[e.message for e in result.errors]}"
+            assert result.valid, (
+                f"'{incident['type']}' should be valid: {[e.message for e in result.errors]}"
+            )
 
     def test_missing_type_and_timing(self):
         """Test error when type or timing is missing."""

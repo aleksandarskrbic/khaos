@@ -72,8 +72,11 @@ class ClusterConfig:
         # SASL settings
         if self.sasl_mechanism:
             config["sasl.mechanism"] = self.sasl_mechanism.value
-            config["sasl.username"] = self.sasl_username
-            config["sasl.password"] = self.sasl_password
+            # Validation ensures these are set when sasl_mechanism is present
+            if self.sasl_username:
+                config["sasl.username"] = self.sasl_username
+            if self.sasl_password:
+                config["sasl.password"] = self.sasl_password
 
         # SSL/TLS settings
         if self.ssl_ca_location:

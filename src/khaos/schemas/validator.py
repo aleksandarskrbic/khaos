@@ -59,13 +59,11 @@ class SchemaValidator:
             result.add_error(path, "Field must be an object/dict")
             return
 
-        # Validate name field
         if "name" not in field_def:
             result.add_error(f"{path}.name", "Missing required field 'name'")
         elif not isinstance(field_def["name"], str):
             result.add_error(f"{path}.name", "Field 'name' must be a string")
 
-        # Validate type field
         if "type" not in field_def:
             result.add_error(f"{path}.type", "Missing required field 'type'")
             return
@@ -83,7 +81,6 @@ class SchemaValidator:
             )
             return
 
-        # Type-specific validation
         if field_type == "string":
             self._validate_string_field(field_def, path, result)
         elif field_type == "int":
@@ -98,7 +95,6 @@ class SchemaValidator:
             self._validate_array_field(field_def, path, result)
         elif field_type == "faker":
             self._validate_faker_field(field_def, path, result)
-        # boolean, uuid, timestamp have no required params
 
     def _validate_string_field(
         self, field_def: dict[str, Any], path: str, result: SchemaValidationResult
@@ -116,7 +112,6 @@ class SchemaValidator:
                     f"{path}.max_length", "Field 'max_length' must be a positive integer"
                 )
 
-        # Check min <= max
         min_len = field_def.get("min_length", 0)
         max_len = field_def.get("max_length", 100)
         if isinstance(min_len, int) and isinstance(max_len, int) and min_len > max_len:
@@ -140,7 +135,6 @@ class SchemaValidator:
             if not isinstance(field_def["max"], int | float):
                 result.add_error(f"{path}.max", "Field 'max' must be a number")
 
-        # Check min <= max
         min_val = field_def.get("min")
         max_val = field_def.get("max")
         if (
@@ -170,7 +164,6 @@ class SchemaValidator:
             if not isinstance(field_def["max"], int | float):
                 result.add_error(f"{path}.max", "Field 'max' must be a number")
 
-        # Check min <= max
         min_val = field_def.get("min")
         max_val = field_def.get("max")
         if (
@@ -218,7 +211,6 @@ class SchemaValidator:
         if len(fields) == 0:
             result.add_error(f"{path}.fields", "Object must have at least one field")
 
-        # Recursively validate nested fields
         for i, nested_field in enumerate(fields):
             self._validate_field(nested_field, f"{path}.fields[{i}]", result)
 
@@ -235,7 +227,6 @@ class SchemaValidator:
             result.add_error(f"{path}.items", "Field 'items' must be an object/dict")
             return
 
-        # Validate min_items and max_items
         if "min_items" in field_def:
             if not isinstance(field_def["min_items"], int) or field_def["min_items"] < 0:
                 result.add_error(
@@ -248,13 +239,11 @@ class SchemaValidator:
                     f"{path}.max_items", "Field 'max_items' must be a positive integer"
                 )
 
-        # Check min <= max
         min_items = field_def.get("min_items", 1)
         max_items = field_def.get("max_items", 5)
         if isinstance(min_items, int) and isinstance(max_items, int) and min_items > max_items:
             result.add_error(f"{path}", "min_items cannot be greater than max_items")
 
-        # Recursively validate items schema (without name requirement for array items)
         self._validate_array_item(items, f"{path}.items", result)
 
     def _validate_faker_field(
@@ -282,7 +271,6 @@ class SchemaValidator:
             result.add_error(path, "Array item must be an object/dict")
             return
 
-        # Validate type field for array items
         if "type" not in item_def:
             result.add_error(f"{path}.type", "Missing required field 'type'")
             return
@@ -300,7 +288,6 @@ class SchemaValidator:
             )
             return
 
-        # Type-specific validation (same as regular fields)
         if field_type == "string":
             self._validate_string_field(item_def, path, result)
         elif field_type == "int":

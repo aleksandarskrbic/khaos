@@ -35,17 +35,14 @@ class ExternalScenarioExecutor(ScenarioExecutor):
         self.cluster_config = cluster_config
         self.skip_topic_creation = skip_topic_creation
 
-        # Filter scenarios to remove infrastructure incidents
         filtered_scenarios = self._filter_infrastructure_incidents(scenarios)
 
-        # Call parent with bootstrap_servers
         super().__init__(
             bootstrap_servers=cluster_config.bootstrap_servers,
             scenarios=filtered_scenarios,
             no_consumers=no_consumers,
         )
 
-        # Replace admin client with security-aware version
         self.admin = KafkaAdmin(
             cluster_config.bootstrap_servers,
             cluster_config=cluster_config,
@@ -60,7 +57,6 @@ class ExternalScenarioExecutor(ScenarioExecutor):
         skipped_count = 0
 
         for scenario in scenarios:
-            # Filter standalone incidents
             new_incidents = []
             for incident in scenario.incidents:
                 if incident.type in INFRASTRUCTURE_INCIDENTS:
@@ -72,7 +68,6 @@ class ExternalScenarioExecutor(ScenarioExecutor):
                 else:
                     new_incidents.append(incident)
 
-            # Filter incident groups
             new_groups = []
             for group in scenario.incident_groups:
                 new_group_incidents = []
@@ -95,7 +90,6 @@ class ExternalScenarioExecutor(ScenarioExecutor):
                         )
                     )
 
-            # Create filtered scenario
             filtered.append(
                 Scenario(
                     name=scenario.name,

@@ -10,7 +10,6 @@ from rich.console import Console
 console = Console()
 
 DOCKER_DIR = Path(__file__).parent.parent.parent.parent / "docker"
-DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092"
 
 _active_compose_file: Path | None = None
 
@@ -33,22 +32,28 @@ def _get_active_compose_file() -> Path | None:
     """Get the currently active compose file by checking running containers."""
     global _active_compose_file
 
-    # If we have a cached value, use it
     if _active_compose_file is not None:
         return _active_compose_file
 
-    # Check which compose file has running containers
-    for mode in ClusterMode:
-        compose_file = get_compose_file(mode)
-        result = subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), "ps", "-q"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if result.stdout.strip():
-            _active_compose_file = compose_file
-            return compose_file
+    result = subprocess.run(
+        ["docker", "ps", "--filter", "name=zookeeper", "--format", "{{.Names}}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if "zookeeper" in result.stdout:
+        _active_compose_file = get_compose_file(ClusterMode.ZOOKEEPER)
+        return _active_compose_file
+
+    result = subprocess.run(
+        ["docker", "ps", "--filter", "name=kafka-1", "--format", "{{.Names}}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if "kafka-1" in result.stdout:
+        _active_compose_file = get_compose_file(ClusterMode.KRAFT)
+        return _active_compose_file
 
     return None
 
@@ -107,7 +112,6 @@ def cluster_down(remove_volumes: bool = False) -> None:
     """Stop the Kafka cluster."""
     compose_file = _get_active_compose_file()
 
-    # If no active cluster found, try to stop both modes
     if compose_file is None:
         console.print("[yellow]No active cluster detected, checking both modes...[/yellow]")
         for mode in ClusterMode:
@@ -138,11 +142,14 @@ def _stop_compose(compose_file: Path, remove_volumes: bool, silent: bool) -> Non
             raise RuntimeError(f"Failed to stop Kafka cluster: {stderr or e}")
 
 
-def cluster_status() -> dict[str, str]:
-    """Get status of Kafka containers."""
+def cluster_status() -> dict[str, dict[str, str]]:
+    """Get status of Kafka containers with their ports.
+
+    Returns:
+        Dict mapping service name to {"state": ..., "url": ...}
+    """
     compose_file = _get_active_compose_file()
 
-    # If no active cluster, return empty
     if compose_file is None:
         return {}
 
@@ -158,15 +165,27 @@ def cluster_status() -> dict[str, str]:
     import json
 
     try:
-        # docker compose ps --format json returns one JSON object per line
         lines = result.stdout.strip().split("\n")
         services = {}
         for line in lines:
             if line.strip():
                 data = json.loads(line)
-                services[data.get("Service", data.get("Name", "unknown"))] = data.get(
-                    "State", "unknown"
-                )
+                service_name = data.get("Service", data.get("Name", "unknown"))
+                state = data.get("State", "unknown")
+
+                url = "-"
+                publishers = data.get("Publishers", [])
+                if publishers:
+                    for pub in publishers:
+                        published_port = pub.get("PublishedPort")
+                        if published_port:
+                            if service_name == "kafka-ui":
+                                url = f"http://localhost:{published_port}"
+                            else:
+                                url = f"localhost:{published_port}"
+                            break
+
+                services[service_name] = {"state": state, "url": url}
         return services
     except json.JSONDecodeError:
         return {}
@@ -182,12 +201,30 @@ def get_active_mode() -> ClusterMode | None:
     return ClusterMode.ZOOKEEPER
 
 
+def get_bootstrap_servers() -> str:
+    """Get bootstrap servers from running cluster.
+
+    Returns comma-separated list of broker addresses parsed from docker compose.
+    """
+    status = cluster_status()
+    brokers = []
+    for service, info in sorted(status.items()):
+        if service.startswith("kafka-") and service != "kafka-ui":
+            url = info.get("url", "")
+            if url and url != "-":
+                brokers.append(url.replace("localhost", "127.0.0.1"))
+    return ",".join(brokers) if brokers else "127.0.0.1:9092"
+
+
 def wait_for_kafka(
-    bootstrap_servers: str = DEFAULT_BOOTSTRAP_SERVERS,
+    bootstrap_servers: str | None = None,
     timeout: int = 120,
 ) -> None:
     """Wait until Kafka cluster is ready to accept connections."""
     from confluent_kafka.admin import AdminClient
+
+    if bootstrap_servers is None:
+        bootstrap_servers = get_bootstrap_servers()
 
     console.print("[bold yellow]Waiting for Kafka to be ready...[/bold yellow]")
 
@@ -202,7 +239,6 @@ def wait_for_kafka(
 
     while time.time() - start < timeout:
         try:
-            # Try to list topics - this will fail if Kafka isn't ready
             admin.list_topics(timeout=5)
             console.print("[bold green]Kafka cluster is ready![/bold green]")
             console.print(f"[dim]Bootstrap servers: {bootstrap_servers}[/dim]")
@@ -223,8 +259,7 @@ def is_cluster_running() -> bool:
     status = cluster_status()
     if not status:
         return False
-    # Check if all kafka services are running
-    return all("running" in state.lower() for state in status.values())
+    return all("running" in info["state"].lower() for info in status.values())
 
 
 def stop_broker(broker_name: str) -> None:

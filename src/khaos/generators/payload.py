@@ -4,6 +4,7 @@ import json
 import random
 import time
 from abc import ABC, abstractmethod
+from typing import Any
 
 from khaos.models.message import MessageSchema
 
@@ -48,7 +49,7 @@ class JsonPayloadGenerator(PayloadGenerator):
     def generate(self) -> bytes:
         self._sequence += 1
 
-        payload = {
+        payload: dict[str, Any] = {
             "id": f"msg-{self._sequence}",
         }
 
@@ -58,15 +59,13 @@ class JsonPayloadGenerator(PayloadGenerator):
         if self.include_sequence:
             payload["sequence"] = self._sequence
 
-        # Calculate base size and add padding if needed
         base_json = json.dumps(payload).encode()
         current_size = len(base_json)
 
         target_size = random.randint(self.min_size, self.max_size)
 
         if current_size < target_size:
-            # Add padding to reach target size
-            padding_needed = target_size - current_size - 20  # Account for JSON overhead
+            padding_needed = target_size - current_size - 20
             if padding_needed > 0:
                 payload["data"] = "x" * padding_needed
 
@@ -82,7 +81,6 @@ class FixedPayloadGenerator(PayloadGenerator):
 
     def generate(self) -> bytes:
         self._sequence += 1
-        # Create a fixed-size payload with sequence number
         prefix = f"msg-{self._sequence}-".encode()
         padding_size = max(0, self.size - len(prefix))
         return prefix + (b"x" * padding_size)
@@ -90,13 +88,11 @@ class FixedPayloadGenerator(PayloadGenerator):
 
 def create_payload_generator(schema: MessageSchema) -> PayloadGenerator:
     """Factory function to create payload generator based on schema."""
-    # If structured field schemas are defined, use schema-based generator
     if schema.fields:
         from khaos.generators.schema import SchemaPayloadGenerator
 
         return SchemaPayloadGenerator(schema.fields)
 
-    # Otherwise, use default JSON generator with random bytes
     return JsonPayloadGenerator(
         min_size=schema.min_size_bytes,
         max_size=schema.max_size_bytes,

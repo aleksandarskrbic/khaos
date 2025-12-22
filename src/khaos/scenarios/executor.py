@@ -1,25 +1,33 @@
 """Scenario executor - runs one or more scenarios with incident scheduling."""
 
+from __future__ import annotations
+
 import asyncio
 import signal
 import time
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
+from khaos.generators.flow import FlowProducer
 from khaos.generators.key import create_key_generator
 from khaos.generators.payload import create_payload_generator
 from khaos.kafka.admin import KafkaAdmin
 from khaos.kafka.consumer import ConsumerSimulator
 from khaos.kafka.producer import ProducerSimulator
 from khaos.models.config import ProducerConfig
+from khaos.models.flow import FlowConfig
 from khaos.models.message import KeyDistribution, MessageSchema
 from khaos.models.topic import TopicConfig as KafkaTopicConfig
 from khaos.runtime import shutdown_executor
 from khaos.scenarios.incidents import INCIDENT_HANDLERS, IncidentContext
 from khaos.scenarios.scenario import Incident, IncidentGroup, Scenario, TopicConfig
+
+if TYPE_CHECKING:
+    from khaos.models.flow import FlowStep
 
 console = Console()
 
@@ -30,6 +38,8 @@ class ExecutionResult:
 
     messages_produced: int = 0
     messages_consumed: int = 0
+    flows_completed: int = 0
+    flow_messages_sent: int = 0
     duration_seconds: float = 0.0
     errors: list[str] = field(default_factory=list)
 
@@ -54,6 +64,7 @@ class ScenarioExecutor:
         self._stop_event = asyncio.Event()
         self.producers: list[ProducerSimulator] = []
         self.consumers: list[ConsumerSimulator] = []
+        self.flow_producers: list[FlowProducer] = []
         self.rebalance_count = 0
 
         # Per-topic tracking for accurate stats
@@ -62,17 +73,20 @@ class ScenarioExecutor:
         self._consumers_by_topic: dict[str, dict[str, list[ConsumerSimulator]]] = {}
         # Map topic to scenario name for display
         self._topic_to_scenario: dict[str, str] = {}
+        # Flow producers by flow name
+        self._flow_producers_by_name: dict[str, FlowProducer] = {}
 
-        # Collect all topics, incidents, and incident groups from all scenarios
         self._all_topics: list[TopicConfig] = []
         self._all_incidents: list[Incident] = []
         self._all_incident_groups: list[IncidentGroup] = []
+        self._all_flows: list[FlowConfig] = []
         for scenario in scenarios:
             for topic in scenario.topics:
                 self._topic_to_scenario[topic.name] = scenario.name
             self._all_topics.extend(scenario.topics)
             self._all_incidents.extend(scenario.incidents)
             self._all_incident_groups.extend(scenario.incident_groups)
+            self._all_flows.extend(scenario.flows)
 
     def _get_display_title(self) -> str:
         """Get title for the live display."""
@@ -83,6 +97,8 @@ class ScenarioExecutor:
 
     async def setup(self) -> None:
         """Create all topics for all scenarios."""
+        created_topics: set[str] = set()
+
         for topic in self._all_topics:
             console.print(
                 f"[dim]Creating topic: {topic.name} ({topic.partitions} partitions)[/dim]"
@@ -93,12 +109,29 @@ class ScenarioExecutor:
                 replication_factor=topic.replication_factor,
             )
             self.admin.create_topic(topic_config)
+            created_topics.add(topic.name)
+
+        for flow in self._all_flows:
+            for topic_name in flow.get_all_topics():
+                if topic_name not in created_topics:
+                    console.print(f"[dim]Creating topic for flow: {topic_name}[/dim]")
+                    topic_config = KafkaTopicConfig(
+                        name=topic_name,
+                        partitions=12,
+                        replication_factor=3,
+                    )
+                    self.admin.create_topic(topic_config)
+                    created_topics.add(topic_name)
 
     async def teardown(self) -> None:
         """Clean up all resources."""
         for producer in self.producers:
             producer.stop()
             producer.flush(timeout=5)
+
+        for flow_producer in self.flow_producers:
+            flow_producer.stop()
+            flow_producer.flush(timeout=5)
 
         for consumer in self.consumers:
             consumer.stop()
@@ -111,6 +144,8 @@ class ScenarioExecutor:
         self._stop_event.set()
         for producer in self.producers:
             producer.stop()
+        for flow_producer in self.flow_producers:
+            flow_producer.stop()
         for consumer in self.consumers:
             consumer.stop()
 
@@ -175,17 +210,56 @@ class ScenarioExecutor:
                 consumers.append((group_id, f"{group_id}-consumer-{c + 1}", consumer))
         return consumers
 
+    def _create_flow_step_consumers(
+        self,
+        flow_name: str,
+        step: FlowStep,
+        duration_seconds: int,
+        result: ExecutionResult,
+    ) -> list:
+        """Create consumers for a flow step and return their tasks."""
+        tasks = []
+        config = step.consumers
+        assert config is not None  # todo: fix this?
+        topic_name = step.topic
+
+        if topic_name not in self._consumers_by_topic:
+            self._consumers_by_topic[topic_name] = {}
+
+        for g in range(config.groups):
+            group_id = f"{flow_name}-{topic_name}-group-{g + 1}"
+            if group_id not in self._consumers_by_topic[topic_name]:
+                self._consumers_by_topic[topic_name][group_id] = []
+
+            for _c in range(config.per_group):
+                consumer = ConsumerSimulator(
+                    bootstrap_servers=self.bootstrap_servers,
+                    group_id=group_id,
+                    topics=[topic_name],
+                    processing_delay_ms=config.delay_ms,
+                )
+                self.consumers.append(consumer)
+                self._consumers_by_topic[topic_name][group_id].append(consumer)
+
+                async def consumer_task(cons=consumer):
+                    try:
+                        await cons.consume_loop(duration_seconds=duration_seconds)
+                    except Exception as e:
+                        result.add_error(f"Flow consumer error: {e}")
+
+                tasks.append(consumer_task())
+
+        return tasks
+
     def generate_stats_table(self) -> Table:
         """Generate a Rich table with current stats."""
         table = Table(title=self._get_display_title())
-        table.add_column("Topic/Consumer", style="cyan")
-        table.add_column("Scenario", style="magenta")
+        table.add_column("Name", style="cyan")
         table.add_column("Produced", style="green")
         table.add_column("Consumed", style="yellow")
         table.add_column("Lag", style="red")
 
         for topic in self._all_topics:
-            # Get per-topic stats
             topic_producers = self._producers_by_topic.get(topic.name, [])
             topic_groups = self._consumers_by_topic.get(topic.name, {})
 
@@ -198,61 +272,91 @@ class ScenarioExecutor:
 
             lag = produced - total_consumed
             lag_display = f"[red]{lag:,}[/red]" if lag > 100 else f"[green]{lag:,}[/green]"
-            scenario_name = self._topic_to_scenario.get(topic.name, "")
 
-            # Topic row (bold)
             table.add_row(
                 f"[bold]{topic.name}[/bold]",
-                f"[dim]{scenario_name}[/dim]",
                 f"[bold]{produced:,}[/bold]",
                 f"[bold]{total_consumed:,}[/bold]",
                 lag_display,
             )
 
-            # Consumer groups and individual consumers
             group_names = list(topic_groups.keys())
             for g_idx, group_id in enumerate(group_names):
                 consumers = topic_groups[group_id]
                 group_consumed = sum(c.get_stats().messages_consumed for c in consumers)
                 is_last_group = g_idx == len(group_names) - 1
-                group_prefix = "  └─ " if is_last_group else "  ├─ "
+                group_prefix = "└─ " if is_last_group else "├─ "
 
-                # Group row
                 table.add_row(
-                    f"[dim]{group_prefix}{group_id}[/dim]",
-                    "",
+                    f"[dim]  {group_prefix}{group_id}[/dim]",
                     "",
                     f"[dim]{group_consumed:,}[/dim]",
                     "",
                 )
 
-                # Individual consumers
-                for c_idx, consumer in enumerate(consumers):
-                    consumed = consumer.get_stats().messages_consumed
-                    is_last_consumer = c_idx == len(consumers) - 1
-                    if is_last_group:
-                        consumer_prefix = "      └─ " if is_last_consumer else "      ├─ "
+        if self.flow_producers:
+            table.add_section()
+            for flow_producer in self.flow_producers:
+                stats = flow_producer.get_stats()
+                flow = flow_producer.flow
+
+                table.add_row(
+                    f"[bold cyan]Flow: {flow.name}[/bold cyan]",
+                    f"[bold]{stats.messages_sent:,}[/bold]",
+                    "",
+                    "",
+                )
+
+                unique_topics = list(dict.fromkeys(s.topic for s in flow.steps))
+                for idx, topic_name in enumerate(unique_topics):
+                    is_last = idx == len(unique_topics) - 1
+                    prefix = "└─" if is_last else "├─"
+
+                    topic_produced = stats.get_topic_count(topic_name)
+                    produced_display = f"{topic_produced:,}" if topic_produced > 0 else ""
+
+                    topic_groups = self._consumers_by_topic.get(topic_name, {})
+                    flow_groups = {
+                        k: v
+                        for k, v in topic_groups.items()
+                        if k.startswith(f"{flow.name}-{topic_name}-")
+                    }
+
+                    if flow_groups:
+                        total_consumed = sum(
+                            c.get_stats().messages_consumed
+                            for consumers in flow_groups.values()
+                            for c in consumers
+                        )
+                        consumed_display = f"{total_consumed:,}"
+                        lag = topic_produced - total_consumed
                     else:
-                        consumer_prefix = "  │   └─ " if is_last_consumer else "  │   ├─ "
+                        consumed_display = "[dim]no consumer[/dim]"
+                        lag = topic_produced
+
+                    if lag > 100:
+                        lag_display = f"[red]{lag:,}[/red]"
+                    elif lag > 0:
+                        lag_display = f"[yellow]{lag:,}[/yellow]"
+                    else:
+                        lag_display = f"[green]{lag:,}[/green]"
 
                     table.add_row(
-                        f"[dim]{consumer_prefix}consumer-{c_idx + 1}[/dim]",
-                        "",
-                        "",
-                        f"[dim]{consumed:,}[/dim]",
-                        "",
+                        f"  {prefix} [cyan]{topic_name}[/cyan]",
+                        produced_display,
+                        consumed_display,
+                        lag_display,
                     )
 
-        # Summary row
         table.add_section()
         total_produced = sum(p.get_stats().messages_sent for p in self.producers)
+        total_flow_messages = sum(fp.get_stats().messages_sent for fp in self.flow_producers)
         total_consumed = sum(c.get_stats().messages_consumed for c in self.consumers)
         total_lag = total_produced - total_consumed
 
         table.add_row(
             "[bold]TOTAL[/bold]",
-            "",
-            f"[bold]{total_produced:,}[/bold]",
+            f"[bold]{total_produced + total_flow_messages:,}[/bold]",
             f"[bold]{total_consumed:,}[/bold]",
             f"[bold red]{total_lag:,}[/bold red]"
             if total_lag > 100
@@ -270,8 +374,7 @@ class ScenarioExecutor:
             console.print(f"[red]Unknown incident type: {incident.type}[/red]")
             return
 
-        # Build kwargs from incident fields
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         if incident.delay_ms is not None:
             kwargs["delay_ms"] = incident.delay_ms
         if incident.broker is not None:
@@ -339,7 +442,7 @@ class ScenarioExecutor:
                     continue
 
                 # Build kwargs
-                kwargs = {}
+                kwargs: dict[str, Any] = {}
                 if incident.delay_ms is not None:
                     kwargs["delay_ms"] = incident.delay_ms
                 if incident.broker is not None:
@@ -404,6 +507,35 @@ class ScenarioExecutor:
 
                     tasks.append(consumer_task())
 
+        # Create flow producers and their consumers
+        for flow in self._all_flows:
+            flow_producer = FlowProducer(
+                flow=flow,
+                bootstrap_servers=self.bootstrap_servers,
+            )
+            self.flow_producers.append(flow_producer)
+            self._flow_producers_by_name[flow.name] = flow_producer
+
+            async def flow_task(fp=flow_producer):
+                try:
+                    await fp.run_at_rate(duration_seconds=duration_seconds)
+                except Exception as e:
+                    result.add_error(f"Flow producer error: {e}")
+                finally:
+                    fp.flush()
+
+            tasks.append(flow_task())
+
+            # Create consumers for flow steps (if configured and not no_consumers mode)
+            if not self.no_consumers:
+                for step in flow.steps:
+                    if step.consumers:
+                        tasks.extend(
+                            self._create_flow_step_consumers(
+                                flow.name, step, duration_seconds, result
+                            )
+                        )
+
         # Schedule incidents
         ctx = IncidentContext(executor=self, bootstrap_servers=self.bootstrap_servers)
         for incident in self._all_incidents:
@@ -435,6 +567,8 @@ class ScenarioExecutor:
         # Collect results
         result.messages_produced = sum(p.get_stats().messages_sent for p in self.producers)
         result.messages_consumed = sum(c.get_stats().messages_consumed for c in self.consumers)
+        result.flows_completed = sum(fp.get_stats().flows_completed for fp in self.flow_producers)
+        result.flow_messages_sent = sum(fp.get_stats().messages_sent for fp in self.flow_producers)
         result.duration_seconds = time.time() - start_time
 
         return result

@@ -108,11 +108,9 @@ class ConsumerSimulator:
 
         try:
             while not self.should_stop:
-                # Check duration
                 if duration_seconds > 0 and (time.time() - start_time) >= duration_seconds:
                     break
 
-                # Run blocking poll() in thread pool - doesn't block event loop
                 msg = await loop.run_in_executor(executor, self._poll_sync, 0.1)
 
                 if msg is None:
@@ -124,11 +122,9 @@ class ConsumerSimulator:
                     self.stats.record_error()
                     continue
 
-                # Record stats
                 value_size = len(msg.value()) if msg.value() else 0
                 self.stats.record_message(value_size)
 
-                # Call message handler if provided
                 if on_message:
                     on_message(msg)
 

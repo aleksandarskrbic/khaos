@@ -103,7 +103,8 @@ class ProducerSimulator:
 
     def flush(self, timeout: float = 10.0) -> int:
         """Flush pending messages."""
-        return self._producer.flush(timeout)
+        result: int = self._producer.flush(timeout)
+        return result
 
     def stop(self) -> None:
         """Signal producer to stop."""
@@ -132,27 +133,32 @@ class ProducerSimulator:
         message_count = 0
 
         while not self.should_stop:
-            # Check duration
             if duration_seconds > 0 and (time.time() - start_time) >= duration_seconds:
                 break
 
-            # Generate message
             value = message_generator.generate()
             key = key_generator.generate() if key_generator else None
 
-            # Run produce in thread pool - doesn't block event loop
             await loop.run_in_executor(executor, self._produce_sync, topic, value, key)
             message_count += 1
 
-            # Rate limiting
             if interval > 0:
                 expected_time = start_time + (message_count * interval)
                 sleep_time = expected_time - time.time()
                 if sleep_time > 0:
                     await asyncio.sleep(sleep_time)
 
-        # Final flush
         self.flush()
+
+    @property
+    def messages_per_second(self) -> float:
+        """Get current messages per second rate."""
+        return self.config.messages_per_second
+
+    @messages_per_second.setter
+    def messages_per_second(self, value: float) -> None:
+        """Set messages per second rate (for dynamic rate changes)."""
+        self.config.messages_per_second = value
 
     def get_stats(self) -> ProducerStats:
         """Get current statistics."""

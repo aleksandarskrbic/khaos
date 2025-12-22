@@ -2,6 +2,10 @@
   <img src="assets/logo.png" alt="khaos logo" width="200">
   <h1>khaos</h1>
   <p>Kafka traffic generator - realistic workloads for testing, learning, and chaos engineering</p>
+
+  [![CI](https://github.com/aleksandarskrbic/khaos/actions/workflows/ci.yml/badge.svg)](https://github.com/aleksandarskrbic/khaos/actions/workflows/ci.yml)
+  [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+  [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 </div>
 
 ## Use Cases
@@ -17,7 +21,7 @@
 - **One-Command Setup**: Spin up a 3-broker Kafka cluster with traffic in seconds
 - **YAML-Based Scenarios**: Define traffic patterns declaratively, no code required
 - **Producer-Only Mode**: Generate data without built-in consumers (`--no-consumers`)
-- **External Cluster Support**: Connect to any Kafka cluster (Confluent Cloud, MSK, self-hosted)
+- **External Cluster Support**: Connect to any Kafka cluster (self-hosted, external)
 - **Chaos Engineering**: Built-in incident primitives (backpressure, rebalances, broker failures)
 - **Full Authentication**: SASL/PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, SSL/TLS, mTLS
 - **Live Stats Display**: Real-time producer/consumer metrics
@@ -40,19 +44,28 @@ pip install khaos
 
 ```bash
 uv tool install khaos
+
+# If khaos command not found, add to PATH:
+export PATH="$HOME/.local/bin:$PATH"
+
+# Or make it permanent:
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/your-username/khaos.git
+git clone https://github.com/aleksandarskrbic/khaos.git
 cd khaos
 
-# Install as global command
-uv tool install -e .
-
-# Or use without installing globally
+# Option 1: Use without installing globally (recommended for development)
 uv sync
+uv run khaos --help
+
+# Option 2: Install as global command
+uv tool install -e .
+export PATH="$HOME/.local/bin:$PATH"  # if not already in PATH
 khaos --help
 ```
 
@@ -60,19 +73,15 @@ khaos --help
 
 ```bash
 # Clone and install dependencies
-git clone https://github.com/your-username/khaos.git
+git clone https://github.com/aleksandarskrbic/khaos.git
 cd khaos
 uv sync
 
-# Install as editable global command
-uv tool install -e .
-
-# Install pre-commit hooks (required for contributors)
+# Install pre-commit hooks
 uv run pre-commit install
 
-# Run linting/formatting manually
-uv run ruff check --fix .
-uv run ruff format .
+# Run all checks before committing (lint, format, test, typecheck)
+./scripts/check.sh
 ```
 
 ## Quick Start
@@ -82,6 +91,27 @@ uv run ruff format .
 khaos run high-throughput
 
 # Press Ctrl+C to stop
+```
+
+---
+
+## Shell Completion
+
+Enable tab completion for commands, options, and scenarios:
+
+```bash
+# Install completion (bash, zsh, fish, powershell)
+khaos --install-completion
+
+# Restart shell or reload config
+source ~/.zshrc  # or ~/.bashrc
+```
+
+Then use Tab to autocomplete:
+```bash
+khaos cl<TAB>          # → cluster-up, cluster-down, cluster-status
+khaos run <TAB>        # → shows available scenarios
+khaos run --<TAB>      # → shows available options
 ```
 
 ---
@@ -118,7 +148,7 @@ Both commands execute the **same YAML scenarios** with the same traffic patterns
 - Quick experiments without external dependencies
 
 **When to use `simulate`:**
-- Load testing external clusters (Confluent Cloud, AWS MSK, self-hosted)
+- Load testing external/self-hosted clusters
 - Testing authentication configurations
 - Running chaos scenarios on staging/production environments
 - When you need broker incidents skipped (they're automatically skipped with a warning)
@@ -279,7 +309,7 @@ khaos run high-throughput --no-consumers -k
 
 ### `khaos simulate`
 
-Run traffic simulation against an **external** Kafka cluster (Confluent Cloud, AWS MSK, self-hosted, etc.).
+Run traffic simulation against an **external** Kafka cluster (self-hosted, etc.).
 
 Unlike `run`, this command:
 - Does NOT start/stop Docker infrastructure
@@ -327,28 +357,6 @@ khaos simulate consumer-lag throughput-drop \
 khaos simulate high-throughput \
     --bootstrap-servers kafka.example.com:9092 \
     --skip-topic-creation
-```
-
-#### Confluent Cloud
-
-```bash
-khaos simulate high-throughput \
-    --bootstrap-servers pkc-xxxxx.us-east-1.aws.confluent.cloud:9092 \
-    --security-protocol SASL_SSL \
-    --sasl-mechanism PLAIN \
-    --sasl-username <API_KEY> \
-    --sasl-password <API_SECRET>
-```
-
-#### AWS MSK (IAM auth not supported, use SCRAM)
-
-```bash
-khaos simulate high-throughput \
-    --bootstrap-servers b-1.mycluster.kafka.us-east-1.amazonaws.com:9096 \
-    --security-protocol SASL_SSL \
-    --sasl-mechanism SCRAM-SHA-512 \
-    --sasl-username alice \
-    --sasl-password secret
 ```
 
 #### Self-hosted with SASL/PLAIN
@@ -437,6 +445,7 @@ khaos cluster-down
 | `high-throughput` | High-throughput scenario (2 topics, 4 producers, 4 consumers) |
 | `consumer-lag` | Consumer lag scenario (slow consumers, growing lag) |
 | `hot-partition` | Hot partition scenario (skewed key distribution) |
+| `order-flow` | Correlated event flow (order → payment → shipment) |
 
 ### Incident Scenarios (Chaos Engineering)
 
@@ -687,6 +696,163 @@ incidents:
         - type: start_broker
           at_seconds: 30     # 30s after group start
           broker: kafka-2
+```
+
+---
+
+## Correlated Event Flows
+
+Flows simulate real microservice architectures where an event on topic A triggers related events on topics B, C, etc. with realistic delays. Each flow instance shares a correlation ID across all steps.
+
+### Basic Flow Structure
+
+```yaml
+name: order-flow
+description: "Order processing microservices"
+
+flows:
+  - name: order-processing
+    rate: 50                 # flow instances per second
+    correlation:
+      type: uuid             # auto-generate correlation ID
+    steps:
+      - topic: orders
+        event_type: order_created
+        fields:
+          - name: order_id
+            type: uuid
+          - name: amount
+            type: float
+            min: 10.0
+            max: 1000.0
+
+      - topic: payments
+        event_type: payment_processed
+        delay_ms: 500        # 500ms after previous step
+        fields:
+          - name: payment_id
+            type: uuid
+          - name: status
+            type: enum
+            values: [success, failed]
+
+      - topic: shipments
+        event_type: shipment_created
+        delay_ms: 2000       # 2s after previous step
+        fields:
+          - name: shipment_id
+            type: uuid
+          - name: carrier
+            type: enum
+            values: [fedex, ups, dhl]
+```
+
+### Flow Configuration
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `name` | required | Flow name (for display) |
+| `rate` | `10.0` | Flow instances per second |
+| `correlation.type` | `uuid` | `uuid` (auto-generate) or `field_ref` |
+| `correlation.field` | - | Field name from first step (when type is `field_ref`) |
+| `steps` | required | List of steps (minimum 2 recommended) |
+
+### Step Configuration
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `topic` | required | Target Kafka topic |
+| `event_type` | required | Event type (included in message) |
+| `delay_ms` | `0` | Delay after previous step (milliseconds) |
+| `fields` | - | Field definitions (same as topic schemas) |
+| `consumers` | - | Optional: built-in consumers for this step |
+
+### Step Consumers (Optional)
+
+By default, flows are producer-only. Add `consumers` to enable built-in consumers for testing lag/backpressure:
+
+```yaml
+steps:
+  - topic: orders
+    event_type: order_created
+    consumers:
+      groups: 1          # number of consumer groups (default: 1)
+      per_group: 2       # consumers per group (default: 1)
+      delay_ms: 10       # processing delay per message (default: 0)
+    fields:
+      - name: order_id
+        type: uuid
+```
+
+Without `consumers`, you connect your own apps (Spark, Flink, etc.) to consume from flow topics.
+
+### Correlation ID Types
+
+**UUID (default)**: Auto-generates a UUID for each flow instance:
+
+```yaml
+correlation:
+  type: uuid
+```
+
+**Field Reference**: Uses a field value from the first step:
+
+```yaml
+correlation:
+  type: field_ref
+  field: order_id    # uses order_id from first step
+```
+
+### Generated Messages
+
+Each step produces a message with:
+- `correlation_id`: Shared across all steps in the flow instance
+- `event_type`: From the step definition
+- All fields defined in the step
+
+Example output for order-processing flow:
+
+```json
+// Topic: orders
+{"correlation_id": "550e8400-e29b-41d4-a716-446655440000", "event_type": "order_created", "order_id": "...", "amount": 123.45}
+
+// Topic: payments (500ms later)
+{"correlation_id": "550e8400-e29b-41d4-a716-446655440000", "event_type": "payment_processed", "payment_id": "...", "status": "success"}
+
+// Topic: shipments (2000ms later)
+{"correlation_id": "550e8400-e29b-41d4-a716-446655440000", "event_type": "shipment_created", "shipment_id": "...", "carrier": "fedex"}
+```
+
+### Flows with Topics
+
+Scenarios can have both regular topics and flows:
+
+```yaml
+name: mixed-scenario
+
+topics:
+  - name: logs
+    partitions: 6
+    producer_rate: 1000
+
+flows:
+  - name: order-processing
+    rate: 50
+    steps:
+      # ...
+```
+
+### Example: E-commerce Order Flow
+
+See `scenarios/order-flow.yaml` for a complete example simulating:
+1. Order creation
+2. Payment initiation and completion
+3. Inventory reservation
+4. Shipment creation
+5. Customer notification
+
+```bash
+khaos run order-flow --no-consumers -k
 ```
 
 ---

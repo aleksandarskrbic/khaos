@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from khaos.models.flow import FlowConfig
 from khaos.models.schema import FieldSchema
 
 
@@ -80,16 +81,15 @@ class Scenario:
     topics: list[TopicConfig] = field(default_factory=list)
     incidents: list[Incident] = field(default_factory=list)
     incident_groups: list[IncidentGroup] = field(default_factory=list)
+    flows: list[FlowConfig] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Scenario":
         """Create a Scenario from a dictionary (parsed YAML)."""
         topics = []
         for topic_data in data.get("topics", []):
-            # Parse nested configs
             msg_schema_data = topic_data.pop("message_schema", {})
 
-            # Parse field schemas if present
             fields_data = msg_schema_data.pop("fields", None)
             field_schemas = None
             if fields_data:
@@ -110,7 +110,6 @@ class Scenario:
         incidents = []
         incident_groups = []
         for incident_data in data.get("incidents", []):
-            # Check if this is a group
             if "group" in incident_data:
                 group_data = incident_data["group"]
                 group_incidents = [Incident(**inc) for inc in group_data.get("incidents", [])]
@@ -124,10 +123,13 @@ class Scenario:
                 incident = Incident(**incident_data)
                 incidents.append(incident)
 
+        flows = [FlowConfig.from_dict(f) for f in data.get("flows", [])]
+
         return cls(
             name=data["name"],
             description=data.get("description", ""),
             topics=topics,
             incidents=incidents,
             incident_groups=incident_groups,
+            flows=flows,
         )

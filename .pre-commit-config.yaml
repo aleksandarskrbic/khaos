@@ -1,10 +1,7 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.0
+    rev: v0.14.7
     hooks:
       - id: ruff
         args: [--fix]
       - id: ruff-format
-
-  # Note: mypy disabled in pre-commit due to complex type inference issues
-  # Run manually with: uv run mypy src/
