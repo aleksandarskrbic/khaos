@@ -1,6 +1,7 @@
 """CLI entry point for khaos - Kafka chaos engineering toolkit."""
 
 import asyncio
+from importlib.metadata import version
 from typing import Annotated
 
 import typer
@@ -11,13 +12,12 @@ from khaos.errors import KhaosConnectionError
 from khaos.infrastructure import docker_manager
 from khaos.infrastructure.docker_manager import ClusterMode, get_bootstrap_servers
 
-__version__ = "0.1.0"
 
-
-def version_callback(value: bool) -> None:
-    if value:
-        print(f"khaos {__version__}")
-        raise typer.Exit()
+def get_version() -> str:
+    try:
+        return version("khaos-cli")
+    except Exception:
+        return "dev"
 
 
 app = typer.Typer(
@@ -27,14 +27,21 @@ app = typer.Typer(
 )
 
 
+def version_callback(value: bool) -> None:
+    if value:
+        print(f"khaos {get_version()}")
+        raise typer.Exit()
+
+
 @app.callback()
 def main(
     version: Annotated[
         bool,
-        typer.Option("--version", "-v", callback=version_callback, is_eager=True),
+        typer.Option(
+            "--version", "-v", callback=version_callback, is_eager=True, help="Show version"
+        ),
     ] = False,
 ) -> None:
-    """Kafka traffic generator for testing, learning, and chaos engineering."""
     pass
 
 
