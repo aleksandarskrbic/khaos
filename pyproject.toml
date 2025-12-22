@@ -1,5 +1,5 @@
 [project]
-name = "khaos"
+name = "khaos-cli"
 version = "0.1.0"
 description = "Kafka traffic generator - realistic workloads for testing, learning, and chaos engineering"
 readme = "README.md"
