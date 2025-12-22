@@ -40,9 +40,11 @@ class StringFieldGenerator(FieldGenerator):
     def generate(self) -> str:
         if self.cardinality:
             if len(self._cache) < self.cardinality:
-                value = self._generate_random()
-                self._cache.append(value)
-                return value
+                while True:
+                    value = self._generate_random()
+                    if value not in self._cache:
+                        self._cache.append(value)
+                        return value
             value = self._cache[self._index % self.cardinality]
             self._index += 1
             return value
@@ -71,9 +73,11 @@ class IntFieldGenerator(FieldGenerator):
     def generate(self) -> int:
         if self.cardinality:
             if len(self._cache) < self.cardinality:
-                value = random.randint(self.min_val, self.max_val)
-                self._cache.append(value)
-                return value
+                while True:
+                    value = random.randint(self.min_val, self.max_val)
+                    if value not in self._cache:
+                        self._cache.append(value)
+                        return value
             value = self._cache[self._index % self.cardinality]
             self._index += 1
             return value
