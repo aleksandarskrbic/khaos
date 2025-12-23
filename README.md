@@ -9,6 +9,10 @@
   [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 </div>
 
+<p align="center">
+  <img src="assets/demo.gif" alt="Khaos Demo" width="800">
+</p>
+
 ## Use Cases
 
 - **Learning Stream Processing**: Generate Kafka traffic, connect your Spark/Flink/Kafka Streams app to consume
