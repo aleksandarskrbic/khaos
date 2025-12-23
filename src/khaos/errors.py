@@ -1,22 +1,15 @@
-"""Error handling utilities for user-friendly error messages."""
-
 from confluent_kafka import KafkaException
 
 
 class KhaosConnectionError(Exception):
-    """Raised when connection to Kafka fails."""
-
     pass
 
 
 class KhaosConfigError(Exception):
-    """Raised when configuration is invalid."""
-
     pass
 
 
 def format_kafka_error(e: KafkaException | Exception) -> str:
-    """Convert cryptic librdkafka errors to user-friendly messages."""
     error_str = str(e).lower()
 
     if "brokertransportfailure" in error_str or "all brokers are down" in error_str:

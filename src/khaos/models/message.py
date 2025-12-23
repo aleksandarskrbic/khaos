@@ -1,5 +1,3 @@
-"""Message schema and key distribution models."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,8 +9,6 @@ if TYPE_CHECKING:
 
 
 class KeyDistribution(Enum):
-    """Key generation distribution strategies."""
-
     UNIFORM = "uniform"  # Even distribution across partitions
     ZIPFIAN = "zipfian"  # 80/20 hot key distribution
     SINGLE_KEY = "single_key"  # All messages to one partition
@@ -21,8 +17,6 @@ class KeyDistribution(Enum):
 
 @dataclass
 class MessageSchema:
-    """Schema for generated messages."""
-
     min_size_bytes: int = 100
     max_size_bytes: int = 1000
     key_distribution: KeyDistribution = KeyDistribution.UNIFORM

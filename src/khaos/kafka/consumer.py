@@ -1,5 +1,3 @@
-"""Kafka Consumer wrapper with processing delay simulation."""
-
 from __future__ import annotations
 
 import asyncio
@@ -19,8 +17,6 @@ if TYPE_CHECKING:
 
 @dataclass
 class ConsumerStats:
-    """Statistics for consumer."""
-
     messages_consumed: int = 0
     bytes_consumed: int = 0
     errors: int = 0
@@ -37,8 +33,6 @@ class ConsumerStats:
 
 
 class ConsumerSimulator:
-    """Kafka consumer with processing delay simulation."""
-
     def __init__(
         self,
         bootstrap_servers: str,
@@ -84,16 +78,13 @@ class ConsumerSimulator:
             )
 
     def _poll_sync(self, timeout: float = 0.1):
-        """Synchronous poll - runs in thread pool."""
         return self._consumer.poll(timeout)
 
     def stop(self) -> None:
-        """Signal consumer to stop."""
         self._stop_event.set()
 
     @property
     def should_stop(self) -> bool:
-        """Check if consumer should stop."""
         return self._stop_event.is_set()
 
     async def consume_loop(
@@ -101,7 +92,6 @@ class ConsumerSimulator:
         duration_seconds: int = 60,
         on_message=None,
     ) -> None:
-        """Consume messages in a loop using thread pool for blocking poll()."""
         start_time = time.time()
         loop = asyncio.get_event_loop()
         executor = get_executor()
@@ -136,12 +126,10 @@ class ConsumerSimulator:
             self.close()
 
     def close(self) -> None:
-        """Close the consumer."""
         try:
             self._consumer.close()
         except Exception:
             pass
 
     def get_stats(self) -> ConsumerStats:
-        """Get current statistics."""
         return self.stats

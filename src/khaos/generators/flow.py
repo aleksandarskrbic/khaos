@@ -1,5 +1,3 @@
-"""Flow producer for correlated events across topics."""
-
 from __future__ import annotations
 
 import asyncio
@@ -23,8 +21,6 @@ if TYPE_CHECKING:
 
 @dataclass
 class FlowStats:
-    """Statistics for flow producer."""
-
     flows_completed: int = 0
     messages_sent: int = 0
     messages_per_topic: dict[str, int] = field(default_factory=dict)
@@ -50,8 +46,6 @@ class FlowStats:
 
 
 class FlowProducer:
-    """Produces correlated events across multiple topics."""
-
     def __init__(
         self,
         flow: FlowConfig,
@@ -96,14 +90,12 @@ class FlowProducer:
             self._step_generators.append(generators)
 
     def _delivery_callback(self, err, msg) -> None:
-        """Callback for message delivery confirmation."""
         if err:
             self.stats.record_error()
         else:
             self.stats.record_message(msg.topic())
 
     def _produce_sync(self, topic: str, value: bytes, key: bytes | None = None) -> None:
-        """Synchronous produce - runs in thread pool."""
         kwargs = {
             "topic": topic,
             "value": value,
@@ -116,7 +108,6 @@ class FlowProducer:
         self._producer.poll(0)
 
     def _generate_correlation_id(self, first_step_data: dict[str, Any] | None = None) -> str:
-        """Generate correlation ID based on configuration."""
         if self.flow.correlation.type == "field_ref" and first_step_data:
             field_name = self.flow.correlation.field
             if field_name and field_name in first_step_data:
@@ -129,7 +120,6 @@ class FlowProducer:
         step: FlowStep,
         correlation_id: str,
     ) -> tuple[bytes, dict[str, Any]]:
-        """Generate message for a step, returns (bytes, raw_dict)."""
         message: dict[str, Any] = {
             "correlation_id": correlation_id,
             "event_type": step.event_type,
@@ -141,7 +131,6 @@ class FlowProducer:
         return json.dumps(message).encode(), message
 
     async def produce_flow_instance(self) -> None:
-        """Execute one flow instance (all steps with delays)."""
         loop = asyncio.get_event_loop()
         executor = get_executor()
 
@@ -174,7 +163,6 @@ class FlowProducer:
         self.stats.record_flow_complete()
 
     async def run_at_rate(self, duration_seconds: int = 0) -> None:
-        """Run flow instances at configured rate."""
         rate = self.flow.rate
         interval = 1.0 / rate if rate > 0 else 0
 
@@ -203,19 +191,15 @@ class FlowProducer:
         self.flush()
 
     def flush(self, timeout: float = 10.0) -> int:
-        """Flush pending messages."""
         result: int = self._producer.flush(timeout)
         return result
 
     def stop(self) -> None:
-        """Signal producer to stop."""
         self._stop_event.set()
 
     @property
     def should_stop(self) -> bool:
-        """Check if producer should stop."""
         return self._stop_event.is_set()
 
     def get_stats(self) -> FlowStats:
-        """Get current statistics."""
         return self.stats

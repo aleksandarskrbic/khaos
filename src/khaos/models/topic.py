@@ -1,12 +1,8 @@
-"""Topic configuration model."""
-
 from dataclasses import dataclass
 
 
 @dataclass
 class TopicConfig:
-    """Configuration for a Kafka topic."""
-
     name: str
     partitions: int = 6
     replication_factor: int = 3

@@ -1,5 +1,3 @@
-"""Tests for key generators."""
-
 from collections import Counter
 
 from khaos.generators.key import (
@@ -13,10 +11,7 @@ from khaos.models.message import KeyDistribution, MessageSchema
 
 
 class TestUniformKeyGenerator:
-    """Tests for UniformKeyGenerator."""
-
     def test_respects_cardinality(self):
-        """Test that only keys within cardinality are generated."""
         cardinality = 5
         gen = UniformKeyGenerator(cardinality=cardinality)
 
@@ -28,7 +23,6 @@ class TestUniformKeyGenerator:
         assert generated_keys.issubset(expected_keys)
 
     def test_roughly_uniform_distribution(self):
-        """Test that distribution is roughly uniform."""
         cardinality = 5
         gen = UniformKeyGenerator(cardinality=cardinality)
 
@@ -44,10 +38,7 @@ class TestUniformKeyGenerator:
 
 
 class TestZipfianKeyGenerator:
-    """Tests for ZipfianKeyGenerator."""
-
     def test_respects_cardinality(self):
-        """Test that only keys within cardinality are generated."""
         cardinality = 10
         gen = ZipfianKeyGenerator(cardinality=cardinality)
 
@@ -59,7 +50,6 @@ class TestZipfianKeyGenerator:
         assert generated_keys.issubset(expected_keys)
 
     def test_skewed_distribution(self):
-        """Test that distribution is skewed toward lower-indexed keys."""
         cardinality = 10
         gen = ZipfianKeyGenerator(cardinality=cardinality, skew=1.5)
 
@@ -73,7 +63,6 @@ class TestZipfianKeyGenerator:
         assert key_0_count > key_9_count * 5
 
     def test_higher_skew_more_concentrated(self):
-        """Test that higher skew leads to more concentrated distribution."""
         cardinality = 10
 
         gen_low_skew = ZipfianKeyGenerator(cardinality=cardinality, skew=0.5)
@@ -93,10 +82,7 @@ class TestZipfianKeyGenerator:
 
 
 class TestSingleKeyGenerator:
-    """Tests for SingleKeyGenerator."""
-
     def test_always_same_key(self):
-        """Test that always returns the same key."""
         gen = SingleKeyGenerator()
 
         first_key = gen.generate()
@@ -104,16 +90,12 @@ class TestSingleKeyGenerator:
             assert gen.generate() == first_key
 
     def test_custom_key(self):
-        """Test custom key value."""
         gen = SingleKeyGenerator(key="my-custom-key")
         assert gen.generate() == b"my-custom-key"
 
 
 class TestRoundRobinKeyGenerator:
-    """Tests for RoundRobinKeyGenerator."""
-
     def test_sequential_order(self):
-        """Test that keys are generated in sequential order."""
         cardinality = 5
         gen = RoundRobinKeyGenerator(cardinality=cardinality)
 
@@ -122,7 +104,6 @@ class TestRoundRobinKeyGenerator:
             assert gen.generate() == expected
 
     def test_wraps_around(self):
-        """Test that generator wraps around after cardinality."""
         cardinality = 3
         gen = RoundRobinKeyGenerator(cardinality=cardinality)
 
@@ -135,7 +116,6 @@ class TestRoundRobinKeyGenerator:
         assert gen.generate() == b"key-0"
 
     def test_perfectly_even_distribution(self):
-        """Test that distribution is perfectly even over full cycles."""
         cardinality = 4
         gen = RoundRobinKeyGenerator(cardinality=cardinality)
 
@@ -150,10 +130,7 @@ class TestRoundRobinKeyGenerator:
 
 
 class TestCreateKeyGenerator:
-    """Tests for create_key_generator factory function."""
-
     def test_creates_correct_generator_types(self):
-        """Test that factory creates correct generator types."""
         test_cases = [
             (KeyDistribution.UNIFORM, UniformKeyGenerator),
             (KeyDistribution.ZIPFIAN, ZipfianKeyGenerator),
@@ -167,7 +144,6 @@ class TestCreateKeyGenerator:
             assert isinstance(gen, expected_type)
 
     def test_passes_cardinality(self):
-        """Test that cardinality is passed correctly."""
         schema = MessageSchema(
             key_distribution=KeyDistribution.UNIFORM,
             key_cardinality=50,

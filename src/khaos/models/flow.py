@@ -1,5 +1,3 @@
-"""Flow models for correlated events across topics."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,14 +7,11 @@ from khaos.models.schema import FieldSchema
 
 @dataclass
 class CorrelationConfig:
-    """Configuration for correlation ID generation."""
-
     type: str  # "uuid" or "field_ref"
     field: str | None = None  # field name if type is "field_ref"
 
     @classmethod
     def from_dict(cls, data: dict) -> CorrelationConfig:
-        """Create CorrelationConfig from dictionary."""
         return cls(
             type=data.get("type", "uuid"),
             field=data.get("field"),
@@ -25,15 +20,12 @@ class CorrelationConfig:
 
 @dataclass
 class StepConsumerConfig:
-    """Optional consumer configuration for a flow step."""
-
     groups: int = 1  # number of consumer groups
     per_group: int = 1  # consumers per group
     delay_ms: int = 0  # processing delay per message
 
     @classmethod
     def from_dict(cls, data: dict) -> StepConsumerConfig:
-        """Create StepConsumerConfig from dictionary."""
         return cls(
             groups=data.get("groups", 1),
             per_group=data.get("per_group", 1),
@@ -43,8 +35,6 @@ class StepConsumerConfig:
 
 @dataclass
 class FlowStep:
-    """A single step in a flow (produces to one topic)."""
-
     topic: str
     event_type: str
     delay_ms: int = 0  # delay after previous step
@@ -53,7 +43,6 @@ class FlowStep:
 
     @classmethod
     def from_dict(cls, data: dict) -> FlowStep:
-        """Create FlowStep from dictionary."""
         fields_data = data.get("fields")
         field_schemas = None
         if fields_data:
@@ -75,8 +64,6 @@ class FlowStep:
 
 @dataclass
 class FlowConfig:
-    """Configuration for a correlated event flow."""
-
     name: str
     rate: float  # flow instances per second
     steps: list[FlowStep] = field(default_factory=list)
@@ -84,7 +71,6 @@ class FlowConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> FlowConfig:
-        """Create FlowConfig from dictionary."""
         steps = [FlowStep.from_dict(s) for s in data.get("steps", [])]
 
         correlation_data = data.get("correlation", {"type": "uuid"})
@@ -98,5 +84,4 @@ class FlowConfig:
         )
 
     def get_all_topics(self) -> list[str]:
-        """Get all unique topics used in this flow."""
         return list({step.topic for step in self.steps})

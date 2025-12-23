@@ -1,5 +1,3 @@
-"""Scenario validator - validates YAML scenario definitions before execution."""
-
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -12,16 +10,12 @@ from khaos.schemas.validator import SchemaValidator
 
 @dataclass
 class ValidationError:
-    """A single validation error."""
-
     path: str  # e.g., "topics[0].partitions"
     message: str
 
 
 @dataclass
 class ValidationResult:
-    """Result of validating a scenario."""
-
     valid: bool
     errors: list[ValidationError] = field(default_factory=list)
     warnings: list[ValidationError] = field(default_factory=list)
@@ -41,7 +35,6 @@ VALID_BROKERS = {"kafka-1", "kafka-2", "kafka-3"}
 
 
 def validate_scenario_file(file_path: Path) -> ValidationResult:
-    """Validate a scenario YAML file."""
     result = ValidationResult(valid=True)
 
     if not file_path.exists():
@@ -101,7 +94,6 @@ def validate_scenario_file(file_path: Path) -> ValidationResult:
 
 
 def validate_topic(topic: dict, path: str, result: ValidationResult) -> None:
-    """Validate a topic configuration."""
     if not isinstance(topic, dict):
         result.add_error(path, "Topic must be an object/dict")
         return
@@ -175,7 +167,6 @@ def validate_topic(topic: dict, path: str, result: ValidationResult) -> None:
 
 
 def validate_message_schema(schema: dict, path: str, result: ValidationResult) -> None:
-    """Validate message schema configuration."""
     if not isinstance(schema, dict):
         result.add_error(path, "message_schema must be an object/dict")
         return
@@ -221,7 +212,6 @@ def validate_message_schema(schema: dict, path: str, result: ValidationResult) -
 
 
 def validate_producer_config(config: dict, path: str, result: ValidationResult) -> None:
-    """Validate producer configuration."""
     if not isinstance(config, dict):
         result.add_error(path, "producer_config must be an object/dict")
         return
@@ -256,7 +246,6 @@ def validate_producer_config(config: dict, path: str, result: ValidationResult) 
 
 
 def validate_incident(incident: dict, path: str, result: ValidationResult) -> None:
-    """Validate an incident configuration."""
     if not isinstance(incident, dict):
         result.add_error(path, "Incident must be an object/dict")
         return
@@ -332,7 +321,6 @@ def validate_incident(incident: dict, path: str, result: ValidationResult) -> No
 
 
 def validate_incident_group(group: dict, path: str, result: ValidationResult) -> None:
-    """Validate an incident group configuration."""
     if not isinstance(group, dict):
         result.add_error(path, "Incident group must be an object/dict")
         return
@@ -374,7 +362,6 @@ def validate_incident_group(group: dict, path: str, result: ValidationResult) ->
 
 
 def validate_group_incident(incident: dict, path: str, result: ValidationResult) -> None:
-    """Validate an incident within a group (uses at_seconds relative to cycle start)."""
     if not isinstance(incident, dict):
         result.add_error(path, "Incident must be an object/dict")
         return

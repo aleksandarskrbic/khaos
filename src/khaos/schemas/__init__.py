@@ -1,1 +1,0 @@
-"""Schema validation and utilities."""

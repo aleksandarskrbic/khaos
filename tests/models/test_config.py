@@ -1,15 +1,10 @@
-"""Tests for configuration models."""
-
 import pytest
 
 from khaos.models.config import ConsumerConfig, ProducerConfig
 
 
 class TestProducerConfig:
-    """Tests for ProducerConfig dataclass."""
-
     def test_default_values(self):
-        """Test default values."""
         config = ProducerConfig()
 
         assert config.messages_per_second == 1000.0
@@ -19,7 +14,6 @@ class TestProducerConfig:
         assert config.compression_type == "none"
 
     def test_custom_values(self):
-        """Test custom values."""
         config = ProducerConfig(
             messages_per_second=500.0,
             batch_size=32768,
@@ -35,33 +29,28 @@ class TestProducerConfig:
         assert config.compression_type == "lz4"
 
     def test_messages_per_second_must_be_positive(self):
-        """Test that messages_per_second must be positive."""
         with pytest.raises(ValueError) as exc_info:
             ProducerConfig(messages_per_second=0)
 
         assert "messages_per_second must be positive" in str(exc_info.value)
 
     def test_messages_per_second_negative(self):
-        """Test that negative messages_per_second raises error."""
         with pytest.raises(ValueError):
             ProducerConfig(messages_per_second=-100)
 
     def test_invalid_acks(self):
-        """Test invalid acks value."""
         with pytest.raises(ValueError) as exc_info:
             ProducerConfig(acks="2")
 
         assert "acks must be" in str(exc_info.value)
 
     def test_invalid_compression_type(self):
-        """Test invalid compression_type."""
         with pytest.raises(ValueError) as exc_info:
             ProducerConfig(compression_type="invalid")
 
         assert "compression_type" in str(exc_info.value)
 
     def test_all_valid_combinations(self):
-        """Test various valid combinations."""
         valid_acks = ["0", "1", "all"]
         valid_compression = ["none", "gzip", "snappy", "lz4", "zstd"]
 
@@ -73,10 +62,7 @@ class TestProducerConfig:
 
 
 class TestConsumerConfig:
-    """Tests for ConsumerConfig dataclass."""
-
     def test_default_values(self):
-        """Test default values."""
         config = ConsumerConfig(group_id="test-group")
 
         assert config.processing_delay_ms == 0
@@ -85,7 +71,6 @@ class TestConsumerConfig:
         assert config.session_timeout_ms == 45000
 
     def test_custom_values(self):
-        """Test custom values."""
         config = ConsumerConfig(
             group_id="custom-group",
             processing_delay_ms=100,
@@ -101,14 +86,12 @@ class TestConsumerConfig:
         assert config.session_timeout_ms == 60000
 
     def test_processing_delay_cannot_be_negative(self):
-        """Test that processing_delay_ms cannot be negative."""
         with pytest.raises(ValueError) as exc_info:
             ConsumerConfig(group_id="test", processing_delay_ms=-1)
 
         assert "processing_delay_ms cannot be negative" in str(exc_info.value)
 
     def test_invalid_auto_offset_reset(self):
-        """Test invalid auto_offset_reset value."""
         with pytest.raises(ValueError) as exc_info:
             ConsumerConfig(group_id="test", auto_offset_reset="none")
 

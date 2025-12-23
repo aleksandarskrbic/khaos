@@ -1,5 +1,3 @@
-"""Field schema models for structured message generation."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,8 +5,6 @@ from dataclasses import dataclass
 
 @dataclass
 class FieldSchema:
-    """Schema definition for a single field in a message."""
-
     name: str
     type: str  # string, int, float, boolean, uuid, timestamp, enum, object, array
 
@@ -40,7 +36,6 @@ class FieldSchema:
 
     @classmethod
     def from_dict(cls, data: dict) -> FieldSchema:
-        """Create FieldSchema from dictionary (YAML parsing)."""
         # Handle nested fields recursively
         nested_fields = None
         if data.get("fields"):

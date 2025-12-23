@@ -1,15 +1,10 @@
-"""Tests for message models."""
-
 import pytest
 
 from khaos.models.message import KeyDistribution, MessageSchema
 
 
 class TestMessageSchema:
-    """Tests for MessageSchema dataclass."""
-
     def test_default_values(self):
-        """Test default values."""
         schema = MessageSchema()
 
         assert schema.min_size_bytes == 100
@@ -20,7 +15,6 @@ class TestMessageSchema:
         assert schema.include_sequence is True
 
     def test_custom_values(self):
-        """Test custom values."""
         schema = MessageSchema(
             min_size_bytes=50,
             max_size_bytes=500,
@@ -38,28 +32,24 @@ class TestMessageSchema:
         assert schema.include_sequence is False
 
     def test_min_size_must_be_positive(self):
-        """Test that min_size_bytes must be at least 1."""
         with pytest.raises(ValueError) as exc_info:
             MessageSchema(min_size_bytes=0)
 
         assert "min_size_bytes must be at least 1" in str(exc_info.value)
 
     def test_max_size_must_be_gte_min(self):
-        """Test that max_size_bytes must be >= min_size_bytes."""
         with pytest.raises(ValueError) as exc_info:
             MessageSchema(min_size_bytes=100, max_size_bytes=50)
 
         assert "max_size_bytes must be >= min_size_bytes" in str(exc_info.value)
 
     def test_key_cardinality_must_be_positive(self):
-        """Test that key_cardinality must be at least 1."""
         with pytest.raises(ValueError) as exc_info:
             MessageSchema(key_cardinality=0)
 
         assert "key_cardinality must be at least 1" in str(exc_info.value)
 
     def test_all_key_distributions_valid(self):
-        """Test that all key distributions can be used."""
         for dist in KeyDistribution:
             schema = MessageSchema(key_distribution=dist)
             assert schema.key_distribution == dist

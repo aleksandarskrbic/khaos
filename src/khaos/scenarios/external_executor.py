@@ -1,5 +1,3 @@
-"""Executor for external Kafka clusters - filters infrastructure incidents."""
-
 from __future__ import annotations
 
 from rich.console import Console
@@ -17,14 +15,6 @@ console = Console()
 
 
 class ExternalScenarioExecutor(ScenarioExecutor):
-    """Executor for external Kafka clusters.
-
-    Differences from ScenarioExecutor:
-    - Filters out infrastructure incidents (stop_broker, start_broker)
-    - Supports security configuration for authenticated clusters
-    - Optionally skips topic creation
-    """
-
     def __init__(
         self,
         cluster_config: ClusterConfig,
@@ -52,7 +42,6 @@ class ExternalScenarioExecutor(ScenarioExecutor):
         self,
         scenarios: list[Scenario],
     ) -> list[Scenario]:
-        """Remove infrastructure incidents and warn user."""
         filtered = []
         skipped_count = 0
 
@@ -109,7 +98,6 @@ class ExternalScenarioExecutor(ScenarioExecutor):
         return filtered
 
     def _create_producers_for_topic(self, topic):
-        """Override to inject cluster_config into producers."""
         producers = []
         config = ProducerConfig(
             messages_per_second=topic.producer_rate,
@@ -135,7 +123,6 @@ class ExternalScenarioExecutor(ScenarioExecutor):
         return producers
 
     def _create_consumers_for_topic(self, topic):
-        """Override to inject cluster_config into consumers."""
         consumers = []
 
         if topic.name not in self._consumers_by_topic:
@@ -161,7 +148,6 @@ class ExternalScenarioExecutor(ScenarioExecutor):
         return consumers
 
     async def setup(self) -> None:
-        """Create topics unless skip_topic_creation is set."""
         if self.skip_topic_creation:
             console.print("[dim]Skipping topic creation (--skip-topic-creation)[/dim]")
             return

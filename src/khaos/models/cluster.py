@@ -1,12 +1,8 @@
-"""Kafka cluster connection configuration."""
-
 from dataclasses import dataclass
 from enum import Enum
 
 
 class SecurityProtocol(str, Enum):
-    """Kafka security protocols."""
-
     PLAINTEXT = "PLAINTEXT"
     SSL = "SSL"
     SASL_PLAINTEXT = "SASL_PLAINTEXT"
@@ -14,8 +10,6 @@ class SecurityProtocol(str, Enum):
 
 
 class SaslMechanism(str, Enum):
-    """SASL mechanisms supported."""
-
     PLAIN = "PLAIN"
     SCRAM_SHA_256 = "SCRAM-SHA-256"
     SCRAM_SHA_512 = "SCRAM-SHA-512"
@@ -23,11 +17,6 @@ class SaslMechanism(str, Enum):
 
 @dataclass
 class ClusterConfig:
-    """Configuration for connecting to a Kafka cluster.
-
-    Supports: PLAINTEXT, SSL (TLS), SASL/PLAIN, SASL/SCRAM, mTLS
-    """
-
     bootstrap_servers: str
 
     # Security protocol
@@ -45,7 +34,6 @@ class ClusterConfig:
     ssl_key_password: str | None = None
 
     def __post_init__(self):
-        """Validate configuration consistency."""
         # SASL validation
         if self.security_protocol in (
             SecurityProtocol.SASL_PLAINTEXT,
@@ -63,7 +51,6 @@ class ClusterConfig:
             raise ValueError("ssl_cert_location required when ssl_key_location is provided")
 
     def to_kafka_config(self) -> dict:
-        """Convert to confluent-kafka configuration dictionary."""
         config = {
             "bootstrap.servers": self.bootstrap_servers,
             "security.protocol": self.security_protocol.value,

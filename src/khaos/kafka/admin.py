@@ -1,5 +1,3 @@
-"""Kafka AdminClient wrapper for topic management."""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -14,8 +12,6 @@ if TYPE_CHECKING:
 
 
 class KafkaAdmin:
-    """Wrapper around Kafka AdminClient for topic management."""
-
     def __init__(
         self,
         bootstrap_servers: str,
@@ -46,7 +42,6 @@ class KafkaAdmin:
             )
 
     def create_topic(self, config: TopicConfig) -> None:
-        """Create a topic if it doesn't exist."""
         topic = NewTopic(
             config.name,
             num_partitions=config.partitions,
@@ -67,7 +62,6 @@ class KafkaAdmin:
                     raise
 
     def delete_topic(self, topic_name: str) -> None:
-        """Delete a topic."""
         futures = self._client.delete_topics([topic_name])
 
         for _name, future in futures.items():
@@ -78,18 +72,15 @@ class KafkaAdmin:
                     raise
 
     def topic_exists(self, topic_name: str) -> bool:
-        """Check if a topic exists."""
         metadata = self._client.list_topics(timeout=10)
         return topic_name in metadata.topics
 
     def get_topic_partitions(self, topic_name: str) -> int:
-        """Get the number of partitions for a topic."""
         metadata = self._client.list_topics(timeout=10)
         if topic_name not in metadata.topics:
             raise ValueError(f"Topic {topic_name} does not exist")
         return len(metadata.topics[topic_name].partitions)
 
     def list_topics(self) -> list[str]:
-        """List all topics."""
         metadata = self._client.list_topics(timeout=10)
         return [name for name in metadata.topics if not name.startswith("_")]

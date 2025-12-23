@@ -1,5 +1,3 @@
-"""Kafka Producer wrapper with rate limiting."""
-
 from __future__ import annotations
 
 import asyncio
@@ -20,8 +18,6 @@ if TYPE_CHECKING:
 
 @dataclass
 class ProducerStats:
-    """Statistics for producer."""
-
     messages_sent: int = 0
     bytes_sent: int = 0
     errors: int = 0
@@ -38,8 +34,6 @@ class ProducerStats:
 
 
 class ProducerSimulator:
-    """Kafka producer with rate limiting and statistics tracking."""
-
     def __init__(
         self,
         bootstrap_servers: str,
@@ -77,7 +71,6 @@ class ProducerSimulator:
             )
 
     def _delivery_callback(self, err, msg) -> None:
-        """Callback for message delivery confirmation."""
         if err:
             self.stats.record_error()
         else:
@@ -89,7 +82,6 @@ class ProducerSimulator:
         value: bytes,
         key: bytes | None = None,
     ) -> None:
-        """Synchronous produce - runs in thread pool."""
         kwargs = {
             "topic": topic,
             "value": value,
@@ -102,17 +94,14 @@ class ProducerSimulator:
         self._producer.poll(0)
 
     def flush(self, timeout: float = 10.0) -> int:
-        """Flush pending messages."""
         result: int = self._producer.flush(timeout)
         return result
 
     def stop(self) -> None:
-        """Signal producer to stop."""
         self._stop_event.set()
 
     @property
     def should_stop(self) -> bool:
-        """Check if producer should stop."""
         return self._stop_event.is_set()
 
     async def produce_at_rate(
@@ -122,7 +111,6 @@ class ProducerSimulator:
         key_generator=None,
         duration_seconds: int = 60,
     ) -> None:
-        """Produce messages at the configured rate using thread pool."""
         messages_per_second = self.config.messages_per_second
         interval = 1.0 / messages_per_second if messages_per_second > 0 else 0
 
@@ -152,14 +140,11 @@ class ProducerSimulator:
 
     @property
     def messages_per_second(self) -> float:
-        """Get current messages per second rate."""
         return self.config.messages_per_second
 
     @messages_per_second.setter
     def messages_per_second(self, value: float) -> None:
-        """Set messages per second rate (for dynamic rate changes)."""
         self.config.messages_per_second = value
 
     def get_stats(self) -> ProducerStats:
-        """Get current statistics."""
         return self.stats

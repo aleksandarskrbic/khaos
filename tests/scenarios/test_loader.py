@@ -1,5 +1,3 @@
-"""Tests for scenario loader."""
-
 from pathlib import Path
 
 import pytest
@@ -15,7 +13,6 @@ from khaos.scenarios.scenario import Scenario
 
 
 def create_temp_scenario(data: dict, dir_path: Path, name: str = "test.yaml") -> Path:
-    """Create a temporary scenario YAML file."""
     file_path = dir_path / name
     with file_path.open("w") as f:
         yaml.dump(data, f)
@@ -23,10 +20,7 @@ def create_temp_scenario(data: dict, dir_path: Path, name: str = "test.yaml") ->
 
 
 class TestLoadScenario:
-    """Tests for load_scenario function."""
-
     def test_loads_valid_scenario(self, tmp_path):
-        """Test loading a valid scenario file."""
         data = {
             "name": "test-scenario",
             "description": "A test scenario",
@@ -42,7 +36,6 @@ class TestLoadScenario:
         assert len(scenario.topics) == 1
 
     def test_loads_scenario_with_incidents(self, tmp_path):
-        """Test loading scenario with incidents."""
         data = {
             "name": "incident-scenario",
             "topics": [{"name": "events"}],
@@ -56,7 +49,6 @@ class TestLoadScenario:
         assert scenario.incidents[0].type == "stop_broker"
 
     def test_loads_scenario_with_incident_groups(self, tmp_path):
-        """Test loading scenario with incident groups."""
         data = {
             "name": "group-scenario",
             "topics": [{"name": "events"}],
@@ -80,12 +72,10 @@ class TestLoadScenario:
         assert scenario.incident_groups[0].repeat == 3
 
     def test_file_not_found(self):
-        """Test error when file doesn't exist."""
         with pytest.raises(FileNotFoundError):
             load_scenario(Path("/nonexistent/path.yaml"))
 
     def test_invalid_yaml(self, tmp_path):
-        """Test error on invalid YAML."""
         file_path = tmp_path / "invalid.yaml"
         file_path.write_text("invalid: yaml: content: [")
 
@@ -94,10 +84,7 @@ class TestLoadScenario:
 
 
 class TestDiscoverScenarios:
-    """Tests for discover_scenarios function."""
-
     def test_discovers_scenarios_in_directory(self, tmp_path):
-        """Test discovering scenarios in directory."""
         create_temp_scenario(
             {"name": "scenario-a", "topics": [{"name": "t1"}]},
             tmp_path,
@@ -116,7 +103,6 @@ class TestDiscoverScenarios:
         assert "scenario-b" in scenarios
 
     def test_discovers_nested_scenarios(self, tmp_path):
-        """Test discovering scenarios in nested directories."""
         subdir = tmp_path / "traffic"
         subdir.mkdir()
 
@@ -138,7 +124,6 @@ class TestDiscoverScenarios:
         assert "nested-scenario" in scenarios
 
     def test_skips_invalid_yaml(self, tmp_path):
-        """Test that invalid YAML files are skipped."""
         create_temp_scenario(
             {"name": "valid", "topics": [{"name": "t1"}]},
             tmp_path,
@@ -155,10 +140,7 @@ class TestDiscoverScenarios:
 
 
 class TestGetScenario:
-    """Tests for get_scenario function."""
-
     def test_gets_existing_scenario(self, tmp_path):
-        """Test getting an existing scenario."""
         create_temp_scenario(
             {"name": "my-scenario", "description": "Test", "topics": [{"name": "t1"}]},
             tmp_path,
@@ -170,7 +152,6 @@ class TestGetScenario:
         assert scenario.description == "Test"
 
     def test_raises_on_unknown_scenario(self, tmp_path):
-        """Test error when scenario doesn't exist."""
         create_temp_scenario(
             {"name": "existing", "topics": [{"name": "t1"}]},
             tmp_path,
@@ -183,7 +164,6 @@ class TestGetScenario:
         assert "nonexistent" in str(exc_info.value)
 
     def test_error_message_includes_available_scenarios(self, tmp_path):
-        """Test that error message includes available scenarios."""
         create_temp_scenario(
             {"name": "available-one", "topics": [{"name": "t1"}]},
             tmp_path,
@@ -204,10 +184,7 @@ class TestGetScenario:
 
 
 class TestListScenarios:
-    """Tests for list_scenarios function."""
-
     def test_lists_scenarios_with_descriptions(self, tmp_path):
-        """Test listing scenarios with their descriptions."""
         create_temp_scenario(
             {"name": "scenario-a", "description": "Description A", "topics": [{"name": "t1"}]},
             tmp_path,
@@ -227,7 +204,6 @@ class TestListScenarios:
         }
 
     def test_empty_description_defaults_to_empty_string(self, tmp_path):
-        """Test scenario without description."""
         create_temp_scenario(
             {"name": "no-desc", "topics": [{"name": "t1"}]},
             tmp_path,

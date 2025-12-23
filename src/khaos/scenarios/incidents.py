@@ -1,5 +1,3 @@
-"""Incident primitives - executable actions triggered during scenarios."""
-
 import asyncio
 import random
 from collections.abc import Awaitable, Callable
@@ -30,8 +28,6 @@ CLIENT_INCIDENTS = {
 
 @dataclass
 class IncidentContext:
-    """Context passed to incident handlers."""
-
     executor: "ScenarioExecutor"
     bootstrap_servers: str
 
@@ -41,7 +37,6 @@ async def increase_consumer_delay(
     delay_ms: int,
     **kwargs,
 ) -> None:
-    """Increase processing delay on all consumers (simulate backpressure)."""
     console.print(f"\n[bold red]>>> INCIDENT: Increasing consumer delay to {delay_ms}ms[/bold red]")
     for consumer in ctx.executor.consumers:
         consumer.processing_delay_ms = delay_ms
@@ -51,7 +46,6 @@ async def rebalance_consumer(
     ctx: IncidentContext,
     **kwargs,
 ) -> None:
-    """Trigger a consumer rebalance by closing and recreating a random consumer."""
     if not ctx.executor.consumers:
         return
 
@@ -89,7 +83,6 @@ async def stop_broker(
     broker: str,
     **kwargs,
 ) -> None:
-    """Stop a Kafka broker."""
     console.print(f"\n[bold red]>>> INCIDENT: Stopping {broker}[/bold red]")
     console.print("[yellow]ISR will shrink, leadership will change[/yellow]\n")
 
@@ -102,7 +95,6 @@ async def start_broker(
     broker: str,
     **kwargs,
 ) -> None:
-    """Start a Kafka broker."""
     console.print(f"\n[bold green]>>> RECOVERY: Starting {broker}[/bold green]")
     console.print("[yellow]ISR will expand back[/yellow]\n")
 
@@ -115,7 +107,6 @@ async def change_producer_rate(
     rate: float,
     **kwargs,
 ) -> None:
-    """Change producer rate (traffic spike/drop)."""
     console.print(
         f"\n[bold yellow]>>> INCIDENT: Changing producer rate to {rate} msg/s[/bold yellow]"
     )
@@ -128,7 +119,6 @@ async def pause_consumer(
     duration_seconds: int,
     **kwargs,
 ) -> None:
-    """Pause all consumers for a duration (simulate GC pause)."""
     console.print(f"\n[bold red]>>> INCIDENT: Pausing consumers {duration_seconds}s[/bold red]")
 
     for consumer in ctx.executor.consumers:

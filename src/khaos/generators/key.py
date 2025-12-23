@@ -1,5 +1,3 @@
-"""Key generation strategies."""
-
 import random
 from abc import ABC, abstractmethod
 
@@ -7,17 +5,12 @@ from khaos.models.message import KeyDistribution, MessageSchema
 
 
 class KeyGenerator(ABC):
-    """Abstract base class for key generators."""
-
     @abstractmethod
     def generate(self) -> bytes:
-        """Generate a key."""
         pass
 
 
 class UniformKeyGenerator(KeyGenerator):
-    """Generate keys with uniform distribution."""
-
     def __init__(self, cardinality: int):
         self.cardinality = cardinality
         self._keys = [f"key-{i}".encode() for i in range(cardinality)]
@@ -27,12 +20,6 @@ class UniformKeyGenerator(KeyGenerator):
 
 
 class ZipfianKeyGenerator(KeyGenerator):
-    """Generate keys with Zipfian (power-law) distribution.
-
-    This creates a "hot key" pattern where a small number of keys
-    receive the majority of traffic.
-    """
-
     def __init__(self, cardinality: int, skew: float = 1.5):
         self.cardinality = cardinality
         self.skew = skew
@@ -47,8 +34,6 @@ class ZipfianKeyGenerator(KeyGenerator):
 
 
 class SingleKeyGenerator(KeyGenerator):
-    """Generate the same key for all messages (hot partition)."""
-
     def __init__(self, key: str = "hot-key"):
         self._key = key.encode()
 
@@ -57,8 +42,6 @@ class SingleKeyGenerator(KeyGenerator):
 
 
 class RoundRobinKeyGenerator(KeyGenerator):
-    """Generate keys in round-robin fashion."""
-
     def __init__(self, cardinality: int):
         self.cardinality = cardinality
         self._keys = [f"key-{i}".encode() for i in range(cardinality)]
@@ -71,7 +54,6 @@ class RoundRobinKeyGenerator(KeyGenerator):
 
 
 def create_key_generator(schema: MessageSchema) -> KeyGenerator:
-    """Factory function to create key generator based on schema."""
     if schema.key_distribution == KeyDistribution.UNIFORM:
         return UniformKeyGenerator(schema.key_cardinality)
     elif schema.key_distribution == KeyDistribution.ZIPFIAN:

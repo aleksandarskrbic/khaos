@@ -1,5 +1,3 @@
-"""Docker management for Kafka cluster."""
-
 import subprocess
 import time
 from enum import Enum
@@ -15,21 +13,17 @@ _active_compose_file: Path | None = None
 
 
 class ClusterMode(str, Enum):
-    """Kafka cluster deployment mode."""
-
     KRAFT = "kraft"
     ZOOKEEPER = "zookeeper"
 
 
 def get_compose_file(mode: ClusterMode) -> Path:
-    """Get the docker-compose file path for the given mode."""
     if mode == ClusterMode.KRAFT:
         return DOCKER_DIR / "docker-compose.kraft.yml"
     return DOCKER_DIR / "docker-compose.zk.yml"
 
 
 def _get_active_compose_file() -> Path | None:
-    """Get the currently active compose file by checking running containers."""
     global _active_compose_file
 
     if _active_compose_file is not None:
@@ -59,23 +53,16 @@ def _get_active_compose_file() -> Path | None:
 
 
 def _set_active_compose_file(compose_file: Path) -> None:
-    """Set the active compose file."""
     global _active_compose_file
     _active_compose_file = compose_file
 
 
 def _clear_active_compose_file() -> None:
-    """Clear the active compose file cache."""
     global _active_compose_file
     _active_compose_file = None
 
 
 def cluster_up(mode: ClusterMode = ClusterMode.KRAFT) -> None:
-    """Start the 3-broker Kafka cluster.
-
-    Args:
-        mode: Cluster deployment mode (kraft or zookeeper)
-    """
     compose_file = get_compose_file(mode)
     mode_label = "KRaft" if mode == ClusterMode.KRAFT else "ZooKeeper"
 
@@ -109,7 +96,6 @@ def cluster_up(mode: ClusterMode = ClusterMode.KRAFT) -> None:
 
 
 def cluster_down(remove_volumes: bool = False) -> None:
-    """Stop the Kafka cluster."""
     compose_file = _get_active_compose_file()
 
     if compose_file is None:
@@ -126,7 +112,6 @@ def cluster_down(remove_volumes: bool = False) -> None:
 
 
 def _stop_compose(compose_file: Path, remove_volumes: bool, silent: bool) -> None:
-    """Stop a docker compose stack."""
     cmd = ["docker", "compose", "-f", str(compose_file), "down"]
     if remove_volumes:
         cmd.append("-v")
@@ -143,11 +128,6 @@ def _stop_compose(compose_file: Path, remove_volumes: bool, silent: bool) -> Non
 
 
 def cluster_status() -> dict[str, dict[str, str]]:
-    """Get status of Kafka containers with their ports.
-
-    Returns:
-        Dict mapping service name to {"state": ..., "url": ...}
-    """
     compose_file = _get_active_compose_file()
 
     if compose_file is None:
@@ -192,7 +172,6 @@ def cluster_status() -> dict[str, dict[str, str]]:
 
 
 def get_active_mode() -> ClusterMode | None:
-    """Get the mode of the currently running cluster."""
     compose_file = _get_active_compose_file()
     if compose_file is None:
         return None
@@ -202,10 +181,6 @@ def get_active_mode() -> ClusterMode | None:
 
 
 def get_bootstrap_servers() -> str:
-    """Get bootstrap servers from running cluster.
-
-    Returns comma-separated list of broker addresses parsed from docker compose.
-    """
     status = cluster_status()
     brokers = []
     for service, info in sorted(status.items()):
@@ -220,7 +195,6 @@ def wait_for_kafka(
     bootstrap_servers: str | None = None,
     timeout: int = 120,
 ) -> None:
-    """Wait until Kafka cluster is ready to accept connections."""
     from confluent_kafka.admin import AdminClient
 
     if bootstrap_servers is None:
@@ -255,7 +229,6 @@ def wait_for_kafka(
 
 
 def is_cluster_running() -> bool:
-    """Check if the Kafka cluster is running."""
     status = cluster_status()
     if not status:
         return False
@@ -263,11 +236,6 @@ def is_cluster_running() -> bool:
 
 
 def stop_broker(broker_name: str) -> None:
-    """Stop a specific broker container.
-
-    Args:
-        broker_name: Name of the broker service (e.g., 'kafka-1', 'kafka-2', 'kafka-3')
-    """
     compose_file = _get_active_compose_file()
     if compose_file is None:
         raise RuntimeError("No active Kafka cluster found")
@@ -280,11 +248,6 @@ def stop_broker(broker_name: str) -> None:
 
 
 def start_broker(broker_name: str) -> None:
-    """Start a specific broker container.
-
-    Args:
-        broker_name: Name of the broker service (e.g., 'kafka-1', 'kafka-2', 'kafka-3')
-    """
     compose_file = _get_active_compose_file()
     if compose_file is None:
         raise RuntimeError("No active Kafka cluster found")

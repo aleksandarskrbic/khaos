@@ -1,5 +1,3 @@
-"""Scenario executor - runs one or more scenarios with incident scheduling."""
-
 from __future__ import annotations
 
 import asyncio
@@ -34,8 +32,6 @@ console = Console()
 
 @dataclass
 class ExecutionResult:
-    """Result from executing scenarios."""
-
     messages_produced: int = 0
     messages_consumed: int = 0
     flows_completed: int = 0
@@ -48,8 +44,6 @@ class ExecutionResult:
 
 
 class ScenarioExecutor:
-    """Executes one or more scenarios with incident scheduling."""
-
     def __init__(
         self,
         bootstrap_servers: str,
@@ -89,14 +83,12 @@ class ScenarioExecutor:
             self._all_flows.extend(scenario.flows)
 
     def _get_display_title(self) -> str:
-        """Get title for the live display."""
         names = [s.name for s in self.scenarios]
         if len(names) == 1:
             return f"Scenario: {names[0]}"
         return f"Scenarios: {', '.join(names)}"
 
     async def setup(self) -> None:
-        """Create all topics for all scenarios."""
         created_topics: set[str] = set()
 
         for topic in self._all_topics:
@@ -124,7 +116,6 @@ class ScenarioExecutor:
                     created_topics.add(topic_name)
 
     async def teardown(self) -> None:
-        """Clean up all resources."""
         for producer in self.producers:
             producer.stop()
             producer.flush(timeout=5)
@@ -140,7 +131,6 @@ class ScenarioExecutor:
         shutdown_executor()
 
     def request_stop(self) -> None:
-        """Signal all tasks to stop."""
         self._stop_event.set()
         for producer in self.producers:
             producer.stop()
@@ -154,7 +144,6 @@ class ScenarioExecutor:
         return self._stop_event.is_set()
 
     def _to_key_distribution(self, name: str) -> KeyDistribution:
-        """Convert string to KeyDistribution enum."""
         mapping = {
             "uniform": KeyDistribution.UNIFORM,
             "zipfian": KeyDistribution.ZIPFIAN,
@@ -166,7 +155,6 @@ class ScenarioExecutor:
     def _create_producers_for_topic(
         self, topic: TopicConfig
     ) -> list[tuple[str, ProducerSimulator]]:
-        """Create producers for a topic."""
         producers = []
         config = ProducerConfig(
             messages_per_second=topic.producer_rate,
@@ -190,7 +178,6 @@ class ScenarioExecutor:
     def _create_consumers_for_topic(
         self, topic: TopicConfig
     ) -> list[tuple[str, str, ConsumerSimulator]]:
-        """Create consumers for a topic."""
         consumers = []
         if topic.name not in self._consumers_by_topic:
             self._consumers_by_topic[topic.name] = {}
@@ -217,7 +204,6 @@ class ScenarioExecutor:
         duration_seconds: int,
         result: ExecutionResult,
     ) -> list:
-        """Create consumers for a flow step and return their tasks."""
         tasks = []
         config = step.consumers
         assert config is not None  # todo: fix this?
@@ -252,7 +238,6 @@ class ScenarioExecutor:
         return tasks
 
     def generate_stats_table(self) -> Table:
-        """Generate a Rich table with current stats."""
         table = Table(title=self._get_display_title())
         table.add_column("Name", style="cyan")
         table.add_column("Produced", style="green")
@@ -368,7 +353,6 @@ class ScenarioExecutor:
     async def _schedule_incident(
         self, incident: Incident, ctx: IncidentContext, start_time: float
     ) -> None:
-        """Schedule and execute a single incident."""
         handler = INCIDENT_HANDLERS.get(incident.type)
         if not handler:
             console.print(f"[red]Unknown incident type: {incident.type}[/red]")
@@ -402,7 +386,6 @@ class ScenarioExecutor:
     async def _schedule_incident_group(
         self, group: IncidentGroup, ctx: IncidentContext, start_time: float
     ) -> None:
-        """Schedule and execute an incident group with repeats."""
         for cycle in range(group.repeat):
             if self.should_stop:
                 break
@@ -455,7 +438,6 @@ class ScenarioExecutor:
                 await handler(ctx, **kwargs)
 
     async def run(self, duration_seconds: int) -> ExecutionResult:
-        """Run all scenarios."""
         result = ExecutionResult()
         start_time = time.time()
         tasks = []
@@ -574,7 +556,6 @@ class ScenarioExecutor:
         return result
 
     async def execute(self, duration_seconds: int) -> ExecutionResult:
-        """Execute the full scenario lifecycle with signal handling."""
         loop = asyncio.get_event_loop()
 
         def signal_handler():

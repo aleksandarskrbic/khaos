@@ -1,5 +1,3 @@
-"""CLI entry point for khaos - Kafka chaos engineering toolkit."""
-
 import asyncio
 from importlib.metadata import version
 from typing import Annotated
@@ -55,7 +53,6 @@ def cluster_up(
         typer.Option("--mode", "-m", help="Cluster mode: kraft (default) or zookeeper"),
     ] = ClusterMode.KRAFT,
 ) -> None:
-    """Start the 3-broker Kafka cluster."""
     try:
         docker_manager.cluster_up(mode=mode)
     except RuntimeError as e:
@@ -76,7 +73,6 @@ def cluster_down(
         typer.Option("--volumes", "-v", help="Remove data volumes"),
     ] = False,
 ) -> None:
-    """Stop the Kafka cluster."""
     try:
         docker_manager.cluster_down(remove_volumes=volumes)
     except RuntimeError as e:
@@ -89,7 +85,6 @@ def cluster_down(
 
 @app.command("cluster-status")
 def cluster_status() -> None:
-    """Show Kafka cluster status."""
     status = docker_manager.cluster_status()
 
     if not status:
@@ -115,7 +110,6 @@ def cluster_status() -> None:
 
 @app.command("list")
 def list_scenarios_cmd() -> None:
-    """List available traffic scenarios."""
     from khaos.scenarios.loader import list_scenarios
 
     scenarios = list_scenarios()
@@ -141,7 +135,6 @@ def validate_scenario(
         typer.Argument(help="Scenario name(s) to validate (validates all if none specified)"),
     ] = None,
 ) -> None:
-    """Validate scenario YAML definitions."""
     from khaos.scenarios.loader import discover_scenarios
     from khaos.scenarios.validator import validate_scenario_file
 
@@ -209,7 +202,6 @@ def run_scenario(
         typer.Option("--no-consumers", help="Disable built-in consumers (producer-only mode)"),
     ] = False,
 ) -> None:
-    """Run one or more traffic simulation scenarios."""
     from khaos.scenarios.executor import ScenarioExecutor
     from khaos.scenarios.loader import get_scenario
 
@@ -340,11 +332,6 @@ def simulate_external(
         typer.Option("--no-consumers", help="Disable built-in consumers (producer-only mode)"),
     ] = False,
 ) -> None:
-    """Run traffic simulation against an external Kafka cluster.
-
-    Unlike 'run', this command does NOT manage Docker infrastructure.
-    Broker incidents (stop_broker, start_broker) are automatically skipped.
-    """
     from khaos.models.cluster import ClusterConfig, SaslMechanism, SecurityProtocol
     from khaos.scenarios.external_executor import ExternalScenarioExecutor
     from khaos.scenarios.loader import get_scenario

@@ -1,12 +1,8 @@
-"""Producer and Consumer configuration models."""
-
 from dataclasses import dataclass
 
 
 @dataclass
 class ProducerConfig:
-    """Configuration for Kafka producer."""
-
     messages_per_second: float = 1000.0
     batch_size: int = 16384  # 16KB
     linger_ms: int = 5
@@ -24,8 +20,6 @@ class ProducerConfig:
 
 @dataclass
 class ConsumerConfig:
-    """Configuration for Kafka consumer."""
-
     group_id: str
     processing_delay_ms: int = 0  # Simulated processing time
     max_poll_records: int = 500

@@ -1,5 +1,3 @@
-"""Scenario data class - represents a scenario loaded from YAML."""
-
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -9,8 +7,6 @@ from khaos.models.schema import FieldSchema
 
 @dataclass
 class MessageSchemaConfig:
-    """Message schema configuration."""
-
     key_distribution: str = "uniform"
     key_cardinality: int = 50
     min_size_bytes: int = 200
@@ -21,8 +17,6 @@ class MessageSchemaConfig:
 
 @dataclass
 class ProducerConfigData:
-    """Producer configuration."""
-
     batch_size: int = 16384
     linger_ms: int = 5
     acks: str = "1"
@@ -31,8 +25,6 @@ class ProducerConfigData:
 
 @dataclass
 class TopicConfig:
-    """Topic configuration for a scenario."""
-
     name: str
     partitions: int = 12
     replication_factor: int = 3
@@ -47,8 +39,6 @@ class TopicConfig:
 
 @dataclass
 class Incident:
-    """Incident trigger configuration."""
-
     type: str
     at_seconds: int | None = None
     every_seconds: int | None = None
@@ -62,8 +52,6 @@ class Incident:
 
 @dataclass
 class IncidentGroup:
-    """A group of incidents that repeat together."""
-
     repeat: int  # Number of times to repeat
     interval_seconds: int  # Time between each cycle start
     incidents: list[Incident] = field(default_factory=list)
@@ -71,11 +59,6 @@ class IncidentGroup:
 
 @dataclass
 class Scenario:
-    """A scenario loaded from YAML.
-
-    Pure data class - no execution logic.
-    """
-
     name: str
     description: str
     topics: list[TopicConfig] = field(default_factory=list)
@@ -85,7 +68,6 @@ class Scenario:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Scenario":
-        """Create a Scenario from a dictionary (parsed YAML)."""
         topics = []
         for topic_data in data.get("topics", []):
             msg_schema_data = topic_data.pop("message_schema", {})

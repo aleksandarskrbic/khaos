@@ -1,5 +1,3 @@
-"""Schema validator - validates field schema definitions."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -10,16 +8,12 @@ from khaos.models.schema import VALID_FIELD_TYPES
 
 @dataclass
 class SchemaValidationError:
-    """A single validation error."""
-
     path: str
     message: str
 
 
 @dataclass
 class SchemaValidationResult:
-    """Result of validating a schema."""
-
     valid: bool = True
     errors: list[SchemaValidationError] = field(default_factory=list)
     warnings: list[SchemaValidationError] = field(default_factory=list)
@@ -33,12 +27,9 @@ class SchemaValidationResult:
 
 
 class SchemaValidator:
-    """Validates field schema definitions."""
-
     def validate(
         self, fields: list[dict[str, Any]], base_path: str = "fields"
     ) -> SchemaValidationResult:
-        """Validate a list of field schemas."""
         result = SchemaValidationResult()
 
         if not isinstance(fields, list):
@@ -54,7 +45,6 @@ class SchemaValidator:
     def _validate_field(
         self, field_def: dict[str, Any], path: str, result: SchemaValidationResult
     ) -> None:
-        """Validate a single field definition."""
         if not isinstance(field_def, dict):
             result.add_error(path, "Field must be an object/dict")
             return
@@ -99,7 +89,6 @@ class SchemaValidator:
     def _validate_string_field(
         self, field_def: dict[str, Any], path: str, result: SchemaValidationResult
     ) -> None:
-        """Validate string field parameters."""
         if "min_length" in field_def:
             if not isinstance(field_def["min_length"], int) or field_def["min_length"] < 0:
                 result.add_error(
@@ -126,7 +115,6 @@ class SchemaValidator:
     def _validate_int_field(
         self, field_def: dict[str, Any], path: str, result: SchemaValidationResult
     ) -> None:
-        """Validate int field parameters."""
         if "min" in field_def:
             if not isinstance(field_def["min"], int | float):
                 result.add_error(f"{path}.min", "Field 'min' must be a number")
@@ -155,7 +143,6 @@ class SchemaValidator:
     def _validate_float_field(
         self, field_def: dict[str, Any], path: str, result: SchemaValidationResult
     ) -> None:
-        """Validate float field parameters."""
         if "min" in field_def:
             if not isinstance(field_def["min"], int | float):
                 result.add_error(f"{path}.min", "Field 'min' must be a number")
@@ -178,7 +165,6 @@ class SchemaValidator:
     def _validate_enum_field(
         self, field_def: dict[str, Any], path: str, result: SchemaValidationResult
     ) -> None:
-        """Validate enum field parameters."""
         if "values" not in field_def:
             result.add_error(f"{path}.values", "Enum field requires 'values' list")
             return
@@ -198,7 +184,6 @@ class SchemaValidator:
     def _validate_object_field(
         self, field_def: dict[str, Any], path: str, result: SchemaValidationResult
     ) -> None:
-        """Validate object field parameters (recursive)."""
         if "fields" not in field_def:
             result.add_error(f"{path}.fields", "Object field requires 'fields' list")
             return
@@ -217,7 +202,6 @@ class SchemaValidator:
     def _validate_array_field(
         self, field_def: dict[str, Any], path: str, result: SchemaValidationResult
     ) -> None:
-        """Validate array field parameters (recursive)."""
         if "items" not in field_def:
             result.add_error(f"{path}.items", "Array field requires 'items' schema")
             return
@@ -249,7 +233,6 @@ class SchemaValidator:
     def _validate_faker_field(
         self, field_def: dict[str, Any], path: str, result: SchemaValidationResult
     ) -> None:
-        """Validate faker field parameters."""
         if "provider" not in field_def:
             result.add_error(f"{path}.provider", "Faker field requires 'provider'")
             return
@@ -266,7 +249,6 @@ class SchemaValidator:
     def _validate_array_item(
         self, item_def: dict[str, Any], path: str, result: SchemaValidationResult
     ) -> None:
-        """Validate array item schema (name is optional for array items)."""
         if not isinstance(item_def, dict):
             result.add_error(path, "Array item must be an object/dict")
             return

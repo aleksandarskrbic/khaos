@@ -1,5 +1,3 @@
-"""Tests for payload generators."""
-
 import json
 
 from khaos.generators.payload import (
@@ -12,10 +10,7 @@ from khaos.models.message import MessageSchema
 
 
 class TestRandomPayloadGenerator:
-    """Tests for RandomPayloadGenerator."""
-
     def test_size_within_range(self):
-        """Test that payload size is within range."""
         min_size = 50
         max_size = 100
         gen = RandomPayloadGenerator(min_size=min_size, max_size=max_size)
@@ -25,7 +20,6 @@ class TestRandomPayloadGenerator:
             assert min_size <= len(payload) <= max_size
 
     def test_fixed_size_when_min_equals_max(self):
-        """Test that size is exact when min equals max."""
         size = 150
         gen = RandomPayloadGenerator(min_size=size, max_size=size)
 
@@ -34,7 +28,6 @@ class TestRandomPayloadGenerator:
             assert len(payload) == size
 
     def test_random_content(self):
-        """Test that content is random (not all same bytes)."""
         gen = RandomPayloadGenerator(min_size=100, max_size=100)
 
         payloads = [gen.generate() for _ in range(10)]
@@ -42,10 +35,7 @@ class TestRandomPayloadGenerator:
 
 
 class TestJsonPayloadGenerator:
-    """Tests for JsonPayloadGenerator."""
-
     def test_generates_valid_json(self):
-        """Test that payload is valid JSON with expected fields."""
         gen = JsonPayloadGenerator(min_size=100, max_size=200)
         payload = gen.generate()
 
@@ -55,7 +45,6 @@ class TestJsonPayloadGenerator:
         assert data["id"].startswith("msg-")
 
     def test_sequence_increments(self):
-        """Test that sequence number increments."""
         gen = JsonPayloadGenerator(min_size=100, max_size=200)
 
         sequences = []
@@ -67,7 +56,6 @@ class TestJsonPayloadGenerator:
         assert sequences == list(range(1, 11))
 
     def test_can_disable_timestamp_and_sequence(self):
-        """Test that timestamp and sequence can be disabled."""
         gen = JsonPayloadGenerator(
             min_size=100, max_size=200, include_timestamp=False, include_sequence=False
         )
@@ -78,7 +66,6 @@ class TestJsonPayloadGenerator:
         assert "sequence" not in data
 
     def test_adds_padding_for_min_size(self):
-        """Test that padding is added to reach minimum size."""
         min_size = 500
         gen = JsonPayloadGenerator(min_size=min_size, max_size=1000)
         payload = gen.generate()
@@ -90,10 +77,7 @@ class TestJsonPayloadGenerator:
 
 
 class TestFixedPayloadGenerator:
-    """Tests for FixedPayloadGenerator."""
-
     def test_generates_exact_size(self):
-        """Test that payload is exactly the specified size."""
         size = 150
         gen = FixedPayloadGenerator(size=size)
 
@@ -102,7 +86,6 @@ class TestFixedPayloadGenerator:
             assert len(payload) == size
 
     def test_sequence_increments_in_prefix(self):
-        """Test that sequence number increments in prefix."""
         gen = FixedPayloadGenerator(size=100)
 
         for i in range(1, 6):
@@ -111,7 +94,6 @@ class TestFixedPayloadGenerator:
             assert payload.startswith(expected_prefix)
 
     def test_small_size_outputs_prefix_only(self):
-        """Test that sizes smaller than prefix output just the prefix."""
         gen = FixedPayloadGenerator(size=3)
         payload = gen.generate()
         # Prefix "msg-1-" is longer than size, but no truncation occurs
@@ -119,10 +101,7 @@ class TestFixedPayloadGenerator:
 
 
 class TestCreatePayloadGenerator:
-    """Tests for create_payload_generator factory function."""
-
     def test_creates_json_generator_with_correct_settings(self):
-        """Test that factory creates JsonPayloadGenerator with correct settings."""
         schema = MessageSchema(
             min_size_bytes=150,
             max_size_bytes=300,
@@ -138,7 +117,6 @@ class TestCreatePayloadGenerator:
         assert gen.include_sequence is False
 
     def test_generated_payload_is_valid_json(self):
-        """Test that created generator produces valid JSON payloads."""
         schema = MessageSchema(min_size_bytes=100, max_size_bytes=500)
         gen = create_payload_generator(schema)
         payload = gen.generate()

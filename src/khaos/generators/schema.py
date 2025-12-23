@@ -1,5 +1,3 @@
-"""Schema-based payload generator for structured messages."""
-
 from __future__ import annotations
 
 import json
@@ -13,8 +11,6 @@ if TYPE_CHECKING:
 
 
 class SchemaPayloadGenerator(PayloadGenerator):
-    """Generate JSON payloads based on field schema definitions."""
-
     def __init__(self, fields: list[FieldSchema]):
         self.fields = fields
         self.field_generators: list[tuple[str, FieldGenerator]] = [
@@ -22,6 +18,5 @@ class SchemaPayloadGenerator(PayloadGenerator):
         ]
 
     def generate(self) -> bytes:
-        """Generate a JSON payload from field schemas."""
         obj = {name: gen.generate() for name, gen in self.field_generators}
         return json.dumps(obj).encode()
