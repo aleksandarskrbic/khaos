@@ -1,12 +1,33 @@
 [project]
 name = "khaos-cli"
 version = "0.1.1"
-description = "Kafka traffic generator - realistic workloads for testing, learning, and chaos engineering"
+description = "Kafka data generator and load testing tool - generate fake messages, simulate producers and consumers, test broker failures, and run chaos engineering scenarios"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "Aleksandar Skrbic", email = "aleksandarskrbic@gmail.com" }]
 requires-python = ">=3.11"
-keywords = ["kafka", "testing", "chaos-engineering", "load-testing", "streaming"]
+keywords = [
+    "kafka",
+    "kafka-data-generator",
+    "kafka-testing",
+    "kafka-load-testing",
+    "kafka-producer",
+    "kafka-consumer",
+    "data-generator",
+    "fake-data",
+    "synthetic-data",
+    "test-data",
+    "load-testing",
+    "stress-testing",
+    "chaos-engineering",
+    "fault-injection",
+    "stream-processing",
+    "flink",
+    "spark-streaming",
+    "kafka-streams",
+    "event-streaming",
+    "message-queue",
+]
 dependencies = [
     "confluent-kafka>=2.3.0",
     "typer>=0.20.0",

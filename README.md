@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/logo.png" alt="khaos logo" width="200">
   <h1>khaos</h1>
-  <p>Kafka traffic generator - realistic workloads for testing, learning, and chaos engineering</p>
+  <p><strong>Kafka data generator and load testing tool</strong> - generate fake messages, simulate producers/consumers, and run chaos engineering scenarios</p>
 
   [![CI](https://github.com/aleksandarskrbic/khaos/actions/workflows/ci.yml/badge.svg)](https://github.com/aleksandarskrbic/khaos/actions/workflows/ci.yml)
   [![PyPI](https://img.shields.io/pypi/v/khaos-cli.svg)](https://pypi.org/project/khaos-cli/)
@@ -13,13 +13,17 @@
   <img src="assets/demo.gif" alt="Khaos Demo" width="800">
 </p>
 
+> **Khaos** is a Kafka data generator, load testing tool, and chaos engineering CLI. Generate synthetic test data, simulate realistic producer and consumer workloads, and inject failures into your Kafka cluster. Perfect for testing Spark Streaming, Apache Flink, and Kafka Streams applications.
+
 ## Use Cases
 
-- **Learning Stream Processing**: Generate Kafka traffic, connect your Spark/Flink/Kafka Streams app to consume
-- **Testing Monitoring & Alerts**: Validate your Grafana dashboards and alerting rules with real traffic
-- **Load Testing**: Benchmark Kafka cluster performance at different throughput levels
-- **Development & Testing**: Get realistic Kafka data for local development without production access
-- **Chaos Engineering**: Simulate failures, rebalances, and backpressure scenarios
+- **Kafka Data Generator**: Generate fake Kafka messages with realistic schemas for testing
+- **Kafka Load Testing**: Stress test and benchmark your Kafka cluster at high throughput
+- **Kafka Producer Simulator**: Simulate multiple producers with configurable rates and patterns
+- **Stream Processing Testing**: Generate test data for Apache Flink, Spark Streaming, and Kafka Streams
+- **Chaos Engineering**: Inject broker failures, trigger rebalances, simulate consumer lag
+- **Kafka Consumer Testing**: Test consumer group behavior, lag scenarios, and rebalancing
+- **Monitoring Validation**: Verify Grafana dashboards and alerting rules with real traffic patterns
 
 ## Features
 
@@ -896,6 +900,12 @@ The Docker Compose setup creates:
 ```
 127.0.0.1:9092,127.0.0.1:9093,127.0.0.1:9094
 ```
+
+---
+
+## Keywords
+
+Kafka data generator, Kafka test data, Kafka load testing, Kafka stress testing, Kafka producer simulator, Kafka consumer simulator, Kafka fake data, Kafka synthetic data, Kafka message generator, Kafka traffic generator, Kafka benchmark tool, Kafka chaos testing, Kafka fault injection, Kafka failure testing, Kafka broker failure simulation, Kafka consumer lag testing, Kafka rebalance testing, stream processing test data, Flink test data, Spark Streaming test data, Kafka Streams testing, event streaming testing, message queue testing
 
 ---
 
