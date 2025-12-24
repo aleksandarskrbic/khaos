@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import random
 import time
@@ -5,6 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from khaos.models.message import MessageSchema
+from khaos.serialization.base import Serializer
 
 
 class PayloadGenerator(ABC):
@@ -76,11 +79,14 @@ class FixedPayloadGenerator(PayloadGenerator):
         return prefix + (b"x" * padding_size)
 
 
-def create_payload_generator(schema: MessageSchema) -> PayloadGenerator:
+def create_payload_generator(
+    schema: MessageSchema,
+    serializer: Serializer | None = None,
+) -> PayloadGenerator:
     if schema.fields:
         from khaos.generators.schema import SchemaPayloadGenerator
 
-        return SchemaPayloadGenerator(schema.fields)
+        return SchemaPayloadGenerator(schema.fields, serializer=serializer)
 
     return JsonPayloadGenerator(
         min_size=schema.min_size_bytes,

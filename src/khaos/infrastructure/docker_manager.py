@@ -9,6 +9,7 @@ from pathlib import Path
 from rich.console import Console
 
 DOCKER_DIR = Path(__file__).parent.parent.parent.parent / "docker"
+SCHEMA_REGISTRY_URL = "http://localhost:8081"
 
 
 class ClusterMode(str, Enum):
@@ -20,6 +21,12 @@ def get_compose_file(mode: ClusterMode) -> Path:
     if mode == ClusterMode.KRAFT:
         return DOCKER_DIR / "docker-compose.kraft.yml"
     return DOCKER_DIR / "docker-compose.zk.yml"
+
+
+def get_schema_registry_compose_file(mode: ClusterMode) -> Path:
+    if mode == ClusterMode.KRAFT:
+        return DOCKER_DIR / "docker-compose.schema-registry.kraft.yml"
+    return DOCKER_DIR / "docker-compose.schema-registry.zk.yml"
 
 
 class DockerManager:
@@ -37,6 +44,7 @@ class DockerManager:
             capture_output=True,
             text=True,
         )
+
         if "zookeeper" in result.stdout:
             self._active_compose_file = get_compose_file(ClusterMode.ZOOKEEPER)
             return self._active_compose_file
@@ -47,6 +55,7 @@ class DockerManager:
             capture_output=True,
             text=True,
         )
+
         if "kafka-1" in result.stdout:
             self._active_compose_file = get_compose_file(ClusterMode.KRAFT)
             return self._active_compose_file
@@ -245,6 +254,87 @@ class DockerManager:
             check=True,
         )
 
+    def is_schema_registry_running(self) -> bool:
+        result = subprocess.run(
+            ["docker", "ps", "--filter", "name=schema-registry", "--format", "{{.Names}}"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        return "schema-registry" in result.stdout
+
+    def get_schema_registry_url(self) -> str | None:
+        if self.is_schema_registry_running():
+            return SCHEMA_REGISTRY_URL
+        return None
+
+    def start_schema_registry(self) -> None:
+        if self.is_schema_registry_running():
+            self._console.print("[dim]Schema Registry already running[/dim]")
+            return
+
+        mode = self.get_active_mode()
+        if mode is None:
+            raise RuntimeError("No active Kafka cluster found. Start cluster first.")
+
+        compose_file = get_schema_registry_compose_file(mode)
+        self._console.print("[bold blue]Starting Schema Registry...[/bold blue]")
+
+        try:
+            subprocess.run(
+                ["docker", "compose", "-f", str(compose_file), "up", "-d"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            stderr = e.stderr or ""
+            raise RuntimeError(f"Failed to start Schema Registry: {stderr or e}")
+
+        self._wait_for_schema_registry()
+        self._console.print("[bold green]Schema Registry is ready![/bold green]")
+
+    def _wait_for_schema_registry(self, timeout: int = 60) -> None:
+        import urllib.error
+        import urllib.request
+
+        url = f"{SCHEMA_REGISTRY_URL}/subjects"
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                req = urllib.request.urlopen(url, timeout=5)  # noqa: S310
+                if req.status == 200:
+                    return
+            except (urllib.error.URLError, OSError):
+                pass
+            time.sleep(2)
+
+        raise TimeoutError(f"Schema Registry did not become ready within {timeout} seconds")
+
+    def stop_schema_registry(self) -> None:
+        if not self.is_schema_registry_running():
+            return
+
+        mode = self.get_active_mode()
+        if mode is None:
+            for m in ClusterMode:
+                compose_file = get_schema_registry_compose_file(m)
+                subprocess.run(
+                    ["docker", "compose", "-f", str(compose_file), "down"],
+                    check=False,
+                    capture_output=True,
+                )
+            return
+
+        compose_file = get_schema_registry_compose_file(mode)
+        self._console.print("[bold blue]Stopping Schema Registry...[/bold blue]")
+        subprocess.run(
+            ["docker", "compose", "-f", str(compose_file), "down"],
+            check=True,
+            capture_output=True,
+        )
+        self._console.print("[bold green]Schema Registry stopped![/bold green]")
+
 
 # Default instance for module-level API compatibility
 _default_manager = DockerManager()
@@ -284,3 +374,19 @@ def stop_broker(broker_name: str) -> None:
 
 def start_broker(broker_name: str) -> None:
     _default_manager.start_broker(broker_name)
+
+
+def is_schema_registry_running() -> bool:
+    return _default_manager.is_schema_registry_running()
+
+
+def get_schema_registry_url() -> str | None:
+    return _default_manager.get_schema_registry_url()
+
+
+def start_schema_registry() -> None:
+    _default_manager.start_schema_registry()
+
+
+def stop_schema_registry() -> None:
+    _default_manager.stop_schema_registry()

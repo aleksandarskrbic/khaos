@@ -8,11 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- New test scenarios: `all-incidents`, `targeted-incidents`, `chaos-loop`
+- Avro serialization support with `data_format: avro` in message schema
+- Schema Registry integration with auto-start when Avro scenarios run
+- Avro without Schema Registry mode for simpler setups
+- New serialization module (`khaos.serialization`) with `AvroSerializer`, `AvroSerializerNoRegistry`, `JsonSerializer`
+- Dynamic Schema Registry docker compose overlay files
+- New scenarios: `avro-example`, `avro-no-registry`, `all-incidents`, `targeted-incidents`, `chaos-loop`
 - Unified `ValidationError` and `ValidationResult` in `validators/common.py`
 - Centralized Kafka config builder in `kafka/config.py`
+- DockerManager methods: `start_schema_registry()`, `stop_schema_registry()`, `is_schema_registry_running()`
 
 ### Changed
+- Replaced Redpanda Console with Kafka UI (provectuslabs/kafka-ui) for better Schema Registry support
+- Timestamp fields now generate epoch milliseconds (int) for Avro compatibility
 - Renamed `schemas/` module to `validators/`
 - Refactored `DockerManager` from module functions to class
 - Changed default `auto_offset_reset` to `latest` for cleaner test runs

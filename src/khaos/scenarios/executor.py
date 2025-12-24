@@ -38,9 +38,17 @@ from khaos.scenarios.incidents import (
     StopConsumer,
     StopConsumers,
 )
-from khaos.scenarios.scenario import Scenario, TopicConfig
+from khaos.scenarios.scenario import Scenario, SchemaRegistryConfig, TopicConfig
+from khaos.serialization import (
+    AvroSerializer,
+    AvroSerializerNoRegistry,
+    JsonSerializer,
+    field_schemas_to_avro,
+)
 
 console = Console()
+
+SCHEMA_REGISTRY_URL = "http://localhost:8081"
 
 
 @dataclass
@@ -106,6 +114,11 @@ class ScenarioExecutor:
         return f"Scenarios: {', '.join(names)}"
 
     async def setup(self) -> None:
+        if self._needs_schema_registry() and not docker_manager.is_schema_registry_running():
+            console.print("[bold blue]Avro format detected, starting Schema Registry...[/]")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, docker_manager.start_schema_registry)
+
         created_topics: set[str] = set()
 
         for topic in self._all_topics:
@@ -236,6 +249,47 @@ class ScenarioExecutor:
             "round_robin": KeyDistribution.ROUND_ROBIN,
         }
         return mapping.get(name, KeyDistribution.UNIFORM)
+
+    def _needs_schema_registry(self) -> bool:
+        has_avro = any(topic.message_schema.data_format == "avro" for topic in self._all_topics)
+        has_config = any(s.schema_registry for s in self.scenarios)
+        return has_avro and has_config
+
+    def _get_schema_registry_config(self) -> SchemaRegistryConfig | None:
+        for scenario in self.scenarios:
+            if scenario.schema_registry:
+                return scenario.schema_registry
+        if docker_manager.is_schema_registry_running():
+            return SchemaRegistryConfig(url=SCHEMA_REGISTRY_URL)
+        return None
+
+    def _create_serializer_for_topic(self, topic: TopicConfig):
+        data_format = topic.message_schema.data_format
+
+        if data_format == "avro":
+            if not topic.message_schema.fields:
+                console.print(
+                    f"[yellow]Warning: Topic '{topic.name}' uses Avro but has no fields. "
+                    "Falling back to JSON.[/yellow]"
+                )
+                return JsonSerializer()
+
+            avro_schema = field_schemas_to_avro(
+                topic.message_schema.fields,
+                name=topic.name.title().replace("-", "").replace("_", "") + "Record",
+            )
+
+            schema_registry = self._get_schema_registry_config()
+            if schema_registry:
+                return AvroSerializer(
+                    schema_registry_url=schema_registry.url,
+                    schema=avro_schema,
+                    topic=topic.name,
+                )
+
+            return AvroSerializerNoRegistry(schema=avro_schema)
+
+        return JsonSerializer()
 
     def _create_producers_for_topic(
         self, topic: TopicConfig
@@ -538,10 +592,13 @@ class ScenarioExecutor:
                 fields=topic.message_schema.fields,
             )
 
+            # Create serializer based on data format
+            serializer = self._create_serializer_for_topic(topic)
+
             # Producers
             producers = self._create_producers_for_topic(topic)
             key_gen = create_key_generator(msg_schema)
-            payload_gen = create_payload_generator(msg_schema)
+            payload_gen = create_payload_generator(msg_schema, serializer=serializer)
 
             for _name, producer in producers:
 

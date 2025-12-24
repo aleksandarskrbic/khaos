@@ -111,15 +111,16 @@ services:
       timeout: 10s
       retries: 5
 
-  # Kafka UI - Redpanda Console
   kafka-ui:
-    image: redpandadata/console:latest
+    image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
     hostname: kafka-ui
     ports:
       - "8080:8080"
     environment:
-      KAFKA_BROKERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
     depends_on:
       - kafka-1
       - kafka-2

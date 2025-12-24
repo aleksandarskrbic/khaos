@@ -1,0 +1,38 @@
+name: avro-example
+description: Example scenario using Avro serialization with Schema Registry
+
+schema_registry:
+  url: http://localhost:8081
+
+topics:
+  - name: orders
+    partitions: 6
+    replication_factor: 3
+    num_producers: 2
+    producer_rate: 100
+    message_schema:
+      data_format: avro
+      key_distribution: uniform
+      key_cardinality: 1000
+      fields:
+        - name: order_id
+          type: uuid
+        - name: customer_name
+          type: faker
+          provider: name
+        - name: email
+          type: faker
+          provider: email
+        - name: amount
+          type: float
+          min: 10.0
+          max: 1000.0
+        - name: status
+          type: enum
+          values:
+            - PENDING
+            - PROCESSING
+            - COMPLETED
+            - CANCELLED
+        - name: created_at
+          type: timestamp

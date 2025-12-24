@@ -96,8 +96,8 @@ class UuidFieldGenerator(FieldGenerator):
 
 
 class TimestampFieldGenerator(FieldGenerator):
-    def generate(self) -> str:
-        return datetime.now(UTC).isoformat()
+    def generate(self) -> int:
+        return int(datetime.now(UTC).timestamp() * 1000)
 
 
 class EnumFieldGenerator(FieldGenerator):

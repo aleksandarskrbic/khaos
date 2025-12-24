@@ -9,6 +9,7 @@ from khaos.validators.schema import SchemaValidator
 
 VALID_KEY_DISTRIBUTIONS = {"uniform", "zipfian", "single_key", "round_robin"}
 VALID_COMPRESSION_TYPES = {"none", "gzip", "snappy", "lz4", "zstd"}
+VALID_DATA_FORMATS = {"json", "avro"}
 VALID_ACKS = {"0", "1", "all", "-1"}
 VALID_BROKERS = {"kafka-1", "kafka-2", "kafka-3"}
 
@@ -44,12 +45,30 @@ def validate_scenario_file(file_path: Path) -> ValidationResult:
     if not has_topics and not has_flows:
         result.add_error("topics", "Scenario must have at least 'topics' or 'flows'")
 
+    # Validate schema_registry if present
+    has_schema_registry = False
+    if "schema_registry" in data:
+        has_schema_registry = True
+        validate_schema_registry(data["schema_registry"], "schema_registry", result)
+
     if "topics" in data:
         if not isinstance(data["topics"], list):
             result.add_error("topics", "Field 'topics' must be a list")
         else:
+            has_avro_topic = False
             for i, topic in enumerate(data["topics"]):
                 validate_topic(topic, f"topics[{i}]", result)
+                # Check if any topic uses avro
+                msg_schema = topic.get("message_schema", {})
+                if msg_schema.get("data_format") == "avro":
+                    has_avro_topic = True
+
+            # Info if avro is used without schema_registry
+            if has_avro_topic and not has_schema_registry:
+                result.add_warning(
+                    "schema_registry",
+                    "Using Avro without Schema Registry (schemaless mode)",
+                )
 
     if "flows" in data:
         if not isinstance(data["flows"], list):
@@ -164,6 +183,20 @@ def validate_message_schema(schema: dict, path: str, result: ValidationResult) -
                 f"{path}.key_cardinality", "Field 'key_cardinality' must be a positive integer"
             )
 
+    if "data_format" in schema:
+        if schema["data_format"] not in VALID_DATA_FORMATS:
+            result.add_error(
+                f"{path}.data_format",
+                f"Invalid data_format '{schema['data_format']}'. "
+                f"Valid values: {', '.join(sorted(VALID_DATA_FORMATS))}",
+            )
+        # Avro requires fields to be defined
+        if schema["data_format"] == "avro" and not schema.get("fields"):
+            result.add_error(
+                f"{path}.fields",
+                "data_format 'avro' requires 'fields' to be defined",
+            )
+
     if "min_size_bytes" in schema:
         if not isinstance(schema["min_size_bytes"], int) or schema["min_size_bytes"] < 1:
             result.add_error(
@@ -188,6 +221,19 @@ def validate_message_schema(schema: dict, path: str, result: ValidationResult) -
             result.add_error(error.path, error.message)
         for warning in schema_result.warnings:
             result.add_warning(warning.path, warning.message)
+
+
+def validate_schema_registry(config: dict, path: str, result: ValidationResult) -> None:
+    if not isinstance(config, dict):
+        result.add_error(path, "schema_registry must be an object/dict")
+        return
+
+    if "url" not in config:
+        result.add_error(f"{path}.url", "Missing required field 'url'")
+    elif not isinstance(config["url"], str):
+        result.add_error(f"{path}.url", "Field 'url' must be a string")
+    elif not config["url"].startswith(("http://", "https://")):
+        result.add_error(f"{path}.url", "Field 'url' must be a valid HTTP(S) URL")
 
 
 def validate_producer_config(config: dict, path: str, result: ValidationResult) -> None:

@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
@@ -115,16 +115,19 @@ class TestUuidFieldGenerator:
 
 
 class TestTimestampFieldGenerator:
-    def test_iso_format(self):
+    def test_returns_epoch_millis(self):
         gen = TimestampFieldGenerator()
         value = gen.generate()
-        # Should parse without error
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        assert isinstance(value, int)
+        # Should be a reasonable timestamp (after year 2020, before year 2100)
+        assert 1577836800000 < value < 4102444800000
 
-    def test_contains_date_and_time(self):
+    def test_is_current_time(self):
         gen = TimestampFieldGenerator()
+        before = int(datetime.now(UTC).timestamp() * 1000)
         value = gen.generate()
-        assert "T" in value  # ISO separator
+        after = int(datetime.now(UTC).timestamp() * 1000)
+        assert before <= value <= after
 
 
 class TestEnumFieldGenerator:

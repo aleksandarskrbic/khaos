@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -19,11 +21,21 @@ from khaos.scenarios.incidents import (
 
 
 @dataclass
+class SchemaRegistryConfig:
+    url: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SchemaRegistryConfig:
+        return cls(url=data["url"])
+
+
+@dataclass
 class MessageSchemaConfig:
     key_distribution: str = "uniform"
     key_cardinality: int = 50
     min_size_bytes: int = 200
     max_size_bytes: int = 500
+    data_format: str = "json"  # "json" or "avro"
     fields: list[FieldSchema] | None = None
 
 
@@ -128,9 +140,10 @@ class Scenario:
     incidents: list[Incident] = field(default_factory=list)
     incident_groups: list[IncidentGroup] = field(default_factory=list)
     flows: list[FlowConfig] = field(default_factory=list)
+    schema_registry: SchemaRegistryConfig | None = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Scenario":
+    def from_dict(cls, data: dict[str, Any]) -> Scenario:
         topics = []
         for topic_data in data.get("topics", []):
             msg_schema_data = topic_data.pop("message_schema", {})
@@ -170,6 +183,10 @@ class Scenario:
 
         flows = [FlowConfig.from_dict(f) for f in data.get("flows", [])]
 
+        schema_registry = None
+        if data.get("schema_registry"):
+            schema_registry = SchemaRegistryConfig.from_dict(data["schema_registry"])
+
         return cls(
             name=data["name"],
             description=data.get("description", ""),
@@ -177,4 +194,5 @@ class Scenario:
             incidents=incidents,
             incident_groups=incident_groups,
             flows=flows,
+            schema_registry=schema_registry,
         )
