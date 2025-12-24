@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
 
 from khaos.generators.field import FieldGenerator, create_field_generator
 from khaos.generators.payload import PayloadGenerator
-
-if TYPE_CHECKING:
-    from khaos.models.schema import FieldSchema
+from khaos.models.schema import FieldSchema
 
 
 class SchemaPayloadGenerator(PayloadGenerator):

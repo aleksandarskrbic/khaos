@@ -1,0 +1,66 @@
+name: targeted-incidents
+description: "Test scenario with targeted consumer/producer incidents"
+
+topics:
+  - name: orders
+    partitions: 3
+    replication_factor: 3
+    num_producers: 3
+    num_consumer_groups: 2
+    consumers_per_group: 2
+    producer_rate: 50
+    consumer_delay_ms: 5
+
+  - name: payments
+    partitions: 3
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 3
+    producer_rate: 30
+    consumer_delay_ms: 10
+
+incidents:
+  # Target consumers by topic
+  - type: increase_consumer_delay
+    at_seconds: 15
+    delay_ms: 100
+    target:
+      topic: orders
+
+  # Target consumers by group_id
+  - type: pause_consumer
+    at_seconds: 30
+    duration_seconds: 10
+    target:
+      group_id: payments-group-1
+
+  # Target specific producer indices
+  - type: change_producer_rate
+    at_seconds: 45
+    rate: 200
+    target:
+      indices: [0, 1]
+
+  # Target consumers by specific indices
+  - type: rebalance_consumer
+    at_seconds: 60
+    target:
+      indices: [0]
+
+  # Multiple broker chaos
+  - type: stop_broker
+    at_seconds: 70
+    broker: kafka-1
+
+  - type: stop_broker
+    at_seconds: 72
+    broker: kafka-3
+
+  - type: start_broker
+    at_seconds: 85
+    broker: kafka-1
+
+  - type: start_broker
+    at_seconds: 87
+    broker: kafka-3

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import logging
 
+from confluent_kafka import KafkaException
 from confluent_kafka.admin import AdminClient, NewTopic
+from confluent_kafka.error import KafkaError
 
 from khaos.errors import KhaosConnectionError, format_kafka_error
+from khaos.kafka.config import build_kafka_config
+from khaos.models.cluster import ClusterConfig
+from khaos.models.topic import TopicConfig
 
-if TYPE_CHECKING:
-    from khaos.models.cluster import ClusterConfig
-    from khaos.models.topic import TopicConfig
+logger = logging.getLogger(__name__)
 
 
 class KafkaAdmin:
@@ -20,17 +23,7 @@ class KafkaAdmin:
         self.bootstrap_servers = bootstrap_servers
         self.cluster_config = cluster_config
 
-        config = {
-            "bootstrap.servers": bootstrap_servers,
-            "log_level": 0,  # Disable librdkafka logging to stderr
-            "logger": lambda *args: None,  # Silent logger callback
-        }
-
-        # Merge security configuration if provided
-        if cluster_config:
-            security_config = cluster_config.to_kafka_config()
-            security_config.pop("bootstrap.servers", None)
-            config.update(security_config)
+        config = build_kafka_config(bootstrap_servers, cluster_config)
 
         try:
             self._client = AdminClient(config)
@@ -56,9 +49,9 @@ class KafkaAdmin:
         for _topic_name, future in futures.items():
             try:
                 future.result()
-            except Exception as e:
+            except KafkaException as e:
                 # Ignore "already exists" errors
-                if "already exists" not in str(e).lower():
+                if e.args[0].code() != KafkaError.TOPIC_ALREADY_EXISTS:
                     raise
 
     def delete_topic(self, topic_name: str) -> None:
@@ -67,8 +60,9 @@ class KafkaAdmin:
         for _name, future in futures.items():
             try:
                 future.result()
-            except Exception as e:
-                if "unknown topic" not in str(e).lower():
+            except KafkaException as e:
+                # Ignore "unknown topic" errors
+                if e.args[0].code() != KafkaError.UNKNOWN_TOPIC_OR_PART:
                     raise
 
     def topic_exists(self, topic_name: str) -> bool:

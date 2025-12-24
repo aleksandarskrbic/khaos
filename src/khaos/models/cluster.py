@@ -44,7 +44,6 @@ class ClusterConfig:
             if not self.sasl_username or not self.sasl_password:
                 raise ValueError("sasl_username and sasl_password required for SASL")
 
-        # mTLS validation
         if self.ssl_cert_location and not self.ssl_key_location:
             raise ValueError("ssl_key_location required when ssl_cert_location is provided")
         if self.ssl_key_location and not self.ssl_cert_location:
@@ -56,7 +55,6 @@ class ClusterConfig:
             "security.protocol": self.security_protocol.value,
         }
 
-        # SASL settings
         if self.sasl_mechanism:
             config["sasl.mechanism"] = self.sasl_mechanism.value
             # Validation ensures these are set when sasl_mechanism is present
@@ -65,7 +63,6 @@ class ClusterConfig:
             if self.sasl_password:
                 config["sasl.password"] = self.sasl_password
 
-        # SSL/TLS settings
         if self.ssl_ca_location:
             config["ssl.ca.location"] = self.ssl_ca_location
         if self.ssl_cert_location:

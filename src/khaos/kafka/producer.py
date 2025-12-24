@@ -4,16 +4,14 @@ import asyncio
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from confluent_kafka import Producer
 
 from khaos.errors import KhaosConnectionError, format_kafka_error
+from khaos.kafka.config import build_kafka_config
+from khaos.models.cluster import ClusterConfig
 from khaos.models.config import ProducerConfig
 from khaos.runtime import get_executor
-
-if TYPE_CHECKING:
-    from khaos.models.cluster import ClusterConfig
 
 
 @dataclass
@@ -46,22 +44,16 @@ class ProducerSimulator:
         self.stats = ProducerStats()
         self._stop_event = threading.Event()
 
-        # Build producer config
-        producer_config = {
-            "bootstrap.servers": bootstrap_servers,
-            "batch.size": self.config.batch_size,
-            "linger.ms": self.config.linger_ms,
-            "acks": self.config.acks,
-            "compression.type": self.config.compression_type,
-            "log_level": 0,  # Disable librdkafka logging to stderr
-            "logger": lambda *args: None,  # Silent logger callback
-        }
-
-        # Merge security configuration if provided
-        if cluster_config:
-            security_config = cluster_config.to_kafka_config()
-            security_config.pop("bootstrap.servers", None)
-            producer_config.update(security_config)
+        producer_config = build_kafka_config(
+            bootstrap_servers,
+            cluster_config,
+            **{
+                "batch.size": self.config.batch_size,
+                "linger.ms": self.config.linger_ms,
+                "acks": self.config.acks,
+                "compression.type": self.config.compression_type,
+            },
+        )
 
         try:
             self._producer = Producer(producer_config)

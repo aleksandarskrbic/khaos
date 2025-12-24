@@ -1,0 +1,45 @@
+name: chaos-loop
+description: "Repeated chaos incidents using groups"
+
+topics:
+  - name: chaos-test
+    partitions: 6
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 3
+    producer_rate: 200
+    consumer_delay_ms: 5
+
+incidents:
+  # Repeated rebalances every 20 seconds
+  - group:
+      repeat: 5
+      interval_seconds: 20
+      incidents:
+        - type: rebalance_consumer
+          at_seconds: 0
+
+  # Repeated broker failures every 45 seconds
+  - group:
+      repeat: 3
+      interval_seconds: 45
+      incidents:
+        - type: stop_broker
+          at_seconds: 0
+          broker: kafka-2
+        - type: start_broker
+          at_seconds: 20
+          broker: kafka-2
+
+  # Producer rate fluctuations
+  - group:
+      repeat: 4
+      interval_seconds: 30
+      incidents:
+        - type: change_producer_rate
+          at_seconds: 0
+          rate: 500
+        - type: change_producer_rate
+          at_seconds: 15
+          rate: 100

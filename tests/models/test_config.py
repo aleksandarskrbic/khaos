@@ -67,7 +67,7 @@ class TestConsumerConfig:
 
         assert config.processing_delay_ms == 0
         assert config.max_poll_records == 500
-        assert config.auto_offset_reset == "earliest"
+        assert config.auto_offset_reset == "latest"
         assert config.session_timeout_ms == 45000
 
     def test_custom_values(self):
@@ -75,14 +75,14 @@ class TestConsumerConfig:
             group_id="custom-group",
             processing_delay_ms=100,
             max_poll_records=1000,
-            auto_offset_reset="latest",
+            auto_offset_reset="earliest",
             session_timeout_ms=60000,
         )
 
         assert config.group_id == "custom-group"
         assert config.processing_delay_ms == 100
         assert config.max_poll_records == 1000
-        assert config.auto_offset_reset == "latest"
+        assert config.auto_offset_reset == "earliest"
         assert config.session_timeout_ms == 60000
 
     def test_processing_delay_cannot_be_negative(self):

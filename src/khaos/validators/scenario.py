@@ -1,32 +1,11 @@
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 
-from khaos.scenarios.incidents import INCIDENT_HANDLERS
-from khaos.schemas.flow_validator import FlowValidator
-from khaos.schemas.validator import SchemaValidator
-
-
-@dataclass
-class ValidationError:
-    path: str  # e.g., "topics[0].partitions"
-    message: str
-
-
-@dataclass
-class ValidationResult:
-    valid: bool
-    errors: list[ValidationError] = field(default_factory=list)
-    warnings: list[ValidationError] = field(default_factory=list)
-
-    def add_error(self, path: str, message: str) -> None:
-        self.errors.append(ValidationError(path, message))
-        self.valid = False
-
-    def add_warning(self, path: str, message: str) -> None:
-        self.warnings.append(ValidationError(path, message))
-
+from khaos.scenarios.incidents import get_incident_names
+from khaos.validators.common import ValidationResult
+from khaos.validators.flow import FlowValidator
+from khaos.validators.schema import SchemaValidator
 
 VALID_KEY_DISTRIBUTIONS = {"uniform", "zipfian", "single_key", "round_robin"}
 VALID_COMPRESSION_TYPES = {"none", "gzip", "snappy", "lz4", "zstd"}
@@ -259,14 +238,15 @@ def validate_incident(incident: dict, path: str, result: ValidationResult) -> No
         return
 
     incident_type = incident["type"]
-    if incident_type not in INCIDENT_HANDLERS:
+    if incident_type not in get_incident_names():
         result.add_error(
             f"{path}.type",
             f"Unknown incident type '{incident_type}'. "
-            f"Valid types: {', '.join(sorted(INCIDENT_HANDLERS.keys()))}",
+            f"Valid types: {', '.join(sorted(get_incident_names()))}",
         )
         return
 
+    # Validate scheduling
     has_at = "at_seconds" in incident
     has_every = "every_seconds" in incident
     if not has_at and not has_every:
@@ -282,6 +262,11 @@ def validate_incident(incident: dict, path: str, result: ValidationResult) -> No
             f"{path}.every_seconds", "Field 'every_seconds' must be a positive integer"
         )
 
+    # Validate target if present
+    if "target" in incident:
+        validate_target(incident["target"], f"{path}.target", result)
+
+    # Validate type-specific required fields
     if incident_type in ("stop_broker", "start_broker"):
         if "broker" not in incident:
             result.add_error(
@@ -318,6 +303,46 @@ def validate_incident(incident: dict, path: str, result: ValidationResult) -> No
             result.add_error(
                 f"{path}.duration_seconds", "Field 'duration_seconds' must be a positive integer"
             )
+
+
+def validate_target(target: dict, path: str, result: ValidationResult) -> None:
+    """Validate consumer/producer target."""
+    if not isinstance(target, dict):
+        result.add_error(path, "Target must be an object/dict")
+        return
+
+    if "topic" in target and not isinstance(target["topic"], str):
+        result.add_error(f"{path}.topic", "Field 'topic' must be a string")
+
+    if "group" in target and not isinstance(target["group"], str):
+        result.add_error(f"{path}.group", "Field 'group' must be a string")
+
+    if "percentage" in target:
+        if not isinstance(target["percentage"], int) or not 1 <= target["percentage"] <= 100:
+            result.add_error(
+                f"{path}.percentage", "Field 'percentage' must be an integer between 1 and 100"
+            )
+
+    if "count" in target:
+        if not isinstance(target["count"], int) or target["count"] < 1:
+            result.add_error(f"{path}.count", "Field 'count' must be a positive integer")
+
+    if "indices" in target:
+        if not isinstance(target["indices"], list):
+            result.add_error(f"{path}.indices", "Field 'indices' must be a list")
+        elif not all(isinstance(i, int) and i >= 0 for i in target["indices"]):
+            result.add_error(
+                f"{path}.indices", "Field 'indices' must be a list of non-negative integers"
+            )
+
+    # Check mutual exclusivity
+    selection_fields = ["percentage", "count", "indices"]
+    set_fields = [f for f in selection_fields if f in target]
+    if len(set_fields) > 1:
+        result.add_error(
+            path,
+            f"Only one of {', '.join(selection_fields)} can be set, got: {', '.join(set_fields)}",
+        )
 
 
 def validate_incident_group(group: dict, path: str, result: ValidationResult) -> None:
@@ -371,11 +396,11 @@ def validate_group_incident(incident: dict, path: str, result: ValidationResult)
         return
 
     incident_type = incident["type"]
-    if incident_type not in INCIDENT_HANDLERS:
+    if incident_type not in get_incident_names():
         result.add_error(
             f"{path}.type",
             f"Unknown incident type '{incident_type}'. "
-            f"Valid types: {', '.join(sorted(INCIDENT_HANDLERS.keys()))}",
+            f"Valid types: {', '.join(sorted(get_incident_names()))}",
         )
         return
 
@@ -388,6 +413,11 @@ def validate_group_incident(incident: dict, path: str, result: ValidationResult)
     if "at_seconds" in incident and not isinstance(incident["at_seconds"], int):
         result.add_error(f"{path}.at_seconds", "Field 'at_seconds' must be an integer")
 
+    # Validate target if present
+    if "target" in incident:
+        validate_target(incident["target"], f"{path}.target", result)
+
+    # Validate type-specific required fields
     if incident_type in ("stop_broker", "start_broker"):
         if "broker" not in incident:
             result.add_error(

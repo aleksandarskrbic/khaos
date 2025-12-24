@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from khaos.models.schema import FieldSchema
+from khaos.models.schema import FieldSchema
 
 
 class KeyDistribution(Enum):

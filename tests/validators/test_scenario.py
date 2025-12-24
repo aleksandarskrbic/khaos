@@ -3,7 +3,7 @@ from pathlib import Path
 
 import yaml
 
-from khaos.scenarios.validator import (
+from khaos.validators.scenario import (
     ValidationResult,
     validate_incident,
     validate_incident_group,

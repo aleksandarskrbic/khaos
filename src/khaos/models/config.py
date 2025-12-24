@@ -23,7 +23,7 @@ class ConsumerConfig:
     group_id: str
     processing_delay_ms: int = 0  # Simulated processing time
     max_poll_records: int = 500
-    auto_offset_reset: str = "earliest"  # "earliest", "latest"
+    auto_offset_reset: str = "latest"  # "earliest", "latest"
     session_timeout_ms: int = 45000
 
     def __post_init__(self):

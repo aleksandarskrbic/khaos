@@ -4,7 +4,6 @@ import asyncio
 import signal
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
 from rich.live import Live
@@ -13,19 +12,33 @@ from rich.table import Table
 from khaos.generators.flow import FlowProducer
 from khaos.generators.key import create_key_generator
 from khaos.generators.payload import create_payload_generator
+from khaos.infrastructure import docker_manager
 from khaos.kafka.admin import KafkaAdmin
 from khaos.kafka.consumer import ConsumerSimulator
 from khaos.kafka.producer import ProducerSimulator
 from khaos.models.config import ProducerConfig
-from khaos.models.flow import FlowConfig
+from khaos.models.flow import FlowConfig, FlowStep
 from khaos.models.message import KeyDistribution, MessageSchema
 from khaos.models.topic import TopicConfig as KafkaTopicConfig
 from khaos.runtime import shutdown_executor
-from khaos.scenarios.incidents import INCIDENT_HANDLERS, IncidentContext
-from khaos.scenarios.scenario import Incident, IncidentGroup, Scenario, TopicConfig
-
-if TYPE_CHECKING:
-    from khaos.models.flow import FlowStep
+from khaos.scenarios.incidents import (
+    Command,
+    CreateConsumer,
+    Delay,
+    Incident,
+    IncidentContext,
+    IncidentGroup,
+    IncrementRebalanceCount,
+    PrintMessage,
+    ResumeConsumers,
+    SetConsumerDelay,
+    SetProducerRate,
+    StartBroker,
+    StopBroker,
+    StopConsumer,
+    StopConsumers,
+)
+from khaos.scenarios.scenario import Scenario, TopicConfig
 
 console = Console()
 
@@ -65,6 +78,10 @@ class ScenarioExecutor:
         self._producers_by_topic: dict[str, list[ProducerSimulator]] = {}
         # Nested structure: {topic_name: {group_id: [consumer1, consumer2, ...]}}
         self._consumers_by_topic: dict[str, dict[str, list[ConsumerSimulator]]] = {}
+        # Flat structure for incident targeting: {group_id: [consumer1, consumer2, ...]}
+        self._consumers_by_group: dict[str, list[ConsumerSimulator]] = {}
+        # Flat structure: {topic_name: [consumer1, consumer2, ...]}
+        self._consumers_by_topic_flat: dict[str, list[ConsumerSimulator]] = {}
         # Map topic to scenario name for display
         self._topic_to_scenario: dict[str, str] = {}
         # Flow producers by flow name
@@ -100,6 +117,7 @@ class ScenarioExecutor:
                 partitions=topic.partitions,
                 replication_factor=topic.replication_factor,
             )
+            self.admin.delete_topic(topic.name)
             self.admin.create_topic(topic_config)
             created_topics.add(topic.name)
 
@@ -112,8 +130,13 @@ class ScenarioExecutor:
                         partitions=12,
                         replication_factor=3,
                     )
+                    self.admin.delete_topic(topic_name)
                     self.admin.create_topic(topic_config)
                     created_topics.add(topic_name)
+
+        # Wait for topics to be fully ready after delete/create
+        if created_topics:
+            await asyncio.sleep(2)
 
     async def teardown(self) -> None:
         for producer in self.producers:
@@ -142,6 +165,68 @@ class ScenarioExecutor:
     @property
     def should_stop(self) -> bool:
         return self._stop_event.is_set()
+
+    async def execute_commands(self, commands: list[Command]):
+        for cmd in commands:
+            if self.should_stop:
+                break
+
+            match cmd:
+                case Delay(seconds=s):
+                    await asyncio.sleep(s)
+
+                case PrintMessage(message=msg, style=style):
+                    console.print(f"\n[{style}]{msg}[/]")
+
+                case SetConsumerDelay(index=idx, delay_ms=delay):
+                    if idx < len(self.consumers):
+                        self.consumers[idx].processing_delay_ms = delay
+
+                case SetProducerRate(index=idx, rate=r):
+                    if idx < len(self.producers):
+                        self.producers[idx].messages_per_second = r
+
+                case IncrementRebalanceCount():
+                    self.rebalance_count += 1
+
+                case StopConsumers(indices=indices):
+                    for idx in indices:
+                        if idx < len(self.consumers):
+                            self.consumers[idx].stop()
+
+                case ResumeConsumers(indices=indices):
+                    for idx in indices:
+                        if idx < len(self.consumers):
+                            self.consumers[idx]._stop_event.clear()
+                            asyncio.create_task(
+                                self.consumers[idx].consume_loop(duration_seconds=0)
+                            )
+
+                case StopConsumer(index=idx):
+                    if idx < len(self.consumers):
+                        self.consumers[idx].stop()
+                        # Wait for poll to finish before closing
+                        await asyncio.sleep(0.2)
+                        self.consumers[idx].close()
+
+                case CreateConsumer(index=idx, group_id=gid, topics=t, processing_delay_ms=d):
+                    new_consumer = ConsumerSimulator(
+                        bootstrap_servers=self.bootstrap_servers,
+                        group_id=gid,
+                        topics=t,
+                        processing_delay_ms=d,
+                    )
+                    if idx < len(self.consumers):
+                        self.consumers[idx] = new_consumer
+                    asyncio.create_task(new_consumer.consume_loop(duration_seconds=0))
+
+                case StopBroker(broker=b):
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, docker_manager.stop_broker, b)
+
+                case StartBroker(broker=b):
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, docker_manager.start_broker, b)
 
     def _to_key_distribution(self, name: str) -> KeyDistribution:
         mapping = {
@@ -181,10 +266,16 @@ class ScenarioExecutor:
         consumers = []
         if topic.name not in self._consumers_by_topic:
             self._consumers_by_topic[topic.name] = {}
+        if topic.name not in self._consumers_by_topic_flat:
+            self._consumers_by_topic_flat[topic.name] = []
+
         for g in range(topic.num_consumer_groups):
             group_id = f"{topic.name}-group-{g + 1}"
             if group_id not in self._consumers_by_topic[topic.name]:
                 self._consumers_by_topic[topic.name][group_id] = []
+            if group_id not in self._consumers_by_group:
+                self._consumers_by_group[group_id] = []
+
             for c in range(topic.consumers_per_group):
                 consumer = ConsumerSimulator(
                     bootstrap_servers=self.bootstrap_servers,
@@ -194,6 +285,8 @@ class ScenarioExecutor:
                 )
                 self.consumers.append(consumer)
                 self._consumers_by_topic[topic.name][group_id].append(consumer)
+                self._consumers_by_topic_flat[topic.name].append(consumer)
+                self._consumers_by_group[group_id].append(consumer)
                 consumers.append((group_id, f"{group_id}-consumer-{c + 1}", consumer))
         return consumers
 
@@ -211,11 +304,15 @@ class ScenarioExecutor:
 
         if topic_name not in self._consumers_by_topic:
             self._consumers_by_topic[topic_name] = {}
+        if topic_name not in self._consumers_by_topic_flat:
+            self._consumers_by_topic_flat[topic_name] = []
 
         for g in range(config.groups):
             group_id = f"{flow_name}-{topic_name}-group-{g + 1}"
             if group_id not in self._consumers_by_topic[topic_name]:
                 self._consumers_by_topic[topic_name][group_id] = []
+            if group_id not in self._consumers_by_group:
+                self._consumers_by_group[group_id] = []
 
             for _c in range(config.per_group):
                 consumer = ConsumerSimulator(
@@ -226,6 +323,8 @@ class ScenarioExecutor:
                 )
                 self.consumers.append(consumer)
                 self._consumers_by_topic[topic_name][group_id].append(consumer)
+                self._consumers_by_topic_flat[topic_name].append(consumer)
+                self._consumers_by_group[group_id].append(consumer)
 
                 async def consumer_task(cons=consumer):
                     try:
@@ -350,42 +449,40 @@ class ScenarioExecutor:
 
         return table
 
-    async def _schedule_incident(
-        self, incident: Incident, ctx: IncidentContext, start_time: float
-    ) -> None:
-        handler = INCIDENT_HANDLERS.get(incident.type)
-        if not handler:
-            console.print(f"[red]Unknown incident type: {incident.type}[/red]")
-            return
+    def _build_incident_context(self) -> IncidentContext:
+        return IncidentContext(
+            consumers=self.consumers,
+            producers=self.producers,
+            bootstrap_servers=self.bootstrap_servers,
+            rebalance_count=self.rebalance_count,
+            consumers_by_topic=self._consumers_by_topic_flat,
+            consumers_by_group=self._consumers_by_group,
+            producers_by_topic=self._producers_by_topic,
+        )
 
-        kwargs: dict[str, Any] = {}
-        if incident.delay_ms is not None:
-            kwargs["delay_ms"] = incident.delay_ms
-        if incident.broker is not None:
-            kwargs["broker"] = incident.broker
-        if incident.rate is not None:
-            kwargs["rate"] = incident.rate
-        if incident.duration_seconds is not None:
-            kwargs["duration_seconds"] = incident.duration_seconds
+    async def _schedule_incident(self, incident: Incident, start_time: float) -> None:
+        schedule = incident.schedule
 
-        if incident.every_seconds:
+        if schedule.every_seconds:
             # Recurring incident
-            await asyncio.sleep(incident.initial_delay_seconds)
+            await asyncio.sleep(schedule.initial_delay_seconds)
             while not self.should_stop:
-                await handler(ctx, **kwargs)
-                await asyncio.sleep(incident.every_seconds)
-        elif incident.at_seconds is not None:
+                ctx = self._build_incident_context()
+                commands = incident.get_commands(ctx)
+                await self.execute_commands(commands)
+                await asyncio.sleep(schedule.every_seconds)
+        elif schedule.at_seconds is not None:
             # One-time incident at specific time
             elapsed = time.time() - start_time
-            wait_time = incident.at_seconds - elapsed
+            wait_time = schedule.at_seconds - elapsed
             if wait_time > 0:
                 await asyncio.sleep(wait_time)
             if not self.should_stop:
-                await handler(ctx, **kwargs)
+                ctx = self._build_incident_context()
+                commands = incident.get_commands(ctx)
+                await self.execute_commands(commands)
 
-    async def _schedule_incident_group(
-        self, group: IncidentGroup, ctx: IncidentContext, start_time: float
-    ) -> None:
+    async def _schedule_incident_group(self, group: IncidentGroup, start_time: float) -> None:
         for cycle in range(group.repeat):
             if self.should_stop:
                 break
@@ -408,9 +505,11 @@ class ScenarioExecutor:
                 if self.should_stop:
                     break
 
+                schedule = incident.schedule
+
                 # at_seconds is relative to cycle start
-                if incident.at_seconds is not None:
-                    incident_time = cycle_start + incident.at_seconds
+                if schedule.at_seconds is not None:
+                    incident_time = cycle_start + schedule.at_seconds
                     now = time.time()
                     wait_time = incident_time - now
                     if wait_time > 0:
@@ -419,23 +518,9 @@ class ScenarioExecutor:
                 if self.should_stop:
                     break
 
-                handler = INCIDENT_HANDLERS.get(incident.type)
-                if not handler:
-                    console.print(f"[red]Unknown incident type: {incident.type}[/red]")
-                    continue
-
-                # Build kwargs
-                kwargs: dict[str, Any] = {}
-                if incident.delay_ms is not None:
-                    kwargs["delay_ms"] = incident.delay_ms
-                if incident.broker is not None:
-                    kwargs["broker"] = incident.broker
-                if incident.rate is not None:
-                    kwargs["rate"] = incident.rate
-                if incident.duration_seconds is not None:
-                    kwargs["duration_seconds"] = incident.duration_seconds
-
-                await handler(ctx, **kwargs)
+                ctx = self._build_incident_context()
+                commands = incident.get_commands(ctx)
+                await self.execute_commands(commands)
 
     async def run(self, duration_seconds: int) -> ExecutionResult:
         result = ExecutionResult()
@@ -519,13 +604,12 @@ class ScenarioExecutor:
                         )
 
         # Schedule incidents
-        ctx = IncidentContext(executor=self, bootstrap_servers=self.bootstrap_servers)
         for incident in self._all_incidents:
-            tasks.append(self._schedule_incident(incident, ctx, start_time))
+            tasks.append(self._schedule_incident(incident, start_time))
 
         # Schedule incident groups
         for group in self._all_incident_groups:
-            tasks.append(self._schedule_incident_group(group, ctx, start_time))
+            tasks.append(self._schedule_incident_group(group, start_time))
 
         # Display update task
         async def update_display(live: Live):

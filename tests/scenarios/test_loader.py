@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from khaos.scenarios.incidents import StopBrokerIncident
 from khaos.scenarios.loader import (
     discover_scenarios,
     get_scenario,
@@ -46,7 +47,8 @@ class TestLoadScenario:
         scenario = load_scenario(file_path)
 
         assert len(scenario.incidents) == 1
-        assert scenario.incidents[0].type == "stop_broker"
+        assert isinstance(scenario.incidents[0], StopBrokerIncident)
+        assert scenario.incidents[0].broker == "kafka-1"
 
     def test_loads_scenario_with_incident_groups(self, tmp_path):
         data = {

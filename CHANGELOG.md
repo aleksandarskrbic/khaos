@@ -8,10 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Demo scenario
+- New test scenarios: `all-incidents`, `targeted-incidents`, `chaos-loop`
+- Unified `ValidationError` and `ValidationResult` in `validators/common.py`
+- Centralized Kafka config builder in `kafka/config.py`
 
 ### Changed
-- Code cleanup and improvements
+- Renamed `schemas/` module to `validators/`
+- Refactored `DockerManager` from module functions to class
+- Changed default `auto_offset_reset` to `latest` for cleaner test runs
+- Topics are now deleted before creation to ensure clean state
+
+### Fixed
+- KafkaAdmin error handling now uses proper Kafka error codes instead of string matching
+- Consumer pause/resume no longer crashes (removed auto-close in consume_loop)
+- Consumer rebalance race condition (added delay before close)
+- Silent error swallowing in consumer close() now logs errors
 
 ## [0.1.1] - 2025-12-23
 

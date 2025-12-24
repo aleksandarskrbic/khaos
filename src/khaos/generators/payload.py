@@ -39,16 +39,17 @@ class JsonPayloadGenerator(PayloadGenerator):
 
     def generate(self) -> bytes:
         self._sequence += 1
+        seq = self._sequence
 
         payload: dict[str, Any] = {
-            "id": f"msg-{self._sequence}",
+            "id": f"msg-{seq}",
         }
 
         if self.include_timestamp:
             payload["timestamp"] = int(time.time() * 1000)
 
         if self.include_sequence:
-            payload["sequence"] = self._sequence
+            payload["sequence"] = seq
 
         base_json = json.dumps(payload).encode()
         current_size = len(base_json)

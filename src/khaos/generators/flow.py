@@ -6,17 +6,16 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from confluent_kafka import Producer
 
 from khaos.errors import KhaosConnectionError, format_kafka_error
 from khaos.generators.field import create_field_generator
+from khaos.kafka.config import build_kafka_config
+from khaos.models.cluster import ClusterConfig
+from khaos.models.flow import FlowConfig, FlowStep
 from khaos.runtime import get_executor
-
-if TYPE_CHECKING:
-    from khaos.models.cluster import ClusterConfig
-    from khaos.models.flow import FlowConfig, FlowStep
 
 
 @dataclass
@@ -58,20 +57,16 @@ class FlowProducer:
         self.stats = FlowStats()
         self._stop_event = threading.Event()
 
-        producer_config = {
-            "bootstrap.servers": bootstrap_servers,
-            "batch.size": 16384,
-            "linger.ms": 5,
-            "acks": "1",
-            "compression.type": "lz4",
-            "log_level": 0,
-            "logger": lambda *args: None,
-        }
-
-        if cluster_config:
-            security_config = cluster_config.to_kafka_config()
-            security_config.pop("bootstrap.servers", None)
-            producer_config.update(security_config)
+        producer_config = build_kafka_config(
+            bootstrap_servers,
+            cluster_config,
+            **{
+                "batch.size": 16384,
+                "linger.ms": 5,
+                "acks": "1",
+                "compression.type": "lz4",
+            },
+        )
 
         try:
             self._producer = Producer(producer_config)

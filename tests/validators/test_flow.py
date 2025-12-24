@@ -1,6 +1,6 @@
 import pytest
 
-from khaos.schemas.flow_validator import FlowValidator
+from khaos.validators.flow import FlowValidator
 
 
 @pytest.fixture

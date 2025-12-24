@@ -8,10 +8,22 @@ from khaos.kafka.producer import ProducerSimulator
 from khaos.models.cluster import ClusterConfig
 from khaos.models.config import ProducerConfig
 from khaos.scenarios.executor import ScenarioExecutor
-from khaos.scenarios.incidents import INFRASTRUCTURE_INCIDENTS
-from khaos.scenarios.scenario import IncidentGroup, Scenario
+from khaos.scenarios.incidents import (
+    IncidentGroup,
+    StartBrokerIncident,
+    StopBrokerIncident,
+)
+from khaos.scenarios.scenario import Scenario
 
 console = Console()
+
+
+def _is_infrastructure_incident(incident: object) -> bool:
+    return isinstance(incident, (StopBrokerIncident, StartBrokerIncident))
+
+
+def _get_incident_type_name(incident: object) -> str:
+    return type(incident).__name__
 
 
 class ExternalScenarioExecutor(ScenarioExecutor):
@@ -48,9 +60,9 @@ class ExternalScenarioExecutor(ScenarioExecutor):
         for scenario in scenarios:
             new_incidents = []
             for incident in scenario.incidents:
-                if incident.type in INFRASTRUCTURE_INCIDENTS:
+                if _is_infrastructure_incident(incident):
                     console.print(
-                        f"[yellow]Skipping '{incident.type}' incident "
+                        f"[yellow]Skipping '{_get_incident_type_name(incident)}' incident "
                         f"(not supported on external clusters)[/yellow]"
                     )
                     skipped_count += 1
@@ -61,9 +73,9 @@ class ExternalScenarioExecutor(ScenarioExecutor):
             for group in scenario.incident_groups:
                 new_group_incidents = []
                 for incident in group.incidents:
-                    if incident.type in INFRASTRUCTURE_INCIDENTS:
+                    if _is_infrastructure_incident(incident):
                         console.print(
-                            f"[yellow]Skipping '{incident.type}' in group "
+                            f"[yellow]Skipping '{_get_incident_type_name(incident)}' in group "
                             f"(not supported on external clusters)[/yellow]"
                         )
                         skipped_count += 1

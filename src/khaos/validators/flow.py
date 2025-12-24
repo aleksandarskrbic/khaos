@@ -1,30 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
 
-from khaos.schemas.validator import SchemaValidator
-
-
-@dataclass
-class FlowValidationError:
-    path: str
-    message: str
-
-
-@dataclass
-class FlowValidationResult:
-    valid: bool = True
-    errors: list[FlowValidationError] = field(default_factory=list)
-    warnings: list[FlowValidationError] = field(default_factory=list)
-
-    def add_error(self, path: str, message: str) -> None:
-        self.errors.append(FlowValidationError(path, message))
-        self.valid = False
-
-    def add_warning(self, path: str, message: str) -> None:
-        self.warnings.append(FlowValidationError(path, message))
-
+from khaos.validators.common import ValidationResult
+from khaos.validators.schema import SchemaValidator
 
 VALID_CORRELATION_TYPES = {"uuid", "field_ref"}
 
@@ -33,10 +12,8 @@ class FlowValidator:
     def __init__(self):
         self.schema_validator = SchemaValidator()
 
-    def validate(
-        self, flows: list[dict[str, Any]], base_path: str = "flows"
-    ) -> FlowValidationResult:
-        result = FlowValidationResult()
+    def validate(self, flows: list[dict[str, Any]], base_path: str = "flows") -> ValidationResult:
+        result = ValidationResult()
 
         if not isinstance(flows, list):
             result.add_error(base_path, "flows must be a list")
@@ -48,9 +25,7 @@ class FlowValidator:
 
         return result
 
-    def _validate_flow(
-        self, flow_def: dict[str, Any], path: str, result: FlowValidationResult
-    ) -> None:
+    def _validate_flow(self, flow_def: dict[str, Any], path: str, result: ValidationResult) -> None:
         if not isinstance(flow_def, dict):
             result.add_error(path, "Flow must be an object/dict")
             return
@@ -87,7 +62,7 @@ class FlowValidator:
             self._validate_step(step, f"{path}.steps[{i}]", result, is_first=(i == 0))
 
     def _validate_correlation(
-        self, correlation: dict[str, Any], path: str, result: FlowValidationResult
+        self, correlation: dict[str, Any], path: str, result: ValidationResult
     ) -> None:
         if not isinstance(correlation, dict):
             result.add_error(path, "correlation must be an object/dict")
@@ -114,7 +89,7 @@ class FlowValidator:
         self,
         step: dict[str, Any],
         path: str,
-        result: FlowValidationResult,
+        result: ValidationResult,
         is_first: bool = False,
     ) -> None:
         if not isinstance(step, dict):
@@ -154,7 +129,7 @@ class FlowValidator:
             self._validate_step_consumers(step["consumers"], f"{path}.consumers", result)
 
     def _validate_step_consumers(
-        self, consumers: dict[str, Any], path: str, result: FlowValidationResult
+        self, consumers: dict[str, Any], path: str, result: ValidationResult
     ) -> None:
         if not isinstance(consumers, dict):
             result.add_error(path, "consumers must be an object/dict")

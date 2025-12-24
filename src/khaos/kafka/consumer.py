@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from confluent_kafka import Consumer, KafkaError
 
 from khaos.errors import KhaosConnectionError, format_kafka_error
+from khaos.kafka.config import build_kafka_config
+from khaos.models.cluster import ClusterConfig
 from khaos.runtime import get_executor
 
-if TYPE_CHECKING:
-    from khaos.models.cluster import ClusterConfig
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -39,7 +40,7 @@ class ConsumerSimulator:
         group_id: str,
         topics: list[str],
         processing_delay_ms: int = 0,
-        auto_offset_reset: str = "earliest",
+        auto_offset_reset: str = "latest",
         max_poll_records: int = 500,
         cluster_config: ClusterConfig | None = None,
     ):
@@ -51,23 +52,18 @@ class ConsumerSimulator:
         self.stats = ConsumerStats()
         self._stop_event = threading.Event()
 
-        config = {
-            "bootstrap.servers": bootstrap_servers,
-            "group.id": group_id,
-            "auto.offset.reset": auto_offset_reset,
-            "enable.auto.commit": True,
-            "auto.commit.interval.ms": 5000,
-            "max.poll.interval.ms": 300000,
-            "session.timeout.ms": 45000,
-            "log_level": 0,  # Disable librdkafka logging to stderr
-            "logger": lambda *args: None,  # Silent logger callback
-        }
-
-        # Merge security configuration if provided
-        if cluster_config:
-            security_config = cluster_config.to_kafka_config()
-            security_config.pop("bootstrap.servers", None)
-            config.update(security_config)
+        config = build_kafka_config(
+            bootstrap_servers,
+            cluster_config,
+            **{
+                "group.id": group_id,
+                "auto.offset.reset": auto_offset_reset,
+                "enable.auto.commit": True,
+                "auto.commit.interval.ms": 5000,
+                "max.poll.interval.ms": 300000,
+                "session.timeout.ms": 45000,
+            },
+        )
 
         try:
             self._consumer = Consumer(config)
@@ -91,45 +87,48 @@ class ConsumerSimulator:
         self,
         duration_seconds: int = 60,
         on_message=None,
-    ) -> None:
+    ):
+        """
+        Run the consume loop.
+
+        Args:
+            duration_seconds: How long to run. Use 0 for infinite (until stop() is called).
+            on_message: Optional callback invoked for each message.
+        """
         start_time = time.time()
         loop = asyncio.get_event_loop()
         executor = get_executor()
 
-        try:
-            while not self.should_stop:
-                if duration_seconds > 0 and (time.time() - start_time) >= duration_seconds:
-                    break
+        while not self.should_stop:
+            if duration_seconds > 0 and (time.time() - start_time) >= duration_seconds:
+                break
 
-                msg = await loop.run_in_executor(executor, self._poll_sync, 0.1)
+            msg = await loop.run_in_executor(executor, self._poll_sync, 0.1)
 
-                if msg is None:
+            if msg is None:
+                continue
+
+            if msg.error():
+                if msg.error().code() == KafkaError._PARTITION_EOF:
                     continue
+                self.stats.record_error()
+                continue
 
-                if msg.error():
-                    if msg.error().code() == KafkaError._PARTITION_EOF:
-                        continue
-                    self.stats.record_error()
-                    continue
+            value_size = len(msg.value()) if msg.value() else 0
+            self.stats.record_message(value_size)
 
-                value_size = len(msg.value()) if msg.value() else 0
-                self.stats.record_message(value_size)
+            if on_message:
+                on_message(msg)
 
-                if on_message:
-                    on_message(msg)
-
-                # Simulate processing delay
-                if self.processing_delay_ms > 0:
-                    await asyncio.sleep(self.processing_delay_ms / 1000.0)
-
-        finally:
-            self.close()
+            # Simulate processing delay
+            if self.processing_delay_ms > 0:
+                await asyncio.sleep(self.processing_delay_ms / 1000.0)
 
     def close(self) -> None:
         try:
             self._consumer.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Error closing consumer: {e}")
 
     def get_stats(self) -> ConsumerStats:
         return self.stats

@@ -136,7 +136,7 @@ def validate_scenario(
     ] = None,
 ) -> None:
     from khaos.scenarios.loader import discover_scenarios
-    from khaos.scenarios.validator import validate_scenario_file
+    from khaos.validators.scenario import validate_scenario_file
 
     available = discover_scenarios()
 

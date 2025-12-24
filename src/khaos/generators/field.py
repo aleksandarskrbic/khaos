@@ -5,10 +5,9 @@ import string
 import uuid
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from khaos.models.schema import FieldSchema
+from khaos.models.schema import FieldSchema
 
 
 class FieldGenerator(ABC):
@@ -64,13 +63,16 @@ class IntFieldGenerator(FieldGenerator):
         if self.cardinality:
             if len(self._cache) < self.cardinality:
                 while True:
-                    value = random.randint(self.min_val, self.max_val)
+                    value = self._generate_random()
                     if value not in self._cache:
                         self._cache.append(value)
                         return value
             value = self._cache[self._index % self.cardinality]
             self._index += 1
             return value
+        return self._generate_random()
+
+    def _generate_random(self) -> int:
         return random.randint(self.min_val, self.max_val)
 
 

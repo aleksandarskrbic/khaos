@@ -3,6 +3,19 @@ from typing import Any
 
 from khaos.models.flow import FlowConfig
 from khaos.models.schema import FieldSchema
+from khaos.scenarios.incidents import (
+    ChangeProducerRate,
+    ConsumerTarget,
+    Incident,
+    IncidentGroup,
+    IncreaseConsumerDelay,
+    PauseConsumers,
+    ProducerTarget,
+    RebalanceConsumer,
+    Schedule,
+    StartBrokerIncident,
+    StopBrokerIncident,
+)
 
 
 @dataclass
@@ -11,7 +24,6 @@ class MessageSchemaConfig:
     key_cardinality: int = 50
     min_size_bytes: int = 200
     max_size_bytes: int = 500
-    # Structured field schemas (optional - if not set, use random bytes)
     fields: list[FieldSchema] | None = None
 
 
@@ -37,24 +49,75 @@ class TopicConfig:
     producer_config: ProducerConfigData = field(default_factory=ProducerConfigData)
 
 
-@dataclass
-class Incident:
-    type: str
-    at_seconds: int | None = None
-    every_seconds: int | None = None
-    initial_delay_seconds: int = 0
-    # Type-specific params
-    delay_ms: int | None = None
-    broker: str | None = None
-    rate: float | None = None
-    duration_seconds: int | None = None
+def _parse_schedule(data: dict[str, Any]) -> Schedule:
+    return Schedule(
+        at_seconds=data.get("at_seconds"),
+        every_seconds=data.get("every_seconds"),
+        initial_delay_seconds=data.get("initial_delay_seconds", 0),
+    )
 
 
-@dataclass
-class IncidentGroup:
-    repeat: int  # Number of times to repeat
-    interval_seconds: int  # Time between each cycle start
-    incidents: list[Incident] = field(default_factory=list)
+def _parse_consumer_target(data: dict[str, Any] | None) -> ConsumerTarget:
+    if not data:
+        return ConsumerTarget()
+    return ConsumerTarget(
+        topic=data.get("topic"),
+        group=data.get("group"),
+        percentage=data.get("percentage"),
+        count=data.get("count"),
+    )
+
+
+def _parse_producer_target(data: dict[str, Any] | None) -> ProducerTarget:
+    if not data:
+        return ProducerTarget()
+    return ProducerTarget(
+        topic=data.get("topic"),
+        percentage=data.get("percentage"),
+        count=data.get("count"),
+    )
+
+
+def _parse_incident(data: dict[str, Any]) -> Incident:
+    incident_type = data["type"]
+    schedule = _parse_schedule(data)
+
+    match incident_type:
+        case "stop_broker":
+            return StopBrokerIncident(broker=data["broker"], schedule=schedule)
+
+        case "start_broker":
+            return StartBrokerIncident(broker=data["broker"], schedule=schedule)
+
+        case "pause_consumer":
+            return PauseConsumers(
+                duration_seconds=data["duration_seconds"],
+                target=_parse_consumer_target(data.get("target")),
+                schedule=schedule,
+            )
+
+        case "rebalance_consumer":
+            return RebalanceConsumer(
+                target=_parse_consumer_target(data.get("target")),
+                schedule=schedule,
+            )
+
+        case "increase_consumer_delay":
+            return IncreaseConsumerDelay(
+                delay_ms=data["delay_ms"],
+                target=_parse_consumer_target(data.get("target")),
+                schedule=schedule,
+            )
+
+        case "change_producer_rate":
+            return ChangeProducerRate(
+                rate=data["rate"],
+                target=_parse_producer_target(data.get("target")),
+                schedule=schedule,
+            )
+
+        case _:
+            raise ValueError(f"Unknown incident type: {incident_type}")
 
 
 @dataclass
@@ -89,12 +152,12 @@ class Scenario:
             )
             topics.append(topic)
 
-        incidents = []
-        incident_groups = []
+        incidents: list[Incident] = []
+        incident_groups: list[IncidentGroup] = []
         for incident_data in data.get("incidents", []):
             if "group" in incident_data:
                 group_data = incident_data["group"]
-                group_incidents = [Incident(**inc) for inc in group_data.get("incidents", [])]
+                group_incidents = [_parse_incident(inc) for inc in group_data.get("incidents", [])]
                 group = IncidentGroup(
                     repeat=group_data.get("repeat", 1),
                     interval_seconds=group_data.get("interval_seconds", 60),
@@ -102,7 +165,7 @@ class Scenario:
                 )
                 incident_groups.append(group)
             else:
-                incident = Incident(**incident_data)
+                incident = _parse_incident(incident_data)
                 incidents.append(incident)
 
         flows = [FlowConfig.from_dict(f) for f in data.get("flows", [])]
