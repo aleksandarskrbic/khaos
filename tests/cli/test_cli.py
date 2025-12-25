@@ -75,7 +75,7 @@ class TestValidateCommand:
         assert "valid" in output.lower() or "✓" in output
 
     def test_validate_specific_scenario(self):
-        result = runner.invoke(app, ["validate", "high-throughput"])
+        result = runner.invoke(app, ["validate", "traffic/high-throughput"])
         assert result.exit_code == 0
 
     def test_validate_unknown_scenario_fails(self):

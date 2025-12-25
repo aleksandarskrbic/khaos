@@ -14,6 +14,12 @@ def load_scenario(path: Path) -> Scenario:
 
 
 def discover_scenarios(base_dir: Path | None = None) -> dict[str, Path]:
+    """Discover all scenarios and return a dict mapping path-based names to file paths.
+
+    Names are based on relative path from scenarios dir, e.g.:
+    - scenarios/traffic/high-throughput.yaml -> "traffic/high-throughput"
+    - scenarios/chaos/broker-chaos.yaml -> "chaos/broker-chaos"
+    """
     if base_dir is None:
         base_dir = SCENARIOS_DIR
 
@@ -27,7 +33,11 @@ def discover_scenarios(base_dir: Path | None = None) -> dict[str, Path]:
             with yaml_file.open() as f:
                 data = yaml.safe_load(f)
             if data and "name" in data:
-                scenarios[data["name"]] = yaml_file
+                # Use relative path from base_dir as the scenario key
+                relative_path = yaml_file.relative_to(base_dir)
+                # Remove .yaml extension and convert to string with forward slashes
+                scenario_key = str(relative_path.with_suffix("")).replace("\\", "/")
+                scenarios[scenario_key] = yaml_file
         except Exception:
             continue
 
@@ -52,3 +62,22 @@ def get_scenario(name: str, base_dir: Path | None = None) -> Scenario:
 def list_scenarios(base_dir: Path | None = None) -> dict[str, str]:
     scenarios = load_all_scenarios(base_dir)
     return {name: scenario.description for name, scenario in scenarios.items()}
+
+
+def list_scenarios_by_category(base_dir: Path | None = None) -> dict[str, dict[str, str]]:
+    """List scenarios grouped by category (subdirectory).
+
+    Returns:
+        Dict mapping category name to dict of {scenario_name: description}
+    """
+    scenarios = load_all_scenarios(base_dir)
+    categories: dict[str, dict[str, str]] = {}
+
+    for name, scenario in scenarios.items():
+        category = name.split("/", 1)[0] if "/" in name else "other"
+
+        if category not in categories:
+            categories[category] = {}
+        categories[category][name] = scenario.description
+
+    return categories

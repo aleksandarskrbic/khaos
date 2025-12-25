@@ -34,7 +34,8 @@
 - **Chaos Engineering**: Built-in incident primitives (backpressure, rebalances, broker failures)
 - **Full Authentication**: SASL/PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, SSL/TLS, mTLS
 - **Live Stats Display**: Real-time producer/consumer metrics
-- **Web UI**: Redpanda Console at localhost:8080 for cluster inspection
+- **Serialization Formats**: JSON, Avro, and Protobuf with Schema Registry support
+- **Web UI**: Kafka UI at localhost:8080 for cluster inspection
 
 ## Requirements
 
@@ -109,7 +110,7 @@ uv run pre-commit install
 
 ```bash
 # Run a scenario (auto-starts local Kafka cluster)
-khaos run high-throughput
+khaos run traffic/high-throughput
 
 # Press Ctrl+C to stop
 ```
@@ -211,7 +212,7 @@ khaos cluster-up -m zookeeper
 This starts:
 - 3 Kafka brokers (kafka-1, kafka-2, kafka-3)
 - ZooKeeper (only in zookeeper mode)
-- Redpanda Console at http://localhost:8080
+- Kafka UI at http://localhost:8080
 
 ---
 
@@ -265,8 +266,8 @@ Validate scenario YAML files for errors.
 khaos validate
 
 # Validate specific scenario(s)
-khaos validate high-throughput
-khaos validate consumer-lag hot-partition
+khaos validate traffic/high-throughput
+khaos validate traffic/consumer-lag traffic/hot-partition
 ```
 
 ---
@@ -295,35 +296,35 @@ khaos run SCENARIO [SCENARIO...] [OPTIONS]
 
 ```bash
 # Run single scenario until Ctrl+C
-khaos run high-throughput
+khaos run traffic/high-throughput
 
 # Run for 60 seconds
-khaos run high-throughput --duration 60
-khaos run high-throughput -d 60
+khaos run traffic/high-throughput --duration 60
+khaos run traffic/high-throughput -d 60
 
 # Run multiple scenarios together
-khaos run partition-skew rebalance-storm
+khaos run traffic/hot-partition chaos/rebalance-storm
 
 # Run multiple scenarios for 2 minutes
-khaos run consumer-lag throughput-drop --duration 120
+khaos run traffic/consumer-lag chaos/throughput-drop --duration 120
 
 # Keep cluster running after scenario (for manual inspection)
-khaos run high-throughput --keep-cluster
-khaos run high-throughput -k
+khaos run traffic/high-throughput --keep-cluster
+khaos run traffic/high-throughput -k
 
 # Keep cluster running with duration
-khaos run high-throughput -d 60 -k
+khaos run traffic/high-throughput -d 60 -k
 
 # Use custom bootstrap servers (still uses local Docker cluster)
-khaos run high-throughput --bootstrap-servers localhost:9092
+khaos run traffic/high-throughput --bootstrap-servers localhost:9092
 
 # Run with ZooKeeper mode (instead of KRaft)
-khaos run high-throughput --mode zookeeper
-khaos run high-throughput -m zookeeper
+khaos run traffic/high-throughput --mode zookeeper
+khaos run traffic/high-throughput -m zookeeper
 
 # Producer-only mode (no built-in consumers)
 # Useful for learning stream processing with Spark/Flink
-khaos run high-throughput --no-consumers -k
+khaos run traffic/high-throughput --no-consumers -k
 ```
 
 ---
@@ -362,20 +363,20 @@ khaos simulate SCENARIO [SCENARIO...] [OPTIONS]
 
 ```bash
 # Plain connection (no auth)
-khaos simulate high-throughput \
+khaos simulate traffic/high-throughput \
     --bootstrap-servers kafka.example.com:9092
 
 # With duration
-khaos simulate high-throughput \
+khaos simulate traffic/high-throughput \
     --bootstrap-servers kafka.example.com:9092 \
     --duration 120
 
 # Multiple scenarios
-khaos simulate consumer-lag throughput-drop \
+khaos simulate traffic/consumer-lag chaos/throughput-drop \
     --bootstrap-servers kafka.example.com:9092
 
 # Skip topic creation (topics already exist)
-khaos simulate high-throughput \
+khaos simulate traffic/high-throughput \
     --bootstrap-servers kafka.example.com:9092 \
     --skip-topic-creation
 ```
@@ -383,7 +384,7 @@ khaos simulate high-throughput \
 #### Self-hosted with SASL/PLAIN
 
 ```bash
-khaos simulate high-throughput \
+khaos simulate traffic/high-throughput \
     --bootstrap-servers kafka.example.com:9092 \
     --security-protocol SASL_PLAINTEXT \
     --sasl-mechanism PLAIN \
@@ -394,7 +395,7 @@ khaos simulate high-throughput \
 #### Self-hosted with SASL/SCRAM + SSL
 
 ```bash
-khaos simulate high-throughput \
+khaos simulate traffic/high-throughput \
     --bootstrap-servers kafka.example.com:9093 \
     --security-protocol SASL_SSL \
     --sasl-mechanism SCRAM-SHA-256 \
@@ -406,7 +407,7 @@ khaos simulate high-throughput \
 #### Self-hosted with SSL (server auth only)
 
 ```bash
-khaos simulate high-throughput \
+khaos simulate traffic/high-throughput \
     --bootstrap-servers kafka.example.com:9093 \
     --security-protocol SSL \
     --ssl-ca-location /path/to/ca.pem
@@ -415,7 +416,7 @@ khaos simulate high-throughput \
 #### Self-hosted with mTLS (mutual TLS)
 
 ```bash
-khaos simulate high-throughput \
+khaos simulate traffic/high-throughput \
     --bootstrap-servers kafka.example.com:9093 \
     --security-protocol SSL \
     --ssl-ca-location /path/to/ca.pem \
@@ -423,7 +424,7 @@ khaos simulate high-throughput \
     --ssl-key-location /path/to/client.key
 
 # With encrypted private key
-khaos simulate high-throughput \
+khaos simulate traffic/high-throughput \
     --bootstrap-servers kafka.example.com:9093 \
     --security-protocol SSL \
     --ssl-ca-location /path/to/ca.pem \
@@ -442,9 +443,9 @@ khaos is perfect for learning Apache Spark, Flink, or Kafka Streams. Use `--no-c
 
 ```bash
 # 1. Start generating traffic (keep cluster running)
-khaos run high-throughput --no-consumers --keep-cluster
+khaos run traffic/high-throughput --no-consumers --keep-cluster
 
-# 2. Access Redpanda Console to inspect topics
+# 2. Access Kafka UI to inspect topics
 open http://localhost:8080
 
 # 3. Connect your own consumer application to:
@@ -459,25 +460,43 @@ khaos cluster-down
 
 ## Available Scenarios
 
-### Traffic Scenarios
+Scenarios are organized into categories. Use `khaos list` to see all available scenarios.
+
+### Traffic Patterns (`traffic/`)
 
 | Scenario | Description |
 |----------|-------------|
-| `high-throughput` | High-throughput scenario (2 topics, 4 producers, 4 consumers) |
-| `consumer-lag` | Consumer lag scenario (slow consumers, growing lag) |
-| `hot-partition` | Hot partition scenario (skewed key distribution) |
-| `order-flow` | Correlated event flow (order → payment → shipment) |
+| `traffic/high-throughput` | High-throughput scenario (2 topics, 4 producers, 4 consumers) |
+| `traffic/consumer-lag` | Consumer lag scenario (slow consumers, growing lag) |
+| `traffic/hot-partition` | Hot partition scenario (skewed key distribution) |
 
-### Incident Scenarios (Chaos Engineering)
+### Chaos Engineering (`chaos/`)
 
 | Scenario | Description | Recommended Duration |
 |----------|-------------|---------------------|
-| `uneven-assignment` | 12 partitions / 5 consumers = uneven distribution | 60s+ |
-| `throughput-drop` | Downstream backpressure at T+30s slows consumers | 60s+ |
-| `rebalance-storm` | Consumer join/leave every 20s triggers rebalances | 60s+ |
-| `leadership-churn` | Broker stop/restart at T+45s causes leader elections | 90s+ |
+| `chaos/uneven-assignment` | 12 partitions / 5 consumers = uneven distribution | 60s+ |
+| `chaos/throughput-drop` | Downstream backpressure at T+30s slows consumers | 60s+ |
+| `chaos/rebalance-storm` | Consumer join/leave every 20s triggers rebalances | 60s+ |
+| `chaos/leadership-churn` | Broker stop/restart at T+45s causes leader elections | 90s+ |
+| `chaos/broker-chaos` | Repeated broker stop/start cycles | 60s+ |
 
-**Note:** `leadership-churn` only works with local Docker cluster (uses `stop_broker`/`start_broker` incidents).
+**Note:** `chaos/leadership-churn` and `chaos/broker-chaos` only work with local Docker cluster.
+
+### Event Flows (`flows/`)
+
+| Scenario | Description |
+|----------|-------------|
+| `flows/order-flow` | Correlated event flow (order → payment → shipment) |
+| `flows/ecommerce-orders` | E-commerce order events with realistic fake data |
+
+### Serialization Formats (`serialization/`)
+
+| Scenario | Description |
+|----------|-------------|
+| `serialization/avro-example` | Avro serialization with Schema Registry |
+| `serialization/avro-no-registry` | Avro serialization without Schema Registry |
+| `serialization/protobuf-example` | Protobuf serialization with Schema Registry |
+| `serialization/protobuf-no-registry` | Protobuf serialization without Schema Registry |
 
 ---
 
@@ -647,6 +666,93 @@ Common providers: `name`, `email`, `phone_number`, `address`, `street_address`, 
 See [Faker docs](https://faker.readthedocs.io/en/master/providers.html) for the full list.
 
 **Note:** If `fields` is not defined, messages are random JSON with padding to match size constraints.
+
+### Serialization Formats
+
+khaos supports three serialization formats: JSON (default), Avro, and Protobuf.
+
+#### JSON (Default)
+
+```yaml
+message_schema:
+  fields:
+    - name: order_id
+      type: uuid
+    - name: amount
+      type: float
+```
+
+No `data_format` needed - JSON is the default.
+
+#### Avro
+
+```yaml
+message_schema:
+  data_format: avro
+  fields:
+    - name: order_id
+      type: uuid
+    - name: amount
+      type: float
+    - name: status
+      type: enum
+      values: [PENDING, COMPLETED]
+```
+
+With Schema Registry (auto-registers schemas):
+
+```yaml
+schema_registry:
+  url: http://localhost:8081
+
+topics:
+  - name: orders
+    message_schema:
+      data_format: avro
+      fields: [...]
+```
+
+#### Protobuf
+
+```yaml
+message_schema:
+  data_format: protobuf
+  fields:
+    - name: shipment_id
+      type: uuid
+    - name: carrier
+      type: enum
+      values: [UPS, FEDEX, DHL]
+    - name: weight_kg
+      type: float
+```
+
+With Schema Registry:
+
+```yaml
+schema_registry:
+  url: http://localhost:8081
+
+topics:
+  - name: shipments
+    message_schema:
+      data_format: protobuf
+      fields: [...]
+```
+
+#### Type Mappings
+
+| Field Type | JSON | Avro | Protobuf |
+|------------|------|------|----------|
+| `string` | string | string | TYPE_STRING |
+| `int` | number | long | TYPE_INT64 |
+| `float` | number | double | TYPE_DOUBLE |
+| `boolean` | boolean | boolean | TYPE_BOOL |
+| `uuid` | string | string (uuid) | TYPE_STRING |
+| `timestamp` | number (epoch ms) | long (timestamp-millis) | TYPE_INT64 |
+| `enum` | string | enum | TYPE_ENUM |
+| `object` | object | record | TYPE_MESSAGE |
+| `array` | array | array | repeated |
 
 ### Producer Config
 
@@ -865,7 +971,7 @@ flows:
 
 ### Example: E-commerce Order Flow
 
-See `scenarios/order-flow.yaml` for a complete example simulating:
+See `scenarios/flows/order-flow.yaml` for a complete example simulating:
 1. Order creation
 2. Payment initiation and completion
 3. Inventory reservation
@@ -873,7 +979,7 @@ See `scenarios/order-flow.yaml` for a complete example simulating:
 5. Customer notification
 
 ```bash
-khaos run order-flow --no-consumers -k
+khaos run flows/order-flow --no-consumers -k
 ```
 
 ---
@@ -884,7 +990,8 @@ The Docker Compose setup creates:
 
 - **3 Kafka brokers**: kafka-1, kafka-2, kafka-3
 - **KRaft mode**: No ZooKeeper required
-- **Redpanda Console**: http://localhost:8080
+- **Kafka UI**: http://localhost:8080
+- **Schema Registry**: http://localhost:8081 (auto-started when using Avro/Protobuf)
 
 ### Ports
 
@@ -893,7 +1000,8 @@ The Docker Compose setup creates:
 | kafka-1 | 9092 |
 | kafka-2 | 9093 |
 | kafka-3 | 9094 |
-| Redpanda Console | 8080 |
+| Kafka UI | 8080 |
+| Schema Registry | 8081 |
 
 ### Bootstrap Servers
 

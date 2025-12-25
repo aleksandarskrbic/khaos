@@ -101,8 +101,9 @@ class TestDiscoverScenarios:
         scenarios = discover_scenarios(tmp_path)
 
         assert len(scenarios) == 2
-        assert "scenario-a" in scenarios
-        assert "scenario-b" in scenarios
+        # Keys are now based on file path, not internal name
+        assert "a" in scenarios
+        assert "b" in scenarios
 
     def test_discovers_nested_scenarios(self, tmp_path):
         subdir = tmp_path / "traffic"
@@ -122,8 +123,9 @@ class TestDiscoverScenarios:
         scenarios = discover_scenarios(tmp_path)
 
         assert len(scenarios) == 2
-        assert "root-scenario" in scenarios
-        assert "nested-scenario" in scenarios
+        # Keys are now path-based: "root" and "traffic/nested"
+        assert "root" in scenarios
+        assert "traffic/nested" in scenarios
 
     def test_skips_invalid_yaml(self, tmp_path):
         create_temp_scenario(
@@ -146,9 +148,11 @@ class TestGetScenario:
         create_temp_scenario(
             {"name": "my-scenario", "description": "Test", "topics": [{"name": "t1"}]},
             tmp_path,
+            "test.yaml",
         )
 
-        scenario = get_scenario("my-scenario", tmp_path)
+        # Now we use file path as key, not internal name
+        scenario = get_scenario("test", tmp_path)
 
         assert scenario.name == "my-scenario"
         assert scenario.description == "Test"
@@ -181,8 +185,9 @@ class TestGetScenario:
             get_scenario("missing", tmp_path)
 
         error_msg = str(exc_info.value)
-        assert "available-one" in error_msg
-        assert "available-two" in error_msg
+        # Keys are now file paths without extension
+        assert "one" in error_msg
+        assert "two" in error_msg
 
 
 class TestListScenarios:
@@ -200,17 +205,20 @@ class TestListScenarios:
 
         scenarios = list_scenarios(tmp_path)
 
+        # Keys are now file paths without extension
         assert scenarios == {
-            "scenario-a": "Description A",
-            "scenario-b": "Description B",
+            "a": "Description A",
+            "b": "Description B",
         }
 
     def test_empty_description_defaults_to_empty_string(self, tmp_path):
         create_temp_scenario(
             {"name": "no-desc", "topics": [{"name": "t1"}]},
             tmp_path,
+            "test.yaml",
         )
 
         scenarios = list_scenarios(tmp_path)
 
-        assert scenarios["no-desc"] == ""
+        # Key is now file path without extension
+        assert scenarios["test"] == ""

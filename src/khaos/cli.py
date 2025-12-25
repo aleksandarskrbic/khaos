@@ -110,22 +110,47 @@ def cluster_status() -> None:
 
 @app.command("list")
 def list_scenarios_cmd() -> None:
-    from khaos.scenarios.loader import list_scenarios
+    from khaos.scenarios.loader import list_scenarios_by_category
 
-    scenarios = list_scenarios()
+    categories = list_scenarios_by_category()
 
-    if not scenarios:
+    if not categories:
         console.print("[yellow]No scenarios found.[/yellow]")
         return
 
+    # Define category display order and descriptions
+    category_info = {
+        "traffic": ("Traffic Patterns", "Basic traffic generation scenarios"),
+        "chaos": ("Chaos Engineering", "Fault injection and incident scenarios"),
+        "flows": ("Event Flows", "Correlated multi-topic event flows"),
+        "serialization": ("Serialization", "Avro and Protobuf format examples"),
+    }
+
     table = Table(title="Available Scenarios")
-    table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Scenario", style="cyan", no_wrap=True)
     table.add_column("Description", style="white")
 
-    for name, description in sorted(scenarios.items()):
-        table.add_row(name, description)
+    # Sort categories in preferred order
+    sorted_categories = sorted(
+        categories.keys(),
+        key=lambda x: list(category_info.keys()).index(x) if x in category_info else 99,
+    )
+
+    for idx, category in enumerate(sorted_categories):
+        scenarios = categories[category]
+        display_name, category_desc = category_info.get(category, (category.title(), ""))
+
+        if idx > 0:
+            table.add_section()
+
+        table.add_row(f"[bold magenta]{display_name}[/bold magenta]", f"[dim]{category_desc}[/dim]")
+
+        for name, description in sorted(scenarios.items()):
+            table.add_row(f"  {name}", description)
 
     console.print(table)
+    console.print("\n[dim]Usage: khaos run <scenario>[/dim]")
+    console.print("[dim]Example: khaos run traffic/high-throughput[/dim]")
 
 
 @app.command("validate")
