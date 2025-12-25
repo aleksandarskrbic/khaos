@@ -5,9 +5,10 @@ import json
 from typing import Any, cast
 
 import fastavro
-from confluent_kafka.schema_registry import SchemaRegistryClient
+from confluent_kafka.schema_registry import Schema, SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroDeserializer as ConfluentAvroDeserializer
 from confluent_kafka.schema_registry.avro import AvroSerializer as ConfluentAvroSerializer
+from confluent_kafka.serialization import MessageField, SerializationContext
 
 from khaos.models.schema import FieldSchema
 
@@ -82,9 +83,6 @@ class AvroSerializer:
         self.topic = topic
         self.parsed_schema = fastavro.parse_schema(schema)
         self.registry_client = SchemaRegistryClient({"url": schema_registry_url})
-
-        from confluent_kafka.schema_registry import Schema
-
         avro_schema = Schema(json.dumps(schema), "AVRO")
         self._confluent_serializer = ConfluentAvroSerializer(
             self.registry_client,
@@ -95,8 +93,6 @@ class AvroSerializer:
         )
 
     def serialize(self, data: dict[str, Any]) -> bytes:
-        from confluent_kafka.serialization import MessageField, SerializationContext
-
         result: bytes = self._confluent_serializer(
             data,
             SerializationContext(self.topic, MessageField.VALUE),
@@ -104,8 +100,6 @@ class AvroSerializer:
         return result
 
     def deserialize(self, data: bytes) -> dict[str, Any]:
-        from confluent_kafka.serialization import MessageField, SerializationContext
-
         result: dict[str, Any] = self._confluent_deserializer(
             data,
             SerializationContext(self.topic, MessageField.VALUE),

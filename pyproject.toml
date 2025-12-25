@@ -1,6 +1,6 @@
 [project]
 name = "khaos-cli"
-version = "0.2.0"
+version = "0.3.0"
 description = "Kafka data generator and load testing tool - generate fake messages, simulate producers and consumers, test broker failures, and run chaos engineering scenarios"
 readme = "README.md"
 license = "Apache-2.0"
@@ -29,8 +29,9 @@ keywords = [
     "message-queue",
 ]
 dependencies = [
-    "confluent-kafka[schemaregistry]>=2.3.0",
+    "confluent-kafka[schemaregistry,protobuf]>=2.3.0",
     "fastavro>=1.9.0",
+    "protobuf>=4.21.0",
     "typer>=0.20.0",
     "rich>=13.0.0",
     "pyyaml>=6.0.3",
@@ -109,6 +110,7 @@ ignore = [
     "RUF006",   # asyncio.create_task reference (fire-and-forget is intentional)
     "PLW0603",  # Global statement (singleton executor pattern)
     "TC001",    # TYPE_CHECKING import (used at runtime for dataclasses)
+    "TC002",    # Move import into TYPE_CHECKING block (prefer simple imports)
 ]
 
 [tool.ruff.lint.per-file-ignores]

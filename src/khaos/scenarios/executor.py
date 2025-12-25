@@ -43,7 +43,10 @@ from khaos.serialization import (
     AvroSerializer,
     AvroSerializerNoRegistry,
     JsonSerializer,
+    ProtobufSerializer,
+    ProtobufSerializerNoRegistry,
     field_schemas_to_avro,
+    field_schemas_to_protobuf,
 )
 
 console = Console()
@@ -115,7 +118,7 @@ class ScenarioExecutor:
 
     async def setup(self) -> None:
         if self._needs_schema_registry() and not docker_manager.is_schema_registry_running():
-            console.print("[bold blue]Avro format detected, starting Schema Registry...[/]")
+            console.print("[bold blue]Schema format detected, starting Schema Registry...[/]")
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, docker_manager.start_schema_registry)
 
@@ -149,7 +152,7 @@ class ScenarioExecutor:
 
         # Wait for topics to be fully ready after delete/create
         if created_topics:
-            await asyncio.sleep(2)
+            await asyncio.sleep(10)
 
     async def teardown(self) -> None:
         for producer in self.producers:
@@ -251,9 +254,11 @@ class ScenarioExecutor:
         return mapping.get(name, KeyDistribution.UNIFORM)
 
     def _needs_schema_registry(self) -> bool:
-        has_avro = any(topic.message_schema.data_format == "avro" for topic in self._all_topics)
+        has_schema_format = any(
+            topic.message_schema.data_format in ("avro", "protobuf") for topic in self._all_topics
+        )
         has_config = any(s.schema_registry for s in self.scenarios)
-        return has_avro and has_config
+        return has_schema_format and has_config
 
     def _get_schema_registry_config(self) -> SchemaRegistryConfig | None:
         for scenario in self.scenarios:
@@ -265,6 +270,7 @@ class ScenarioExecutor:
 
     def _create_serializer_for_topic(self, topic: TopicConfig):
         data_format = topic.message_schema.data_format
+        message_name = topic.name.title().replace("-", "").replace("_", "") + "Record"
 
         if data_format == "avro":
             if not topic.message_schema.fields:
@@ -276,7 +282,7 @@ class ScenarioExecutor:
 
             avro_schema = field_schemas_to_avro(
                 topic.message_schema.fields,
-                name=topic.name.title().replace("-", "").replace("_", "") + "Record",
+                name=message_name,
             )
 
             schema_registry = self._get_schema_registry_config()
@@ -288,6 +294,29 @@ class ScenarioExecutor:
                 )
 
             return AvroSerializerNoRegistry(schema=avro_schema)
+
+        if data_format == "protobuf":
+            if not topic.message_schema.fields:
+                console.print(
+                    f"[yellow]Warning: Topic '{topic.name}' uses Protobuf but has no fields. "
+                    "Falling back to JSON.[/yellow]"
+                )
+                return JsonSerializer()
+
+            _, message_class = field_schemas_to_protobuf(
+                topic.message_schema.fields,
+                name=message_name,
+            )
+
+            schema_registry = self._get_schema_registry_config()
+            if schema_registry:
+                return ProtobufSerializer(
+                    schema_registry_url=schema_registry.url,
+                    message_class=message_class,
+                    topic=topic.name,
+                )
+
+            return ProtobufSerializerNoRegistry(message_class=message_class)
 
         return JsonSerializer()
 

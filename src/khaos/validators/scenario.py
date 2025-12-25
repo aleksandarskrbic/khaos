@@ -9,7 +9,7 @@ from khaos.validators.schema import SchemaValidator
 
 VALID_KEY_DISTRIBUTIONS = {"uniform", "zipfian", "single_key", "round_robin"}
 VALID_COMPRESSION_TYPES = {"none", "gzip", "snappy", "lz4", "zstd"}
-VALID_DATA_FORMATS = {"json", "avro"}
+VALID_DATA_FORMATS = {"json", "avro", "protobuf"}
 VALID_ACKS = {"0", "1", "all", "-1"}
 VALID_BROKERS = {"kafka-1", "kafka-2", "kafka-3"}
 
@@ -55,19 +55,21 @@ def validate_scenario_file(file_path: Path) -> ValidationResult:
         if not isinstance(data["topics"], list):
             result.add_error("topics", "Field 'topics' must be a list")
         else:
-            has_avro_topic = False
+            has_schema_format_topic = False
+            schema_format_name = None
             for i, topic in enumerate(data["topics"]):
                 validate_topic(topic, f"topics[{i}]", result)
-                # Check if any topic uses avro
+                # Check if any topic uses avro or protobuf
                 msg_schema = topic.get("message_schema", {})
-                if msg_schema.get("data_format") == "avro":
-                    has_avro_topic = True
+                if msg_schema.get("data_format") in ("avro", "protobuf"):
+                    has_schema_format_topic = True
+                    schema_format_name = msg_schema.get("data_format")
 
-            # Info if avro is used without schema_registry
-            if has_avro_topic and not has_schema_registry:
+            # Info if avro/protobuf is used without schema_registry
+            if has_schema_format_topic and not has_schema_registry and schema_format_name:
                 result.add_warning(
                     "schema_registry",
-                    "Using Avro without Schema Registry (schemaless mode)",
+                    f"Using {schema_format_name.title()} without Schema Registry (schemaless mode)",
                 )
 
     if "flows" in data:
@@ -190,11 +192,11 @@ def validate_message_schema(schema: dict, path: str, result: ValidationResult) -
                 f"Invalid data_format '{schema['data_format']}'. "
                 f"Valid values: {', '.join(sorted(VALID_DATA_FORMATS))}",
             )
-        # Avro requires fields to be defined
-        if schema["data_format"] == "avro" and not schema.get("fields"):
+        # Avro and Protobuf require fields to be defined
+        if schema["data_format"] in ("avro", "protobuf") and not schema.get("fields"):
             result.add_error(
                 f"{path}.fields",
-                "data_format 'avro' requires 'fields' to be defined",
+                f"data_format '{schema['data_format']}' requires 'fields' to be defined",
             )
 
     if "min_size_bytes" in schema:

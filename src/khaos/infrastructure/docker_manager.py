@@ -98,7 +98,11 @@ class DockerManager:
         )
         self.wait_for_kafka()
 
-    def cluster_down(self, remove_volumes: bool = False) -> None:
+    def cluster_down(self, remove_volumes: bool = True) -> None:
+        # Stop Schema Registry first (if running)
+        if self.is_schema_registry_running():
+            self._stop_schema_registry_with_volumes()
+
         compose_file = self._get_active_compose_file()
 
         if compose_file is None:
@@ -114,6 +118,27 @@ class DockerManager:
         self._stop_compose(compose_file, remove_volumes, silent=False)
         self._active_compose_file = None
         self._console.print("[bold green]Kafka cluster stopped![/bold green]")
+
+    def _stop_schema_registry_with_volumes(self) -> None:
+        """Stop Schema Registry and remove its volumes to clear schema data."""
+        mode = self.get_active_mode()
+        if mode is None:
+            for m in ClusterMode:
+                compose_file = get_schema_registry_compose_file(m)
+                subprocess.run(
+                    ["docker", "compose", "-f", str(compose_file), "down", "-v"],
+                    check=False,
+                    capture_output=True,
+                )
+            return
+
+        compose_file = get_schema_registry_compose_file(mode)
+        self._console.print("[dim]Stopping Schema Registry...[/dim]")
+        subprocess.run(
+            ["docker", "compose", "-f", str(compose_file), "down", "-v"],
+            check=False,
+            capture_output=True,
+        )
 
     def _stop_compose(self, compose_file: Path, remove_volumes: bool, silent: bool) -> None:
         cmd = ["docker", "compose", "-f", str(compose_file), "down"]

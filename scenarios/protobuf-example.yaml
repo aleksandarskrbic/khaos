@@ -1,0 +1,39 @@
+name: protobuf-example
+description: Example scenario using Protobuf serialization with Schema Registry
+
+schema_registry:
+  url: http://localhost:8081
+
+topics:
+  - name: shipments
+    partitions: 6
+    replication_factor: 3
+    num_producers: 2
+    producer_rate: 100
+    message_schema:
+      data_format: protobuf
+      key_distribution: uniform
+      key_cardinality: 500
+      fields:
+        - name: shipment_id
+          type: uuid
+        - name: tracking_number
+          type: faker
+          provider: bothify
+          pattern: "??-#####-????"
+        - name: carrier
+          type: enum
+          values:
+            - UPS
+            - FEDEX
+            - DHL
+            - USPS
+        - name: weight_kg
+          type: float
+          min: 0.1
+          max: 50.0
+        - name: destination_city
+          type: faker
+          provider: city
+        - name: shipped_at
+          type: timestamp
