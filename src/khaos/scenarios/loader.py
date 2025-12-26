@@ -50,6 +50,37 @@ def load_all_scenarios(base_dir: Path | None = None) -> dict[str, Scenario]:
 
 
 def get_scenario(name: str, base_dir: Path | None = None) -> Scenario:
+    """Get a scenario by name or file path.
+
+    Args:
+        name: Either a built-in scenario name (e.g., 'traffic/high-throughput')
+              or a path to a custom scenario file (e.g., './my-scenario.yaml')
+        base_dir: Base directory for built-in scenarios (default: scenarios/)
+
+    Returns:
+        Loaded Scenario object
+    """
+    # Check if it's a file path (has .yaml extension or looks like a path)
+    if name.endswith(".yaml") or name.endswith(".yml"):
+        path = Path(name)
+        if not path.exists():
+            raise ValueError(f"Scenario file not found: '{name}'")
+        return load_scenario(path)
+
+    # Check if it's an absolute or relative path without extension
+    path = Path(name)
+    if path.is_absolute() or name.startswith("./") or name.startswith("../"):
+        # Try with .yaml extension
+        yaml_path = path.with_suffix(".yaml")
+        if yaml_path.exists():
+            return load_scenario(yaml_path)
+        # Try with .yml extension
+        yml_path = path.with_suffix(".yml")
+        if yml_path.exists():
+            return load_scenario(yml_path)
+        raise ValueError(f"Scenario file not found: '{name}' (tried .yaml and .yml)")
+
+    # Look up in built-in scenarios
     paths = discover_scenarios(base_dir)
 
     if name not in paths:

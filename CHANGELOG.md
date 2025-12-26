@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-12-25
+
+### Added
+- Custom scenario file support - use `khaos run ./my-scenario.yaml` or absolute paths
+- Docker support - run khaos as a container against external Kafka clusters
+- Dockerfile and .dockerignore for building container images
+
 ## [0.4.0] - 2025-12-25
 
 ### Added
@@ -95,7 +102,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI/CD pipeline with linting, testing, type checking
 - PyPI publishing workflow
 
-[Unreleased]: https://github.com/aleksandarskrbic/khaos/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/aleksandarskrbic/khaos/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.1.1...v0.2.0

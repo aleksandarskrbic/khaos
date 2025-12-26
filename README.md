@@ -295,8 +295,12 @@ khaos run SCENARIO [SCENARIO...] [OPTIONS]
 **Examples:**
 
 ```bash
-# Run single scenario until Ctrl+C
+# Run built-in scenario until Ctrl+C
 khaos run traffic/high-throughput
+
+# Run custom scenario file
+khaos run ./my-scenario.yaml
+khaos run /path/to/custom-scenario.yaml
 
 # Run for 60 seconds
 khaos run traffic/high-throughput --duration 60
@@ -364,6 +368,10 @@ khaos simulate SCENARIO [SCENARIO...] [OPTIONS]
 ```bash
 # Plain connection (no auth)
 khaos simulate traffic/high-throughput \
+    --bootstrap-servers kafka.example.com:9092
+
+# Custom scenario file
+khaos simulate ./my-scenario.yaml \
     --bootstrap-servers kafka.example.com:9092
 
 # With duration
@@ -1008,6 +1016,67 @@ The Docker Compose setup creates:
 ```
 127.0.0.1:9092,127.0.0.1:9093,127.0.0.1:9094
 ```
+
+---
+
+## Running with Docker
+
+Run khaos as a Docker container to generate data against your external Kafka cluster without installing Python.
+
+### Build the Image
+
+```bash
+docker build -t khaos .
+```
+
+### Basic Usage
+
+```bash
+# Run built-in scenario
+docker run --rm khaos simulate traffic/high-throughput \
+    --bootstrap-servers kafka.example.com:9092 \
+    --duration 60
+
+# Run custom scenario (mount the file)
+docker run --rm -v $(pwd)/my-scenario.yaml:/scenario.yaml \
+    khaos simulate /scenario.yaml \
+    --bootstrap-servers kafka.example.com:9092
+```
+
+### With Authentication
+
+```bash
+# SASL/PLAIN
+docker run --rm khaos simulate traffic/high-throughput \
+    --bootstrap-servers kafka.example.com:9092 \
+    --security-protocol SASL_PLAINTEXT \
+    --sasl-mechanism PLAIN \
+    --sasl-username admin \
+    --sasl-password secret
+
+# SSL with certificates (mount certs directory)
+docker run --rm -v $(pwd)/certs:/certs \
+    khaos simulate traffic/high-throughput \
+    --bootstrap-servers kafka.example.com:9093 \
+    --security-protocol SSL \
+    --ssl-ca-location /certs/ca.pem
+```
+
+### Docker Compose Example
+
+```yaml
+services:
+  khaos:
+    build: .
+    command: >
+      simulate traffic/high-throughput
+      --bootstrap-servers kafka:9092
+      --duration 300
+    depends_on:
+      - kafka
+```
+
+**Note:** Docker mode only supports `simulate` command (external clusters). The `run` command requires Docker-in-Docker which is not supported.
 
 ---
 

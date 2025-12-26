@@ -189,6 +189,40 @@ class TestGetScenario:
         assert "one" in error_msg
         assert "two" in error_msg
 
+    def test_gets_scenario_by_file_path(self, tmp_path):
+        file_path = create_temp_scenario(
+            {"name": "custom-scenario", "description": "Custom", "topics": [{"name": "t1"}]},
+            tmp_path,
+            "custom.yaml",
+        )
+
+        # Load by full file path
+        scenario = get_scenario(str(file_path))
+
+        assert scenario.name == "custom-scenario"
+        assert scenario.description == "Custom"
+
+    def test_gets_scenario_by_relative_path(self, tmp_path, monkeypatch):
+        create_temp_scenario(
+            {"name": "relative-scenario", "description": "Relative", "topics": [{"name": "t1"}]},
+            tmp_path,
+            "relative.yaml",
+        )
+
+        # Change to tmp_path directory
+        monkeypatch.chdir(tmp_path)
+
+        # Load by relative path
+        scenario = get_scenario("./relative.yaml")
+
+        assert scenario.name == "relative-scenario"
+
+    def test_file_path_not_found_raises_error(self):
+        with pytest.raises(ValueError) as exc_info:
+            get_scenario("/nonexistent/path/scenario.yaml")
+
+        assert "not found" in str(exc_info.value)
+
 
 class TestListScenarios:
     def test_lists_scenarios_with_descriptions(self, tmp_path):
