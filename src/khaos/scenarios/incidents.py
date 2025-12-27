@@ -4,12 +4,8 @@ import random
 from dataclasses import dataclass, field
 from typing import ClassVar
 
-from rich.console import Console
-
 from khaos.kafka.consumer import ConsumerSimulator
 from khaos.kafka.producer import ProducerSimulator
-
-console = Console()
 
 
 @dataclass

@@ -10,28 +10,45 @@ from testcontainers.kafka import KafkaContainer
 
 
 @pytest.fixture(scope="module")
-def docker_network():
+def docker_network(request):
     """Create a shared Docker network for containers."""
-    with Network() as network:
-        yield network
+    network = Network()
+    network.create()
+
+    def cleanup():
+        try:
+            network.remove()
+        except Exception:
+            pass
+
+    request.addfinalizer(cleanup)
+    return network
 
 
 @pytest.fixture(scope="module")
-def kafka_container(docker_network):
+def kafka_container(docker_network, request):
     """Start Kafka container for integration tests."""
-    with (
+    kafka = (
         KafkaContainer("confluentinc/cp-kafka:7.5.0")
         .with_network(docker_network)
         .with_network_aliases("kafka")
-    ) as kafka:
-        yield kafka
+    )
+    kafka.start()
+
+    def cleanup():
+        try:
+            kafka.stop()
+        except Exception:
+            pass
+
+    request.addfinalizer(cleanup)
+    return kafka
 
 
 @pytest.fixture(scope="module")
-def schema_registry_container(kafka_container, docker_network):
+def schema_registry_container(kafka_container, docker_network, request):
     """Start Schema Registry connected to Kafka."""
-    # Use internal Docker network alias for Kafka connection
-    with (
+    registry = (
         DockerContainer("confluentinc/cp-schema-registry:7.5.0")
         .with_network(docker_network)
         .with_env("SCHEMA_REGISTRY_HOST_NAME", "schema-registry")
@@ -41,11 +58,21 @@ def schema_registry_container(kafka_container, docker_network):
             "PLAINTEXT://kafka:9092",
         )
         .with_exposed_ports(8081)
-    ) as registry:
-        # Wait for Schema Registry to be ready
-        wait_for_logs(registry, "Server started", timeout=60)
-        time.sleep(2)  # Extra buffer for full initialization
-        yield registry
+    )
+    registry.start()
+
+    # Wait for Schema Registry to be ready
+    wait_for_logs(registry, "Server started", timeout=60)
+    time.sleep(2)  # Extra buffer for full initialization
+
+    def cleanup():
+        try:
+            registry.stop()
+        except Exception:
+            pass
+
+    request.addfinalizer(cleanup)
+    return registry
 
 
 @pytest.fixture(scope="module")

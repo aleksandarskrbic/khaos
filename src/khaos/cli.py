@@ -7,8 +7,18 @@ from rich.console import Console
 from rich.table import Table
 
 from khaos.errors import KhaosConnectionError
-from khaos.infrastructure import docker_manager
-from khaos.infrastructure.docker_manager import ClusterMode, get_bootstrap_servers
+from khaos.executor import ExternalExecutor, LocalExecutor
+from khaos.infrastructure.docker_manager import ClusterMode, DockerManager
+from khaos.models.cluster import ClusterConfig, SaslMechanism, SecurityProtocol
+from khaos.scenarios.loader import (
+    discover_scenarios,
+    get_scenario,
+    list_scenarios_by_category,
+)
+from khaos.scenarios.scenario import SchemaRegistryConfig
+from khaos.validators.scenario import validate_scenario_file
+
+docker_manager = DockerManager()
 
 
 def get_version() -> str:
@@ -110,8 +120,6 @@ def cluster_status() -> None:
 
 @app.command("list")
 def list_scenarios_cmd() -> None:
-    from khaos.scenarios.loader import list_scenarios_by_category
-
     categories = list_scenarios_by_category()
 
     if not categories:
@@ -160,9 +168,6 @@ def validate_scenario(
         typer.Argument(help="Scenario name(s) to validate (validates all if none specified)"),
     ] = None,
 ) -> None:
-    from khaos.scenarios.loader import discover_scenarios
-    from khaos.validators.scenario import validate_scenario_file
-
     available = discover_scenarios()
 
     if scenarios:
@@ -227,9 +232,6 @@ def run_scenario(
         typer.Option("--no-consumers", help="Disable built-in consumers (producer-only mode)"),
     ] = False,
 ) -> None:
-    from khaos.scenarios.executor import ScenarioExecutor
-    from khaos.scenarios.loader import get_scenario
-
     if not scenarios:
         console.print("[bold red]Error: Please specify at least one scenario[/bold red]")
         console.print("Use 'khaos list' to see available scenarios")
@@ -249,7 +251,7 @@ def run_scenario(
         docker_manager.cluster_up(mode=mode)
 
     if bootstrap_servers is None:
-        bootstrap_servers = get_bootstrap_servers()
+        bootstrap_servers = docker_manager.get_bootstrap_servers()
 
     scenario_names = ", ".join(s.name for s in loaded_scenarios)
     console.print(f"[bold blue]Running scenario(s): {scenario_names}[/bold blue]")
@@ -260,9 +262,10 @@ def run_scenario(
         console.print("[cyan]Producer-only mode: connect your own consumers to consume data[/cyan]")
 
     try:
-        executor = ScenarioExecutor(
+        executor = LocalExecutor(
             bootstrap_servers=bootstrap_servers,
             scenarios=loaded_scenarios,
+            docker_manager=docker_manager,
             no_consumers=no_consumers,
         )
         result = asyncio.run(executor.execute(duration_seconds=duration))
@@ -356,11 +359,11 @@ def simulate_external(
         bool,
         typer.Option("--no-consumers", help="Disable built-in consumers (producer-only mode)"),
     ] = False,
+    schema_registry_url: Annotated[
+        str | None,
+        typer.Option("--schema-registry-url", help="Schema Registry URL for Avro/Protobuf schemas"),
+    ] = None,
 ) -> None:
-    from khaos.models.cluster import ClusterConfig, SaslMechanism, SecurityProtocol
-    from khaos.scenarios.external_executor import ExternalScenarioExecutor
-    from khaos.scenarios.loader import get_scenario
-
     if not bootstrap_servers:
         console.print("[bold red]Error: --bootstrap-servers is required[/bold red]")
         raise typer.Exit(1)
@@ -390,6 +393,9 @@ def simulate_external(
     for scenario_name in scenarios:
         try:
             scenario = get_scenario(scenario_name)
+            # Override schema registry URL if provided via CLI
+            if schema_registry_url:
+                scenario.schema_registry = SchemaRegistryConfig(url=schema_registry_url)
             loaded_scenarios.append(scenario)
         except ValueError as e:
             console.print(f"[bold red]Error: {e}[/bold red]")
@@ -400,12 +406,14 @@ def simulate_external(
     mode_info = " | No consumers (producer-only)" if no_consumers else ""
     console.print(f"[dim]Duration: {duration}s | Bootstrap: {bootstrap_servers}{mode_info}[/dim]")
     console.print(f"[dim]Security: {security_protocol}[/dim]")
+    if schema_registry_url:
+        console.print(f"[dim]Schema Registry: {schema_registry_url}[/dim]")
 
     if no_consumers:
         console.print("[cyan]Producer-only mode: connect your own consumers to consume data[/cyan]")
 
     try:
-        executor = ExternalScenarioExecutor(
+        executor = ExternalExecutor(
             cluster_config=cluster_config,
             scenarios=loaded_scenarios,
             skip_topic_creation=skip_topic_creation,

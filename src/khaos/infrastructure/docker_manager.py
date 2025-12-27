@@ -6,6 +6,7 @@ import time
 from enum import Enum
 from pathlib import Path
 
+from confluent_kafka.admin import AdminClient
 from rich.console import Console
 
 DOCKER_DIR = Path(__file__).parent.parent.parent.parent / "docker"
@@ -17,22 +18,22 @@ class ClusterMode(str, Enum):
     ZOOKEEPER = "zookeeper"
 
 
-def get_compose_file(mode: ClusterMode) -> Path:
-    if mode == ClusterMode.KRAFT:
-        return DOCKER_DIR / "docker-compose.kraft.yml"
-    return DOCKER_DIR / "docker-compose.zk.yml"
-
-
-def get_schema_registry_compose_file(mode: ClusterMode) -> Path:
-    if mode == ClusterMode.KRAFT:
-        return DOCKER_DIR / "docker-compose.schema-registry.kraft.yml"
-    return DOCKER_DIR / "docker-compose.schema-registry.zk.yml"
-
-
 class DockerManager:
     def __init__(self, console: Console | None = None):
         self._console = console or Console()
         self._active_compose_file: Path | None = None
+
+    @staticmethod
+    def _get_compose_file(mode: ClusterMode) -> Path:
+        if mode == ClusterMode.KRAFT:
+            return DOCKER_DIR / "docker-compose.kraft.yml"
+        return DOCKER_DIR / "docker-compose.zk.yml"
+
+    @staticmethod
+    def _get_schema_registry_compose_file(mode: ClusterMode) -> Path:
+        if mode == ClusterMode.KRAFT:
+            return DOCKER_DIR / "docker-compose.schema-registry.kraft.yml"
+        return DOCKER_DIR / "docker-compose.schema-registry.zk.yml"
 
     def _get_active_compose_file(self) -> Path | None:
         if self._active_compose_file is not None:
@@ -46,7 +47,7 @@ class DockerManager:
         )
 
         if "zookeeper" in result.stdout:
-            self._active_compose_file = get_compose_file(ClusterMode.ZOOKEEPER)
+            self._active_compose_file = self._get_compose_file(ClusterMode.ZOOKEEPER)
             return self._active_compose_file
 
         result = subprocess.run(
@@ -57,13 +58,13 @@ class DockerManager:
         )
 
         if "kafka-1" in result.stdout:
-            self._active_compose_file = get_compose_file(ClusterMode.KRAFT)
+            self._active_compose_file = self._get_compose_file(ClusterMode.KRAFT)
             return self._active_compose_file
 
         return None
 
     def cluster_up(self, mode: ClusterMode = ClusterMode.KRAFT) -> None:
-        compose_file = get_compose_file(mode)
+        compose_file = self._get_compose_file(mode)
         mode_label = "KRaft" if mode == ClusterMode.KRAFT else "ZooKeeper"
 
         self._console.print(f"[bold blue]Starting Kafka cluster ({mode_label} mode)...[/bold blue]")
@@ -110,7 +111,7 @@ class DockerManager:
                 "[yellow]No active cluster detected, checking both modes...[/yellow]"
             )
             for mode in ClusterMode:
-                self._stop_compose(get_compose_file(mode), remove_volumes, silent=True)
+                self._stop_compose(self._get_compose_file(mode), remove_volumes, silent=True)
             self._console.print("[bold green]Kafka cluster stopped![/bold green]")
             return
 
@@ -124,7 +125,7 @@ class DockerManager:
         mode = self.get_active_mode()
         if mode is None:
             for m in ClusterMode:
-                compose_file = get_schema_registry_compose_file(m)
+                compose_file = self._get_schema_registry_compose_file(m)
                 subprocess.run(
                     ["docker", "compose", "-f", str(compose_file), "down", "-v"],
                     check=False,
@@ -132,7 +133,7 @@ class DockerManager:
                 )
             return
 
-        compose_file = get_schema_registry_compose_file(mode)
+        compose_file = self._get_schema_registry_compose_file(mode)
         self._console.print("[dim]Stopping Schema Registry...[/dim]")
         subprocess.run(
             ["docker", "compose", "-f", str(compose_file), "down", "-v"],
@@ -219,8 +220,6 @@ class DockerManager:
         bootstrap_servers: str | None = None,
         timeout: int = 120,
     ) -> None:
-        from confluent_kafka.admin import AdminClient
-
         if bootstrap_servers is None:
             bootstrap_servers = self.get_bootstrap_servers()
 
@@ -302,7 +301,7 @@ class DockerManager:
         if mode is None:
             raise RuntimeError("No active Kafka cluster found. Start cluster first.")
 
-        compose_file = get_schema_registry_compose_file(mode)
+        compose_file = self._get_schema_registry_compose_file(mode)
         self._console.print("[bold blue]Starting Schema Registry...[/bold blue]")
 
         try:
@@ -343,7 +342,7 @@ class DockerManager:
         mode = self.get_active_mode()
         if mode is None:
             for m in ClusterMode:
-                compose_file = get_schema_registry_compose_file(m)
+                compose_file = self._get_schema_registry_compose_file(m)
                 subprocess.run(
                     ["docker", "compose", "-f", str(compose_file), "down"],
                     check=False,
@@ -351,7 +350,7 @@ class DockerManager:
                 )
             return
 
-        compose_file = get_schema_registry_compose_file(mode)
+        compose_file = self._get_schema_registry_compose_file(mode)
         self._console.print("[bold blue]Stopping Schema Registry...[/bold blue]")
         subprocess.run(
             ["docker", "compose", "-f", str(compose_file), "down"],
@@ -359,59 +358,3 @@ class DockerManager:
             capture_output=True,
         )
         self._console.print("[bold green]Schema Registry stopped![/bold green]")
-
-
-# Default instance for module-level API compatibility
-_default_manager = DockerManager()
-
-
-def cluster_up(mode: ClusterMode = ClusterMode.KRAFT) -> None:
-    _default_manager.cluster_up(mode)
-
-
-def cluster_down(remove_volumes: bool = False) -> None:
-    _default_manager.cluster_down(remove_volumes)
-
-
-def cluster_status() -> dict[str, dict[str, str]]:
-    return _default_manager.cluster_status()
-
-
-def get_active_mode() -> ClusterMode | None:
-    return _default_manager.get_active_mode()
-
-
-def get_bootstrap_servers() -> str:
-    return _default_manager.get_bootstrap_servers()
-
-
-def wait_for_kafka(bootstrap_servers: str | None = None, timeout: int = 120) -> None:
-    _default_manager.wait_for_kafka(bootstrap_servers, timeout)
-
-
-def is_cluster_running() -> bool:
-    return _default_manager.is_cluster_running()
-
-
-def stop_broker(broker_name: str) -> None:
-    _default_manager.stop_broker(broker_name)
-
-
-def start_broker(broker_name: str) -> None:
-    _default_manager.start_broker(broker_name)
-
-
-def is_schema_registry_running() -> bool:
-    return _default_manager.is_schema_registry_running()
-
-
-def get_schema_registry_url() -> str | None:
-    return _default_manager.get_schema_registry_url()
-
-
-def start_schema_registry() -> None:
-    _default_manager.start_schema_registry()
-
-
-def stop_schema_registry() -> None:
-    _default_manager.stop_schema_registry()

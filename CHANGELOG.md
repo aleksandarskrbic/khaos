@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-12-27
+
 ### Added
 - `SchemaRegistryProvider` class for fetching and caching schemas from Schema Registry
 - `schema_provider: registry` option to fetch schemas from Schema Registry instead of inline YAML
@@ -17,13 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom scenario file support - use `khaos run ./my-scenario.yaml` or absolute paths
 - Docker support - run khaos as a container against external Kafka clusters
 - Dockerfile and .dockerignore for building container images
+- `--schema-registry-url` CLI option for `simulate` command to override Schema Registry URL
 
 ### Changed
 - CI now excludes integration tests by default (`-m "not integration"`)
 - `check.sh` script now supports `-i` flag to include integration tests
+- Refactored `DockerManager` - removed module-level singleton pattern, now uses dependency injection
+- Moved `get_compose_file()` and `get_schema_registry_compose_file()` into `DockerManager` class as static methods
+- Moved all inline imports to top-level across the codebase for consistency
+- Removed backwards compatibility aliases (`ScenarioExecutor`, `ExternalScenarioExecutor`)
+- Test fixtures now use `request.addfinalizer()` for guaranteed cleanup
 
 ### Fixed
 - Schema name mismatch error when using `schema_provider: registry` - now preserves original Avro schema name/namespace
+- Testcontainer cleanup - containers now properly shut down after tests complete
 
 ## [0.4.0] - 2025-12-25
 
@@ -113,7 +122,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI/CD pipeline with linting, testing, type checking
 - PyPI publishing workflow
 
-[Unreleased]: https://github.com/aleksandarskrbic/khaos/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/aleksandarskrbic/khaos/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.1.1...v0.2.0

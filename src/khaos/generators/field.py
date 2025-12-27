@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import datetime
 import random
 import string
 import uuid
 from abc import ABC, abstractmethod
-from datetime import UTC, datetime
+from datetime import UTC
 from typing import Any
+
+from faker import Faker
 
 from khaos.models.schema import FieldSchema
 
@@ -97,7 +100,7 @@ class UuidFieldGenerator(FieldGenerator):
 
 class TimestampFieldGenerator(FieldGenerator):
     def generate(self) -> int:
-        return int(datetime.now(UTC).timestamp() * 1000)
+        return int(datetime.datetime.now(UTC).timestamp() * 1000)
 
 
 class EnumFieldGenerator(FieldGenerator):
@@ -134,8 +137,6 @@ class ArrayFieldGenerator(FieldGenerator):
 
 class FakerFieldGenerator(FieldGenerator):
     def __init__(self, provider: str, locale: str | None = None):
-        from faker import Faker
-
         self.fake = Faker(locale) if locale else Faker()
         self.provider = provider
 
@@ -144,8 +145,6 @@ class FakerFieldGenerator(FieldGenerator):
             raise ValueError(f"Unknown faker provider: '{provider}'")
 
     def generate(self) -> Any:
-        import datetime
-
         provider_method = getattr(self.fake, self.provider)
         value = provider_method()
 

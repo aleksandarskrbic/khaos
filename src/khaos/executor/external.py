@@ -1,32 +1,41 @@
+"""External executor for connecting to external Kafka clusters."""
+
 from __future__ import annotations
 
 from rich.console import Console
 
+from khaos.executor.base import BaseExecutor
 from khaos.kafka.admin import KafkaAdmin
 from khaos.kafka.consumer import ConsumerSimulator
 from khaos.kafka.producer import ProducerSimulator
 from khaos.models.cluster import ClusterConfig
 from khaos.models.config import ProducerConfig
-from khaos.scenarios.executor import ScenarioExecutor
-from khaos.scenarios.incidents import (
-    IncidentGroup,
-    StartBrokerIncident,
-    StopBrokerIncident,
-)
-from khaos.scenarios.scenario import Scenario
+from khaos.scenarios.incidents import IncidentGroup, StartBrokerIncident, StopBrokerIncident
+from khaos.scenarios.scenario import Scenario, TopicConfig
 
 console = Console()
 
 
 def _is_infrastructure_incident(incident: object) -> bool:
+    """Check if an incident requires infrastructure control."""
     return isinstance(incident, (StopBrokerIncident, StartBrokerIncident))
 
 
 def _get_incident_type_name(incident: object) -> str:
+    """Get the type name of an incident."""
     return type(incident).__name__
 
 
-class ExternalScenarioExecutor(ScenarioExecutor):
+class ExternalExecutor(BaseExecutor):
+    """Executor for external Kafka clusters.
+
+    This executor:
+    - Uses ClusterConfig for security settings (SASL, SSL, etc.)
+    - Filters out infrastructure incidents (StopBroker/StartBroker)
+    - Optionally skips topic creation
+    - Passes cluster_config to producers/consumers
+    """
+
     def __init__(
         self,
         cluster_config: ClusterConfig,
@@ -45,15 +54,22 @@ class ExternalScenarioExecutor(ScenarioExecutor):
             no_consumers=no_consumers,
         )
 
+        # Override admin with cluster config
         self.admin = KafkaAdmin(
             cluster_config.bootstrap_servers,
             cluster_config=cluster_config,
         )
 
+    def _is_schema_registry_running(self) -> bool:
+        """External clusters may have Schema Registry configured separately."""
+        # For external clusters, assume Schema Registry is available if configured
+        return any(s.schema_registry for s in self.scenarios)
+
     def _filter_infrastructure_incidents(
         self,
         scenarios: list[Scenario],
     ) -> list[Scenario]:
+        """Filter out infrastructure incidents not supported on external clusters."""
         filtered = []
         skipped_count = 0
 
@@ -98,6 +114,8 @@ class ExternalScenarioExecutor(ScenarioExecutor):
                     topics=scenario.topics,
                     incidents=new_incidents,
                     incident_groups=new_groups,
+                    flows=scenario.flows,
+                    schema_registry=scenario.schema_registry,
                 )
             )
 
@@ -109,7 +127,25 @@ class ExternalScenarioExecutor(ScenarioExecutor):
 
         return filtered
 
-    def _create_producers_for_topic(self, topic):
+    def _create_single_consumer(
+        self,
+        group_id: str,
+        topics: list[str],
+        processing_delay_ms: int,
+    ) -> ConsumerSimulator:
+        """Create a consumer with cluster config for security."""
+        return ConsumerSimulator(
+            bootstrap_servers=self.bootstrap_servers,
+            group_id=group_id,
+            topics=topics,
+            processing_delay_ms=processing_delay_ms,
+            cluster_config=self.cluster_config,
+        )
+
+    def _create_producers_for_topic(
+        self, topic: TopicConfig
+    ) -> list[tuple[str, ProducerSimulator]]:
+        """Create producers with cluster config for security."""
         producers = []
         config = ProducerConfig(
             messages_per_second=topic.producer_rate,
@@ -134,32 +170,8 @@ class ExternalScenarioExecutor(ScenarioExecutor):
 
         return producers
 
-    def _create_consumers_for_topic(self, topic):
-        consumers = []
-
-        if topic.name not in self._consumers_by_topic:
-            self._consumers_by_topic[topic.name] = {}
-
-        for g in range(topic.num_consumer_groups):
-            group_id = f"{topic.name}-group-{g + 1}"
-            if group_id not in self._consumers_by_topic[topic.name]:
-                self._consumers_by_topic[topic.name][group_id] = []
-
-            for c in range(topic.consumers_per_group):
-                consumer = ConsumerSimulator(
-                    bootstrap_servers=self.bootstrap_servers,
-                    group_id=group_id,
-                    topics=[topic.name],
-                    processing_delay_ms=topic.consumer_delay_ms,
-                    cluster_config=self.cluster_config,
-                )
-                self.consumers.append(consumer)
-                self._consumers_by_topic[topic.name][group_id].append(consumer)
-                consumers.append((group_id, f"{group_id}-consumer-{c + 1}", consumer))
-
-        return consumers
-
     async def setup(self) -> None:
+        """Set up topics (unless skipped)."""
         if self.skip_topic_creation:
             console.print("[dim]Skipping topic creation (--skip-topic-creation)[/dim]")
             return

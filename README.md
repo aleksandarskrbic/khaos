@@ -362,6 +362,7 @@ khaos simulate SCENARIO [SCENARIO...] [OPTIONS]
 | `--ssl-key-password` | - | No | - | Password for encrypted private key |
 | `--skip-topic-creation` | - | No | `false` | Skip topic creation (topics already exist) |
 | `--no-consumers` | - | No | `false` | Disable built-in consumers (producer-only mode) |
+| `--schema-registry-url` | - | No | - | Schema Registry URL for Avro/Protobuf schemas |
 
 **Examples:**
 
@@ -387,6 +388,11 @@ khaos simulate traffic/consumer-lag chaos/throughput-drop \
 khaos simulate traffic/high-throughput \
     --bootstrap-servers kafka.example.com:9092 \
     --skip-topic-creation
+
+# With external Schema Registry (for Avro/Protobuf scenarios)
+khaos simulate serialization/avro-example \
+    --bootstrap-servers kafka.example.com:9092 \
+    --schema-registry-url https://schema-registry.example.com:8081
 ```
 
 #### Self-hosted with SASL/PLAIN
@@ -718,6 +724,14 @@ topics:
     message_schema:
       data_format: avro
       fields: [...]
+```
+
+Or override via CLI (useful for external clusters):
+
+```bash
+khaos simulate my-scenario \
+    --bootstrap-servers kafka.example.com:9092 \
+    --schema-registry-url https://schema-registry.example.com:8081
 ```
 
 #### Protobuf
@@ -1060,6 +1074,11 @@ docker run --rm -v $(pwd)/certs:/certs \
     --bootstrap-servers kafka.example.com:9093 \
     --security-protocol SSL \
     --ssl-ca-location /certs/ca.pem
+
+# With Schema Registry
+docker run --rm khaos simulate serialization/avro-example \
+    --bootstrap-servers kafka.example.com:9092 \
+    --schema-registry-url https://schema-registry.example.com:8081
 ```
 
 ### Docker Compose Example

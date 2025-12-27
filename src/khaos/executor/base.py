@@ -1,19 +1,22 @@
+"""Base executor with common functionality."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import signal
 import time
-from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
 
 from rich.console import Console
 from rich.live import Live
-from rich.table import Table
 
+from khaos.executor.result import ExecutionResult
+from khaos.executor.serializer import SerializerFactory
+from khaos.executor.stats import StatsDisplay
 from khaos.generators.flow import FlowProducer
 from khaos.generators.key import create_key_generator
 from khaos.generators.payload import create_payload_generator
-from khaos.infrastructure import docker_manager
 from khaos.kafka.admin import KafkaAdmin
 from khaos.kafka.consumer import ConsumerSimulator
 from khaos.kafka.producer import ProducerSimulator
@@ -39,38 +42,16 @@ from khaos.scenarios.incidents import (
     StopConsumer,
     StopConsumers,
 )
-from khaos.scenarios.scenario import Scenario, SchemaRegistryConfig, TopicConfig
-from khaos.serialization import (
-    AvroSerializer,
-    AvroSerializerNoRegistry,
-    JsonSerializer,
-    ProtobufSerializer,
-    ProtobufSerializerNoRegistry,
-    SchemaRegistryProvider,
-    field_schemas_to_avro,
-    field_schemas_to_protobuf,
-)
+from khaos.scenarios.scenario import Scenario, TopicConfig
+from khaos.serialization import SchemaRegistryProvider
 
-logger = logging.getLogger(__name__)
 console = Console()
-
-SCHEMA_REGISTRY_URL = "http://localhost:8081"
-
-
-@dataclass
-class ExecutionResult:
-    messages_produced: int = 0
-    messages_consumed: int = 0
-    flows_completed: int = 0
-    flow_messages_sent: int = 0
-    duration_seconds: float = 0.0
-    errors: list[str] = field(default_factory=list)
-
-    def add_error(self, error: str) -> None:
-        self.errors.append(error)
+logger = logging.getLogger(__name__)
 
 
-class ScenarioExecutor:
+class BaseExecutor(ABC):
+    """Base class for scenario executors."""
+
     def __init__(
         self,
         bootstrap_servers: str,
@@ -113,18 +94,29 @@ class ScenarioExecutor:
             self._all_incident_groups.extend(scenario.incident_groups)
             self._all_flows.extend(scenario.flows)
 
-    def _get_display_title(self) -> str:
-        names = [s.name for s in self.scenarios]
-        if len(names) == 1:
-            return f"Scenario: {names[0]}"
-        return f"Scenarios: {', '.join(names)}"
+    @abstractmethod
+    def _is_schema_registry_running(self) -> bool:
+        pass
+
+    def _create_serializer_factory(self) -> SerializerFactory:
+        return SerializerFactory(
+            scenarios=self.scenarios,
+            is_schema_registry_running_fn=self._is_schema_registry_running,
+        )
+
+    def _create_stats_display(self) -> StatsDisplay:
+        return StatsDisplay(
+            scenario_names=[s.name for s in self.scenarios],
+            topics=self._all_topics,
+            producers=self.producers,
+            consumers=self.consumers,
+            flow_producers=self.flow_producers,
+            producers_by_topic=self._producers_by_topic,
+            consumers_by_topic=self._consumers_by_topic,
+        )
 
     async def setup(self) -> None:
-        if self._needs_schema_registry() and not docker_manager.is_schema_registry_running():
-            console.print("[bold blue]Schema format detected, starting Schema Registry...[/]")
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, docker_manager.start_schema_registry)
-
+        """Set up topics and resources. Override in subclasses for additional setup."""
         created_topics: set[str] = set()
 
         for topic in self._all_topics:
@@ -153,11 +145,11 @@ class ScenarioExecutor:
                     self.admin.create_topic(topic_config)
                     created_topics.add(topic_name)
 
-        # Wait for topics to be fully ready after delete/create
         if created_topics:
             await asyncio.sleep(10)
 
     async def teardown(self) -> None:
+        """Clean up resources."""
         for producer in self.producers:
             producer.stop()
             producer.flush(timeout=5)
@@ -173,6 +165,7 @@ class ScenarioExecutor:
         shutdown_executor()
 
     def request_stop(self) -> None:
+        """Request all producers and consumers to stop."""
         self._stop_event.set()
         for producer in self.producers:
             producer.stop()
@@ -183,9 +176,11 @@ class ScenarioExecutor:
 
     @property
     def should_stop(self) -> bool:
+        """Check if stop has been requested."""
         return self._stop_event.is_set()
 
-    async def execute_commands(self, commands: list[Command]):
+    async def execute_commands(self, commands: list[Command]) -> None:
+        """Execute a list of incident commands."""
         for cmd in commands:
             if self.should_stop:
                 break
@@ -217,37 +212,51 @@ class ScenarioExecutor:
                     for idx in indices:
                         if idx < len(self.consumers):
                             self.consumers[idx]._stop_event.clear()
-                            asyncio.create_task(
-                                self.consumers[idx].consume_loop(duration_seconds=0)
-                            )
+                            asyncio.create_task(self.consumers[idx].consume_loop(duration_seconds=0))
 
                 case StopConsumer(index=idx):
                     if idx < len(self.consumers):
                         self.consumers[idx].stop()
                         # Wait for poll to finish before closing
-                        await asyncio.sleep(0.2)
+                        await asyncio.sleep(5)
                         self.consumers[idx].close()
 
                 case CreateConsumer(index=idx, group_id=gid, topics=t, processing_delay_ms=d):
-                    new_consumer = ConsumerSimulator(
-                        bootstrap_servers=self.bootstrap_servers,
-                        group_id=gid,
-                        topics=t,
-                        processing_delay_ms=d,
-                    )
+                    new_consumer = self._create_single_consumer(gid, t, d)
                     if idx < len(self.consumers):
                         self.consumers[idx] = new_consumer
                     asyncio.create_task(new_consumer.consume_loop(duration_seconds=0))
 
                 case StopBroker(broker=b):
-                    loop = asyncio.get_event_loop()
-                    await loop.run_in_executor(None, docker_manager.stop_broker, b)
+                    await self._handle_stop_broker(b)
 
                 case StartBroker(broker=b):
-                    loop = asyncio.get_event_loop()
-                    await loop.run_in_executor(None, docker_manager.start_broker, b)
+                    await self._handle_start_broker(b)
+
+    def _create_single_consumer(
+        self,
+        group_id: str,
+        topics: list[str],
+        processing_delay_ms: int,
+    ) -> ConsumerSimulator:
+        """Create a single consumer. Override in subclasses for custom config."""
+        return ConsumerSimulator(
+            bootstrap_servers=self.bootstrap_servers,
+            group_id=group_id,
+            topics=topics,
+            processing_delay_ms=processing_delay_ms,
+        )
+
+    async def _handle_stop_broker(self, broker: str) -> None:  # noqa: B027
+        """Handle StopBroker command. Override in subclasses."""
+        pass
+
+    async def _handle_start_broker(self, broker: str) -> None:  # noqa: B027
+        """Handle StartBroker command. Override in subclasses."""
+        pass
 
     def _to_key_distribution(self, name: str) -> KeyDistribution:
+        """Convert string to KeyDistribution enum."""
         mapping = {
             "uniform": KeyDistribution.UNIFORM,
             "zipfian": KeyDistribution.ZIPFIAN,
@@ -256,139 +265,10 @@ class ScenarioExecutor:
         }
         return mapping.get(name, KeyDistribution.UNIFORM)
 
-    def _needs_schema_registry(self) -> bool:
-        has_schema_format = any(
-            topic.message_schema.data_format in ("avro", "protobuf") for topic in self._all_topics
-        )
-        has_registry_provider = any(
-            topic.schema_provider == "registry" for topic in self._all_topics
-        )
-        has_config = any(s.schema_registry for s in self.scenarios)
-        return (has_schema_format and has_config) or has_registry_provider
-
-    def _get_schema_registry_config(self) -> SchemaRegistryConfig | None:
-        for scenario in self.scenarios:
-            if scenario.schema_registry:
-                return scenario.schema_registry
-        if docker_manager.is_schema_registry_running():
-            return SchemaRegistryConfig(url=SCHEMA_REGISTRY_URL)
-        return None
-
-    def _create_serializer_for_topic(self, topic: TopicConfig):
-        data_format = topic.message_schema.data_format
-        message_name = topic.name.title().replace("-", "").replace("_", "") + "Record"
-
-        if data_format == "avro":
-            if not topic.message_schema.fields:
-                console.print(
-                    f"[yellow]Warning: Topic '{topic.name}' uses Avro but has no fields. "
-                    "Falling back to JSON.[/yellow]"
-                )
-                return JsonSerializer()
-
-            avro_schema = field_schemas_to_avro(
-                topic.message_schema.fields,
-                name=message_name,
-            )
-
-            schema_registry = self._get_schema_registry_config()
-            if schema_registry:
-                return AvroSerializer(
-                    schema_registry_url=schema_registry.url,
-                    schema=avro_schema,
-                    topic=topic.name,
-                )
-
-            return AvroSerializerNoRegistry(schema=avro_schema)
-
-        if data_format == "protobuf":
-            if not topic.message_schema.fields:
-                console.print(
-                    f"[yellow]Warning: Topic '{topic.name}' uses Protobuf but has no fields. "
-                    "Falling back to JSON.[/yellow]"
-                )
-                return JsonSerializer()
-
-            _, message_class = field_schemas_to_protobuf(
-                topic.message_schema.fields,
-                name=message_name,
-            )
-
-            schema_registry = self._get_schema_registry_config()
-            if schema_registry:
-                return ProtobufSerializer(
-                    schema_registry_url=schema_registry.url,
-                    message_class=message_class,
-                    topic=topic.name,
-                )
-
-            return ProtobufSerializerNoRegistry(message_class=message_class)
-
-        return JsonSerializer()
-
-    def _create_serializer_for_topic_with_format(
-        self,
-        topic: TopicConfig,
-        data_format: str,
-        fields: list | None,
-        raw_avro_schema: dict | None = None,
-    ):
-        """Create serializer with explicit format and fields.
-
-        Args:
-            topic: Topic configuration
-            data_format: "avro", "protobuf", or "json"
-            fields: List of FieldSchema for data generation
-            raw_avro_schema: Original Avro schema from registry (preserves name/namespace)
-        """
-        message_name = topic.name.title().replace("-", "").replace("_", "") + "Record"
-
-        if data_format == "avro":
-            if not fields:
-                console.print(
-                    f"[yellow]Warning: Topic '{topic.name}' uses Avro but has no fields. "
-                    "Falling back to JSON.[/yellow]"
-                )
-                return JsonSerializer()
-
-            # Use raw schema if provided (from registry), otherwise generate
-            avro_schema = raw_avro_schema or field_schemas_to_avro(fields, name=message_name)
-
-            schema_registry = self._get_schema_registry_config()
-            if schema_registry:
-                return AvroSerializer(
-                    schema_registry_url=schema_registry.url,
-                    schema=avro_schema,
-                    topic=topic.name,
-                )
-
-            return AvroSerializerNoRegistry(schema=avro_schema)
-
-        if data_format == "protobuf":
-            if not fields:
-                console.print(
-                    f"[yellow]Warning: Topic '{topic.name}' uses Protobuf but has no fields. "
-                    "Falling back to JSON.[/yellow]"
-                )
-                return JsonSerializer()
-
-            _, message_class = field_schemas_to_protobuf(fields, name=message_name)
-
-            schema_registry = self._get_schema_registry_config()
-            if schema_registry:
-                return ProtobufSerializer(
-                    schema_registry_url=schema_registry.url,
-                    message_class=message_class,
-                    topic=topic.name,
-                )
-
-            return ProtobufSerializerNoRegistry(message_class=message_class)
-
-        return JsonSerializer()
-
     def _create_producers_for_topic(
         self, topic: TopicConfig
     ) -> list[tuple[str, ProducerSimulator]]:
+        """Create producers for a topic. Override in subclasses for custom config."""
         producers = []
         config = ProducerConfig(
             messages_per_second=topic.producer_rate,
@@ -412,6 +292,7 @@ class ScenarioExecutor:
     def _create_consumers_for_topic(
         self, topic: TopicConfig
     ) -> list[tuple[str, str, ConsumerSimulator]]:
+        """Create consumers for a topic. Override in subclasses for custom config."""
         consumers = []
         if topic.name not in self._consumers_by_topic:
             self._consumers_by_topic[topic.name] = {}
@@ -426,8 +307,7 @@ class ScenarioExecutor:
                 self._consumers_by_group[group_id] = []
 
             for c in range(topic.consumers_per_group):
-                consumer = ConsumerSimulator(
-                    bootstrap_servers=self.bootstrap_servers,
+                consumer = self._create_single_consumer(
                     group_id=group_id,
                     topics=[topic.name],
                     processing_delay_ms=topic.consumer_delay_ms,
@@ -446,9 +326,10 @@ class ScenarioExecutor:
         duration_seconds: int,
         result: ExecutionResult,
     ) -> list:
+        """Create consumers for a flow step."""
         tasks = []
         config = step.consumers
-        assert config is not None  # todo: fix this?
+        assert config is not None
         topic_name = step.topic
 
         if topic_name not in self._consumers_by_topic:
@@ -464,8 +345,7 @@ class ScenarioExecutor:
                 self._consumers_by_group[group_id] = []
 
             for _c in range(config.per_group):
-                consumer = ConsumerSimulator(
-                    bootstrap_servers=self.bootstrap_servers,
+                consumer = self._create_single_consumer(
                     group_id=group_id,
                     topics=[topic_name],
                     processing_delay_ms=config.delay_ms,
@@ -486,120 +366,8 @@ class ScenarioExecutor:
 
         return tasks
 
-    def generate_stats_table(self) -> Table:
-        table = Table(title=self._get_display_title())
-        table.add_column("Name", style="cyan")
-        table.add_column("Produced", style="green")
-        table.add_column("Consumed", style="yellow")
-        table.add_column("Lag", style="red")
-
-        for topic in self._all_topics:
-            topic_producers = self._producers_by_topic.get(topic.name, [])
-            topic_groups = self._consumers_by_topic.get(topic.name, {})
-
-            produced = sum(p.get_stats().messages_sent for p in topic_producers)
-            total_consumed = sum(
-                c.get_stats().messages_consumed
-                for group_consumers in topic_groups.values()
-                for c in group_consumers
-            )
-
-            lag = produced - total_consumed
-            lag_display = f"[red]{lag:,}[/red]" if lag > 100 else f"[green]{lag:,}[/green]"
-
-            table.add_row(
-                f"[bold]{topic.name}[/bold]",
-                f"[bold]{produced:,}[/bold]",
-                f"[bold]{total_consumed:,}[/bold]",
-                lag_display,
-            )
-
-            group_names = list(topic_groups.keys())
-            for g_idx, group_id in enumerate(group_names):
-                consumers = topic_groups[group_id]
-                group_consumed = sum(c.get_stats().messages_consumed for c in consumers)
-                is_last_group = g_idx == len(group_names) - 1
-                group_prefix = "└─ " if is_last_group else "├─ "
-
-                table.add_row(
-                    f"[dim]  {group_prefix}{group_id}[/dim]",
-                    "",
-                    f"[dim]{group_consumed:,}[/dim]",
-                    "",
-                )
-
-        if self.flow_producers:
-            table.add_section()
-            for flow_producer in self.flow_producers:
-                stats = flow_producer.get_stats()
-                flow = flow_producer.flow
-
-                table.add_row(
-                    f"[bold cyan]Flow: {flow.name}[/bold cyan]",
-                    f"[bold]{stats.messages_sent:,}[/bold]",
-                    "",
-                    "",
-                )
-
-                unique_topics = list(dict.fromkeys(s.topic for s in flow.steps))
-                for idx, topic_name in enumerate(unique_topics):
-                    is_last = idx == len(unique_topics) - 1
-                    prefix = "└─" if is_last else "├─"
-
-                    topic_produced = stats.get_topic_count(topic_name)
-                    produced_display = f"{topic_produced:,}" if topic_produced > 0 else ""
-
-                    topic_groups = self._consumers_by_topic.get(topic_name, {})
-                    flow_groups = {
-                        k: v
-                        for k, v in topic_groups.items()
-                        if k.startswith(f"{flow.name}-{topic_name}-")
-                    }
-
-                    if flow_groups:
-                        total_consumed = sum(
-                            c.get_stats().messages_consumed
-                            for consumers in flow_groups.values()
-                            for c in consumers
-                        )
-                        consumed_display = f"{total_consumed:,}"
-                        lag = topic_produced - total_consumed
-                    else:
-                        consumed_display = "[dim]no consumer[/dim]"
-                        lag = topic_produced
-
-                    if lag > 100:
-                        lag_display = f"[red]{lag:,}[/red]"
-                    elif lag > 0:
-                        lag_display = f"[yellow]{lag:,}[/yellow]"
-                    else:
-                        lag_display = f"[green]{lag:,}[/green]"
-
-                    table.add_row(
-                        f"  {prefix} [cyan]{topic_name}[/cyan]",
-                        produced_display,
-                        consumed_display,
-                        lag_display,
-                    )
-
-        table.add_section()
-        total_produced = sum(p.get_stats().messages_sent for p in self.producers)
-        total_flow_messages = sum(fp.get_stats().messages_sent for fp in self.flow_producers)
-        total_consumed = sum(c.get_stats().messages_consumed for c in self.consumers)
-        total_lag = total_produced - total_consumed
-
-        table.add_row(
-            "[bold]TOTAL[/bold]",
-            f"[bold]{total_produced + total_flow_messages:,}[/bold]",
-            f"[bold]{total_consumed:,}[/bold]",
-            f"[bold red]{total_lag:,}[/bold red]"
-            if total_lag > 100
-            else f"[bold green]{total_lag:,}[/bold green]",
-        )
-
-        return table
-
     def _build_incident_context(self) -> IncidentContext:
+        """Build context for incident execution."""
         return IncidentContext(
             consumers=self.consumers,
             producers=self.producers,
@@ -611,6 +379,7 @@ class ScenarioExecutor:
         )
 
     async def _schedule_incident(self, incident: Incident, start_time: float) -> None:
+        """Schedule an incident for execution."""
         schedule = incident.schedule
 
         if schedule.every_seconds:
@@ -633,6 +402,7 @@ class ScenarioExecutor:
                 await self.execute_commands(commands)
 
     async def _schedule_incident_group(self, group: IncidentGroup, start_time: float) -> None:
+        """Schedule an incident group for execution."""
         for cycle in range(group.repeat):
             if self.should_stop:
                 break
@@ -673,13 +443,16 @@ class ScenarioExecutor:
                 await self.execute_commands(commands)
 
     async def run(self, duration_seconds: int) -> ExecutionResult:
+        """Run the scenario execution."""
         result = ExecutionResult()
         start_time = time.time()
         tasks = []
 
+        serializer_factory = self._create_serializer_factory()
+
         # Create schema registry provider for caching (if needed)
         schema_registry_provider: SchemaRegistryProvider | None = None
-        schema_registry = self._get_schema_registry_config()
+        schema_registry = serializer_factory.get_schema_registry_config()
         if schema_registry:
             schema_registry_provider = SchemaRegistryProvider(schema_registry.url)
 
@@ -726,7 +499,7 @@ class ScenarioExecutor:
             )
 
             # Create serializer based on data format
-            serializer = self._create_serializer_for_topic_with_format(
+            serializer = serializer_factory.create_serializer_with_format(
                 topic, data_format, fields, raw_avro_schema
             )
 
@@ -806,10 +579,13 @@ class ScenarioExecutor:
         for group in self._all_incident_groups:
             tasks.append(self._schedule_incident_group(group, start_time))
 
+        # Create stats display
+        stats_display = self._create_stats_display()
+
         # Display update task
         async def update_display(live: Live):
             while not self.should_stop:
-                live.update(self.generate_stats_table())
+                live.update(stats_display.generate_stats_table())
                 await asyncio.sleep(0.5)
                 if duration_seconds > 0 and (time.time() - start_time) >= duration_seconds:
                     break
@@ -817,7 +593,9 @@ class ScenarioExecutor:
             self.request_stop()
 
         # Run with live display
-        with Live(self.generate_stats_table(), refresh_per_second=4, console=console) as live:
+        with Live(
+            stats_display.generate_stats_table(), refresh_per_second=4, console=console
+        ) as live:
             tasks.append(update_display(live))
 
             try:
@@ -835,6 +613,7 @@ class ScenarioExecutor:
         return result
 
     async def execute(self, duration_seconds: int) -> ExecutionResult:
+        """Execute the scenario with signal handling."""
         loop = asyncio.get_event_loop()
 
         def signal_handler():
