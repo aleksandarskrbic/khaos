@@ -7,12 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.0] - 2025-12-25
-
 ### Added
+- `SchemaRegistryProvider` class for fetching and caching schemas from Schema Registry
+- `schema_provider: registry` option to fetch schemas from Schema Registry instead of inline YAML
+- `get_raw_schema()` method to preserve original schema name/namespace for serialization
+- Integration tests using Testcontainers (Kafka + Schema Registry)
+- `manual_testing/` folder with schema upload scripts and instructions
+- Critical error logging with full tracebacks via `logger.exception()`
 - Custom scenario file support - use `khaos run ./my-scenario.yaml` or absolute paths
 - Docker support - run khaos as a container against external Kafka clusters
 - Dockerfile and .dockerignore for building container images
+
+### Changed
+- CI now excludes integration tests by default (`-m "not integration"`)
+- `check.sh` script now supports `-i` flag to include integration tests
+
+### Fixed
+- Schema name mismatch error when using `schema_provider: registry` - now preserves original Avro schema name/namespace
 
 ## [0.4.0] - 2025-12-25
 
@@ -102,8 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI/CD pipeline with linting, testing, type checking
 - PyPI publishing workflow
 
-[Unreleased]: https://github.com/aleksandarskrbic/khaos/compare/v0.5.0...HEAD
-[0.5.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.4.0...v0.5.0
+[Unreleased]: https://github.com/aleksandarskrbic/khaos/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.1.1...v0.2.0

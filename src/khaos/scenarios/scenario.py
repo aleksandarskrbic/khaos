@@ -59,6 +59,8 @@ class TopicConfig:
     consumer_delay_ms: int = 0
     message_schema: MessageSchemaConfig = field(default_factory=MessageSchemaConfig)
     producer_config: ProducerConfigData = field(default_factory=ProducerConfigData)
+    schema_provider: str = "inline"  # "inline" or "registry"
+    subject_name: str | None = None  # Required when schema_provider is "registry"
 
 
 def _parse_schedule(data: dict[str, Any]) -> Schedule:
@@ -158,10 +160,15 @@ class Scenario:
             prod_config_data = topic_data.pop("producer_config", {})
             prod_config = ProducerConfigData(**prod_config_data)
 
+            schema_provider = topic_data.pop("schema_provider", "inline")
+            subject_name = topic_data.pop("subject_name", None)
+
             topic = TopicConfig(
                 **topic_data,
                 message_schema=msg_schema,
                 producer_config=prod_config,
+                schema_provider=schema_provider,
+                subject_name=subject_name,
             )
             topics.append(topic)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import signal
 import time
 from dataclasses import dataclass, field
@@ -45,10 +46,12 @@ from khaos.serialization import (
     JsonSerializer,
     ProtobufSerializer,
     ProtobufSerializerNoRegistry,
+    SchemaRegistryProvider,
     field_schemas_to_avro,
     field_schemas_to_protobuf,
 )
 
+logger = logging.getLogger(__name__)
 console = Console()
 
 SCHEMA_REGISTRY_URL = "http://localhost:8081"
@@ -257,8 +260,11 @@ class ScenarioExecutor:
         has_schema_format = any(
             topic.message_schema.data_format in ("avro", "protobuf") for topic in self._all_topics
         )
+        has_registry_provider = any(
+            topic.schema_provider == "registry" for topic in self._all_topics
+        )
         has_config = any(s.schema_registry for s in self.scenarios)
-        return has_schema_format and has_config
+        return (has_schema_format and has_config) or has_registry_provider
 
     def _get_schema_registry_config(self) -> SchemaRegistryConfig | None:
         for scenario in self.scenarios:
@@ -307,6 +313,66 @@ class ScenarioExecutor:
                 topic.message_schema.fields,
                 name=message_name,
             )
+
+            schema_registry = self._get_schema_registry_config()
+            if schema_registry:
+                return ProtobufSerializer(
+                    schema_registry_url=schema_registry.url,
+                    message_class=message_class,
+                    topic=topic.name,
+                )
+
+            return ProtobufSerializerNoRegistry(message_class=message_class)
+
+        return JsonSerializer()
+
+    def _create_serializer_for_topic_with_format(
+        self,
+        topic: TopicConfig,
+        data_format: str,
+        fields: list | None,
+        raw_avro_schema: dict | None = None,
+    ):
+        """Create serializer with explicit format and fields.
+
+        Args:
+            topic: Topic configuration
+            data_format: "avro", "protobuf", or "json"
+            fields: List of FieldSchema for data generation
+            raw_avro_schema: Original Avro schema from registry (preserves name/namespace)
+        """
+        message_name = topic.name.title().replace("-", "").replace("_", "") + "Record"
+
+        if data_format == "avro":
+            if not fields:
+                console.print(
+                    f"[yellow]Warning: Topic '{topic.name}' uses Avro but has no fields. "
+                    "Falling back to JSON.[/yellow]"
+                )
+                return JsonSerializer()
+
+            # Use raw schema if provided (from registry), otherwise generate
+            avro_schema = raw_avro_schema or field_schemas_to_avro(fields, name=message_name)
+
+            schema_registry = self._get_schema_registry_config()
+            if schema_registry:
+                return AvroSerializer(
+                    schema_registry_url=schema_registry.url,
+                    schema=avro_schema,
+                    topic=topic.name,
+                )
+
+            return AvroSerializerNoRegistry(schema=avro_schema)
+
+        if data_format == "protobuf":
+            if not fields:
+                console.print(
+                    f"[yellow]Warning: Topic '{topic.name}' uses Protobuf but has no fields. "
+                    "Falling back to JSON.[/yellow]"
+                )
+                return JsonSerializer()
+
+            _, message_class = field_schemas_to_protobuf(fields, name=message_name)
 
             schema_registry = self._get_schema_registry_config()
             if schema_registry:
@@ -409,10 +475,11 @@ class ScenarioExecutor:
                 self._consumers_by_topic_flat[topic_name].append(consumer)
                 self._consumers_by_group[group_id].append(consumer)
 
-                async def consumer_task(cons=consumer):
+                async def consumer_task(cons=consumer, gid=group_id):
                     try:
                         await cons.consume_loop(duration_seconds=duration_seconds)
                     except Exception as e:
+                        logger.exception(f"Flow consumer error for group '{gid}': {e}")
                         result.add_error(f"Flow consumer error: {e}")
 
                 tasks.append(consumer_task())
@@ -610,19 +677,58 @@ class ScenarioExecutor:
         start_time = time.time()
         tasks = []
 
+        # Create schema registry provider for caching (if needed)
+        schema_registry_provider: SchemaRegistryProvider | None = None
+        schema_registry = self._get_schema_registry_config()
+        if schema_registry:
+            schema_registry_provider = SchemaRegistryProvider(schema_registry.url)
+
         # Create producers and consumers for all topics
         for topic in self._all_topics:
+            fields = topic.message_schema.fields
+            data_format = topic.message_schema.data_format
+            raw_avro_schema: dict | None = None
+
+            # Fetch schema from registry if using registry provider
+            if topic.schema_provider == "registry" and topic.subject_name:
+                if not schema_registry_provider:
+                    result.add_error(
+                        f"Topic '{topic.name}' uses registry provider but no schema_registry"
+                    )
+                    continue
+
+                try:
+                    console.print(
+                        f"[dim]Fetching schema for '{topic.subject_name}' from registry...[/dim]"
+                    )
+                    data_format, fields = schema_registry_provider.get_field_schemas(
+                        topic.subject_name
+                    )
+                    # Get raw schema to preserve original name/namespace for serialization
+                    _, raw_schema = schema_registry_provider.get_raw_schema(topic.subject_name)
+                    # For Avro, raw_schema is a dict
+                    if data_format == "avro" and isinstance(raw_schema, dict):
+                        raw_avro_schema = raw_schema
+                    console.print(
+                        f"[dim]Loaded {len(fields)} fields from {data_format.upper()} schema[/dim]"
+                    )
+                except Exception as e:
+                    result.add_error(f"Failed to fetch schema for '{topic.subject_name}': {e}")
+                    continue
+
             # Create message schema
             msg_schema = MessageSchema(
                 min_size_bytes=topic.message_schema.min_size_bytes,
                 max_size_bytes=topic.message_schema.max_size_bytes,
                 key_distribution=self._to_key_distribution(topic.message_schema.key_distribution),
                 key_cardinality=topic.message_schema.key_cardinality,
-                fields=topic.message_schema.fields,
+                fields=fields,
             )
 
             # Create serializer based on data format
-            serializer = self._create_serializer_for_topic(topic)
+            serializer = self._create_serializer_for_topic_with_format(
+                topic, data_format, fields, raw_avro_schema
+            )
 
             # Producers
             producers = self._create_producers_for_topic(topic)
@@ -640,6 +746,7 @@ class ScenarioExecutor:
                             duration_seconds=duration_seconds,
                         )
                     except Exception as e:
+                        logger.exception(f"Producer error for topic '{t}': {e}")
                         result.add_error(f"Producer error: {e}")
                     finally:
                         p.flush()
@@ -652,10 +759,11 @@ class ScenarioExecutor:
 
                 for _group_id, _name, consumer in consumers:
 
-                    async def consumer_task(c=consumer):
+                    async def consumer_task(c=consumer, gid=_group_id):
                         try:
                             await c.consume_loop(duration_seconds=duration_seconds)
                         except Exception as e:
+                            logger.exception(f"Consumer error for group '{gid}': {e}")
                             result.add_error(f"Consumer error: {e}")
 
                     tasks.append(consumer_task())
@@ -673,6 +781,7 @@ class ScenarioExecutor:
                 try:
                     await fp.run_at_rate(duration_seconds=duration_seconds)
                 except Exception as e:
+                    logger.exception(f"Flow producer error for '{fp.flow.name}': {e}")
                     result.add_error(f"Flow producer error: {e}")
                 finally:
                     fp.flush()

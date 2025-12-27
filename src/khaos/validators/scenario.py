@@ -12,6 +12,7 @@ VALID_COMPRESSION_TYPES = {"none", "gzip", "snappy", "lz4", "zstd"}
 VALID_DATA_FORMATS = {"json", "avro", "protobuf"}
 VALID_ACKS = {"0", "1", "all", "-1"}
 VALID_BROKERS = {"kafka-1", "kafka-2", "kafka-3"}
+VALID_SCHEMA_PROVIDERS = {"inline", "registry"}
 
 
 def validate_scenario_file(file_path: Path) -> ValidationResult:
@@ -159,14 +160,47 @@ def validate_topic(topic: dict, path: str, result: ValidationResult) -> None:
                 "Field 'consumer_delay_ms' must be a non-negative integer",
             )
 
+    # Get schema_provider early for message_schema validation
+    schema_provider = topic.get("schema_provider", "inline")
+
     if "message_schema" in topic:
-        validate_message_schema(topic["message_schema"], f"{path}.message_schema", result)
+        validate_message_schema(
+            topic["message_schema"], f"{path}.message_schema", result, schema_provider
+        )
 
     if "producer_config" in topic:
         validate_producer_config(topic["producer_config"], f"{path}.producer_config", result)
 
+    # Validate schema_provider
+    if schema_provider not in VALID_SCHEMA_PROVIDERS:
+        result.add_error(
+            f"{path}.schema_provider",
+            f"Invalid schema_provider '{schema_provider}'. "
+            f"Valid values: {', '.join(sorted(VALID_SCHEMA_PROVIDERS))}",
+        )
 
-def validate_message_schema(schema: dict, path: str, result: ValidationResult) -> None:
+    # Validate subject_name when using registry provider
+    if schema_provider == "registry":
+        if "subject_name" not in topic:
+            result.add_error(
+                f"{path}.subject_name",
+                "Field 'subject_name' is required when schema_provider is 'registry'",
+            )
+        elif not isinstance(topic["subject_name"], str):
+            result.add_error(f"{path}.subject_name", "Field 'subject_name' must be a string")
+
+        # Cannot have both schema_provider=registry and message_schema with fields
+        if "message_schema" in topic and topic["message_schema"].get("fields"):
+            result.add_error(
+                f"{path}",
+                "Cannot define 'message_schema.fields' when schema_provider is 'registry' "
+                "(schema will be fetched from Schema Registry)",
+            )
+
+
+def validate_message_schema(
+    schema: dict, path: str, result: ValidationResult, schema_provider: str = "inline"
+) -> None:
     if not isinstance(schema, dict):
         result.add_error(path, "message_schema must be an object/dict")
         return
@@ -192,11 +226,17 @@ def validate_message_schema(schema: dict, path: str, result: ValidationResult) -
                 f"Invalid data_format '{schema['data_format']}'. "
                 f"Valid values: {', '.join(sorted(VALID_DATA_FORMATS))}",
             )
-        # Avro and Protobuf require fields to be defined
-        if schema["data_format"] in ("avro", "protobuf") and not schema.get("fields"):
+        # Avro and Protobuf require fields when using inline provider
+        # When using registry provider, fields are fetched from Schema Registry
+        if (
+            schema_provider == "inline"
+            and schema["data_format"] in ("avro", "protobuf")
+            and not schema.get("fields")
+        ):
             result.add_error(
                 f"{path}.fields",
-                f"data_format '{schema['data_format']}' requires 'fields' to be defined",
+                f"data_format '{schema['data_format']}' requires 'fields' to be defined "
+                "(or use schema_provider: registry to fetch from Schema Registry)",
             )
 
     if "min_size_bytes" in schema:
