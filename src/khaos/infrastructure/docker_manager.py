@@ -9,6 +9,11 @@ from pathlib import Path
 from confluent_kafka.admin import AdminClient
 from rich.console import Console
 
+from khaos.models.defaults import (
+    KAFKA_READY_TIMEOUT_SECONDS,
+    SCHEMA_REGISTRY_READY_TIMEOUT_SECONDS,
+)
+
 DOCKER_DIR = Path(__file__).parent.parent.parent.parent / "docker"
 SCHEMA_REGISTRY_URL = "http://localhost:8081"
 
@@ -218,7 +223,7 @@ class DockerManager:
     def wait_for_kafka(
         self,
         bootstrap_servers: str | None = None,
-        timeout: int = 120,
+        timeout: int = KAFKA_READY_TIMEOUT_SECONDS,
     ) -> None:
         if bootstrap_servers is None:
             bootstrap_servers = self.get_bootstrap_servers()
@@ -318,7 +323,9 @@ class DockerManager:
         self._wait_for_schema_registry()
         self._console.print("[bold green]Schema Registry is ready![/bold green]")
 
-    def _wait_for_schema_registry(self, timeout: int = 60) -> None:
+    def _wait_for_schema_registry(
+        self, timeout: int = SCHEMA_REGISTRY_READY_TIMEOUT_SECONDS
+    ) -> None:
         import urllib.error
         import urllib.request
 

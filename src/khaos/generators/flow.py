@@ -13,18 +13,26 @@ from confluent_kafka import Producer
 from khaos.errors import KhaosConnectionError, format_kafka_error
 from khaos.generators.field import create_field_generator
 from khaos.kafka.config import build_kafka_config
+from khaos.kafka.simulator import Simulator, SimulatorStats
 from khaos.models.cluster import ClusterConfig
+from khaos.models.defaults import (
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_FLOW_ACKS,
+    DEFAULT_FLOW_COMPRESSION,
+    DEFAULT_LINGER_MS,
+    FLUSH_TIMEOUT_SECONDS,
+)
 from khaos.models.flow import FlowConfig, FlowStep
 from khaos.runtime import get_executor
 
 
 @dataclass
-class FlowStats:
+class FlowStats(SimulatorStats):
     flows_completed: int = 0
     messages_sent: int = 0
     messages_per_topic: dict[str, int] = field(default_factory=dict)
     errors: int = 0
-    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def record_flow_complete(self) -> None:
         with self._lock:
@@ -44,27 +52,27 @@ class FlowStats:
             return self.messages_per_topic.get(topic, 0)
 
 
-class FlowProducer:
+class FlowProducer(Simulator[FlowStats]):
     def __init__(
         self,
         flow: FlowConfig,
         bootstrap_servers: str,
         cluster_config: ClusterConfig | None = None,
     ):
+        super().__init__()
         self.flow = flow
         self.bootstrap_servers = bootstrap_servers
         self.cluster_config = cluster_config
         self.stats = FlowStats()
-        self._stop_event = threading.Event()
 
         producer_config = build_kafka_config(
             bootstrap_servers,
             cluster_config,
             **{
-                "batch.size": 16384,
-                "linger.ms": 5,
-                "acks": "1",
-                "compression.type": "lz4",
+                "batch.size": DEFAULT_BATCH_SIZE,
+                "linger.ms": DEFAULT_LINGER_MS,
+                "acks": DEFAULT_FLOW_ACKS,
+                "compression.type": DEFAULT_FLOW_COMPRESSION,
             },
         )
 
@@ -185,16 +193,9 @@ class FlowProducer:
 
         self.flush()
 
-    def flush(self, timeout: float = 10.0) -> int:
+    def flush(self, timeout: float = FLUSH_TIMEOUT_SECONDS) -> int:
         result: int = self._producer.flush(timeout)
         return result
-
-    def stop(self) -> None:
-        self._stop_event.set()
-
-    @property
-    def should_stop(self) -> bool:
-        return self._stop_event.is_set()
 
     def get_stats(self) -> FlowStats:
         return self.stats

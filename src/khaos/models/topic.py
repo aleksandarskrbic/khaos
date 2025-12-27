@@ -1,12 +1,18 @@
 from dataclasses import dataclass
 
+from khaos.models.defaults import (
+    DEFAULT_PARTITIONS,
+    DEFAULT_REPLICATION_FACTOR,
+    DEFAULT_RETENTION_MS,
+)
+
 
 @dataclass
 class TopicConfig:
     name: str
-    partitions: int = 6
-    replication_factor: int = 3
-    retention_ms: int = 604800000  # 7 days (in milliseconds)
+    partitions: int = DEFAULT_PARTITIONS
+    replication_factor: int = DEFAULT_REPLICATION_FACTOR
+    retention_ms: int = DEFAULT_RETENTION_MS
 
     def __post_init__(self):
         if self.partitions < 1:

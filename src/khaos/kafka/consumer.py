@@ -10,18 +10,24 @@ from confluent_kafka import Consumer, KafkaError
 
 from khaos.errors import KhaosConnectionError, format_kafka_error
 from khaos.kafka.config import build_kafka_config
+from khaos.kafka.simulator import Simulator, SimulatorStats
 from khaos.models.cluster import ClusterConfig
+from khaos.models.defaults import (
+    DEFAULT_AUTO_COMMIT_INTERVAL_MS,
+    DEFAULT_MAX_POLL_INTERVAL_MS,
+    DEFAULT_SESSION_TIMEOUT_MS,
+)
 from khaos.runtime import get_executor
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ConsumerStats:
+class ConsumerStats(SimulatorStats):
     messages_consumed: int = 0
     bytes_consumed: int = 0
     errors: int = 0
-    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def record_message(self, size: int) -> None:
         with self._lock:
@@ -33,7 +39,7 @@ class ConsumerStats:
             self.errors += 1
 
 
-class ConsumerSimulator:
+class ConsumerSimulator(Simulator[ConsumerStats]):
     def __init__(
         self,
         bootstrap_servers: str,
@@ -44,13 +50,13 @@ class ConsumerSimulator:
         max_poll_records: int = 500,
         cluster_config: ClusterConfig | None = None,
     ):
+        super().__init__()
         self.bootstrap_servers = bootstrap_servers
         self.group_id = group_id
         self.topics = topics
         self.processing_delay_ms = processing_delay_ms
         self.cluster_config = cluster_config
         self.stats = ConsumerStats()
-        self._stop_event = threading.Event()
 
         config = build_kafka_config(
             bootstrap_servers,
@@ -59,9 +65,9 @@ class ConsumerSimulator:
                 "group.id": group_id,
                 "auto.offset.reset": auto_offset_reset,
                 "enable.auto.commit": True,
-                "auto.commit.interval.ms": 5000,
-                "max.poll.interval.ms": 300000,
-                "session.timeout.ms": 45000,
+                "auto.commit.interval.ms": DEFAULT_AUTO_COMMIT_INTERVAL_MS,
+                "max.poll.interval.ms": DEFAULT_MAX_POLL_INTERVAL_MS,
+                "session.timeout.ms": DEFAULT_SESSION_TIMEOUT_MS,
             },
         )
 
@@ -75,13 +81,6 @@ class ConsumerSimulator:
 
     def _poll_sync(self, timeout: float = 0.1):
         return self._consumer.poll(timeout)
-
-    def stop(self) -> None:
-        self._stop_event.set()
-
-    @property
-    def should_stop(self) -> bool:
-        return self._stop_event.is_set()
 
     async def consume_loop(
         self,

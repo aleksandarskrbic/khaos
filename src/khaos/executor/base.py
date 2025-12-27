@@ -21,6 +21,13 @@ from khaos.kafka.admin import KafkaAdmin
 from khaos.kafka.consumer import ConsumerSimulator
 from khaos.kafka.producer import ProducerSimulator
 from khaos.models.config import ProducerConfig
+from khaos.models.defaults import (
+    CONSUMER_CLOSE_WAIT_SECONDS,
+    DEFAULT_FLOW_PARTITIONS,
+    DEFAULT_REPLICATION_FACTOR,
+    FLUSH_TIMEOUT_SECONDS,
+    TOPIC_CREATION_WAIT_SECONDS,
+)
 from khaos.models.flow import FlowConfig, FlowStep
 from khaos.models.message import KeyDistribution, MessageSchema
 from khaos.models.topic import TopicConfig as KafkaTopicConfig
@@ -138,25 +145,25 @@ class BaseExecutor(ABC):
                     console.print(f"[dim]Creating topic for flow: {topic_name}[/dim]")
                     topic_config = KafkaTopicConfig(
                         name=topic_name,
-                        partitions=12,
-                        replication_factor=3,
+                        partitions=DEFAULT_FLOW_PARTITIONS,
+                        replication_factor=DEFAULT_REPLICATION_FACTOR,
                     )
                     self.admin.delete_topic(topic_name)
                     self.admin.create_topic(topic_config)
                     created_topics.add(topic_name)
 
         if created_topics:
-            await asyncio.sleep(10)
+            await asyncio.sleep(TOPIC_CREATION_WAIT_SECONDS)
 
     async def teardown(self) -> None:
         """Clean up resources."""
         for producer in self.producers:
             producer.stop()
-            producer.flush(timeout=5)
+            producer.flush(timeout=FLUSH_TIMEOUT_SECONDS)
 
         for flow_producer in self.flow_producers:
             flow_producer.stop()
-            flow_producer.flush(timeout=5)
+            flow_producer.flush(timeout=FLUSH_TIMEOUT_SECONDS)
 
         for consumer in self.consumers:
             consumer.stop()
@@ -211,7 +218,7 @@ class BaseExecutor(ABC):
                 case ResumeConsumers(indices=indices):
                     for idx in indices:
                         if idx < len(self.consumers):
-                            self.consumers[idx]._stop_event.clear()
+                            self.consumers[idx].resume()
                             asyncio.create_task(
                                 self.consumers[idx].consume_loop(duration_seconds=0)
                             )
@@ -220,7 +227,7 @@ class BaseExecutor(ABC):
                     if idx < len(self.consumers):
                         self.consumers[idx].stop()
                         # Wait for poll to finish before closing
-                        await asyncio.sleep(5)
+                        await asyncio.sleep(CONSUMER_CLOSE_WAIT_SECONDS)
                         self.consumers[idx].close()
 
                 case CreateConsumer(index=idx, group_id=gid, topics=t, processing_delay_ms=d):

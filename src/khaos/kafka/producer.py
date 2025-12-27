@@ -9,17 +9,19 @@ from confluent_kafka import Producer
 
 from khaos.errors import KhaosConnectionError, format_kafka_error
 from khaos.kafka.config import build_kafka_config
+from khaos.kafka.simulator import Simulator, SimulatorStats
 from khaos.models.cluster import ClusterConfig
 from khaos.models.config import ProducerConfig
+from khaos.models.defaults import FLUSH_TIMEOUT_SECONDS
 from khaos.runtime import get_executor
 
 
 @dataclass
-class ProducerStats:
+class ProducerStats(SimulatorStats):
     messages_sent: int = 0
     bytes_sent: int = 0
     errors: int = 0
-    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def record_success(self, size: int) -> None:
         with self._lock:
@@ -31,18 +33,18 @@ class ProducerStats:
             self.errors += 1
 
 
-class ProducerSimulator:
+class ProducerSimulator(Simulator[ProducerStats]):
     def __init__(
         self,
         bootstrap_servers: str,
         config: ProducerConfig | None = None,
         cluster_config: ClusterConfig | None = None,
     ):
+        super().__init__()
         self.bootstrap_servers = bootstrap_servers
         self.config = config or ProducerConfig()
         self.cluster_config = cluster_config
         self.stats = ProducerStats()
-        self._stop_event = threading.Event()
 
         producer_config = build_kafka_config(
             bootstrap_servers,
@@ -85,16 +87,9 @@ class ProducerSimulator:
         self._producer.produce(**kwargs)
         self._producer.poll(0)
 
-    def flush(self, timeout: float = 10.0) -> int:
+    def flush(self, timeout: float = FLUSH_TIMEOUT_SECONDS) -> int:
         result: int = self._producer.flush(timeout)
         return result
-
-    def stop(self) -> None:
-        self._stop_event.set()
-
-    @property
-    def should_stop(self) -> bool:
-        return self._stop_event.is_set()
 
     async def produce_at_rate(
         self,

@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from khaos.models.defaults import (
+    DEFAULT_KEY_CARDINALITY,
+    DEFAULT_MAX_SIZE_BYTES,
+    DEFAULT_MIN_SIZE_BYTES,
+)
 from khaos.models.schema import FieldSchema
 
 
@@ -15,10 +20,10 @@ class KeyDistribution(Enum):
 
 @dataclass
 class MessageSchema:
-    min_size_bytes: int = 100
-    max_size_bytes: int = 1000
+    min_size_bytes: int = DEFAULT_MIN_SIZE_BYTES
+    max_size_bytes: int = DEFAULT_MAX_SIZE_BYTES
     key_distribution: KeyDistribution = KeyDistribution.UNIFORM
-    key_cardinality: int = 100  # Number of unique keys
+    key_cardinality: int = DEFAULT_KEY_CARDINALITY
     include_timestamp: bool = True
     include_sequence: bool = True
     # Structured field schemas (optional - if not set, use random bytes)
