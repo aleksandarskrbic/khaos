@@ -58,10 +58,9 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "ruff>=0.8.0",
-    "mypy>=1.8.0",
+    "ty>=0.0.1a3",
     "pre-commit>=4.0.0",
     "pytest-cov>=7.0.0",
-    "types-pyyaml>=6.0.12.20250915",
     "testcontainers>=4.0.0",
 ]
 
@@ -123,13 +122,13 @@ ignore = [
 quote-style = "double"
 indent-style = "space"
 
-[tool.mypy]
-python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
-ignore_missing_imports = true
-check_untyped_defs = true
-# Note: strict mode disabled due to typer decorator limitations
+[tool.ty.rules]
+# Ignore rules that trigger on external library type issues
+unresolved-attribute = "ignore"  # Protobuf stubs are incomplete
+invalid-assignment = "ignore"    # Confluent serializers return Unknown
+invalid-argument-type = "ignore"  # Confluent Protobuf expects Message but receives type
+possibly-missing-attribute = "ignore"  # Schema Registry client returns
+possibly-missing-implicit-call = "ignore"  # Protobuf DescriptorPool
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

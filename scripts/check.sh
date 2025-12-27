@@ -24,6 +24,6 @@ else
 fi
 
 # Type checking
-uv run mypy src/khaos --ignore-missing-imports
+uv run ty check src/khaos
 
 echo "All checks passed!"

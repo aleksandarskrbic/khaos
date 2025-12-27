@@ -76,5 +76,5 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
-      - name: Run mypy
-        run: uv run mypy src/khaos --ignore-missing-imports
+      - name: Run ty
+        run: uv run ty check src/khaos
