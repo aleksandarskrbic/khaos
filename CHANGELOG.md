@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Extracted `TopicManager`, `SimulatorFactory`, `IncidentScheduler` from `BaseExecutor`
+- Extracted `ComposeRunner`, `SchemaRegistryManager` from `DockerManager`
+- Extracted `ScenarioParser` from `Scenario` class
+- Added `Simulator` base class for producers, consumers, and flow producers
+- Moved constants from inline values to `khaos.defaults` module
+- Renamed `execute()` to `start()` and `run()` to `_run()` in executors
+- Use `asyncio.get_running_loop()` instead of deprecated `get_event_loop()`
+- Use `asyncio.to_thread()` for Docker operations in `LocalExecutor`
+
+### Fixed
+- Incident console prints not showing during execution (Rich Live console sharing)
+- Async callable type hints for broker handler functions
+
 ## [0.5.1] - 2025-12-27
 
 ### Fixed
