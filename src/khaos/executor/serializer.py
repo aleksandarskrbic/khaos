@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from rich.console import Console
 
+from khaos.models.schema import FieldSchema
 from khaos.scenarios.scenario import Scenario, SchemaRegistryConfig, TopicConfig
 
 if TYPE_CHECKING:
@@ -115,7 +116,7 @@ class SerializerFactory:
         self,
         topic: TopicConfig,
         data_format: str,
-        fields: list[dict] | None,
+        fields: list[FieldSchema] | None,
         raw_avro_schema: dict | None = None,
     ):
         message_name = topic.name.title().replace("-", "").replace("_", "") + "Record"

@@ -19,9 +19,9 @@ from khaos.scenarios.parser import parse_incident
 
 def make_consumer(group_id: str, topics: list[str], delay_ms: int = 0):
     mock = Mock()
-    mock.group_id = group_id
+    mock.config.group_id = group_id
     mock.topics = topics
-    mock.processing_delay_ms = delay_ms
+    mock.config.processing_delay_ms = delay_ms
     return mock
 
 

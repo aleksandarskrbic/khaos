@@ -88,7 +88,7 @@ class IncidentScheduler:
 
                 case SetConsumerDelay(index=idx, delay_ms=delay):
                     if idx < len(self.consumers):
-                        self.consumers[idx].processing_delay_ms = delay
+                        self.consumers[idx].config.processing_delay_ms = delay
 
                 case SetProducerRate(index=idx, rate=r):
                     if idx < len(self.producers):

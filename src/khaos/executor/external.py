@@ -5,7 +5,6 @@ from __future__ import annotations
 from rich.console import Console
 
 from khaos.executor.base import BaseExecutor
-from khaos.executor.simulator_factory import SimulatorFactory
 from khaos.executor.topic_manager import TopicManager
 from khaos.kafka.admin import KafkaAdmin
 from khaos.models.cluster import ClusterConfig
@@ -47,12 +46,6 @@ class ExternalExecutor(BaseExecutor):
             cluster_config=cluster_config,
         )
         self.topic_manager = TopicManager(cluster_config.bootstrap_servers)
-
-    def _create_simulator_factory(self) -> SimulatorFactory:
-        return SimulatorFactory(
-            bootstrap_servers=self.cluster_config.bootstrap_servers,
-            cluster_config=self.cluster_config,
-        )
 
     def _is_schema_registry_running(self) -> bool:
         return any(s.schema_registry for s in self.scenarios)

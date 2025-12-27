@@ -240,9 +240,9 @@ class RebalanceConsumer(Incident):
             Delay(seconds=3),
             CreateConsumer(
                 index=idx,
-                group_id=consumer.group_id,
+                group_id=consumer.config.group_id,
                 topics=consumer.topics,
-                processing_delay_ms=consumer.processing_delay_ms,
+                processing_delay_ms=consumer.config.processing_delay_ms,
             ),
             PrintMessage(f">>> Consumer {idx + 1} rejoined group", style="yellow"),
         ]
