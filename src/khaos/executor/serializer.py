@@ -115,7 +115,7 @@ class SerializerFactory:
         self,
         topic: TopicConfig,
         data_format: str,
-        fields: list | None,
+        fields: list[dict] | None,
         raw_avro_schema: dict | None = None,
     ):
         message_name = topic.name.title().replace("-", "").replace("_", "") + "Record"

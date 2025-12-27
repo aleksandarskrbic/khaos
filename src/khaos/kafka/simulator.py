@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar
 
@@ -17,8 +18,9 @@ StatsT = TypeVar("StatsT", bound=SimulatorStats)
 
 
 class Simulator(ABC, Generic[StatsT]):
-    def __init__(self) -> None:
+    def __init__(self, executor: ThreadPoolExecutor) -> None:
         self._stop_event = threading.Event()
+        self._executor = executor
 
     def stop(self) -> None:
         self._stop_event.set()

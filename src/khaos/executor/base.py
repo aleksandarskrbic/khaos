@@ -7,11 +7,12 @@ import logging
 import signal
 import time
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 
 from rich.console import Console
 from rich.live import Live
 
-from khaos.defaults import FLUSH_TIMEOUT_SECONDS
+from khaos.defaults import DEFAULT_EXECUTOR_WORKERS, FLUSH_TIMEOUT_SECONDS
 from khaos.executor.incident_scheduler import IncidentScheduler
 from khaos.executor.result import ExecutionResult
 from khaos.executor.serializer import SerializerFactory
@@ -25,7 +26,6 @@ from khaos.kafka.consumer import ConsumerSimulator
 from khaos.kafka.producer import ProducerSimulator
 from khaos.models.flow import FlowConfig, StepConsumerConfig
 from khaos.models.message import KeyDistribution, MessageSchema
-from khaos.runtime import shutdown_executor
 from khaos.scenarios.incidents import Incident, IncidentGroup
 from khaos.scenarios.scenario import Scenario, TopicConfig
 from khaos.serialization import SchemaRegistryProvider
@@ -45,8 +45,14 @@ class BaseExecutor(ABC):
         self.scenarios = scenarios
         self.no_consumers = no_consumers
 
+        self._executor = ThreadPoolExecutor(
+            max_workers=DEFAULT_EXECUTOR_WORKERS, thread_name_prefix="khaos"
+        )
         self.topic_manager = TopicManager(bootstrap_servers)
-        self.simulator_factory = SimulatorFactory(bootstrap_servers=self.bootstrap_servers)
+        self.simulator_factory = SimulatorFactory(
+            bootstrap_servers=self.bootstrap_servers,
+            executor=self._executor,
+        )
 
         self._stop_event = asyncio.Event()
         self.producers: list[ProducerSimulator] = []
@@ -131,7 +137,7 @@ class BaseExecutor(ABC):
             consumer.stop()
             consumer.close()
 
-        shutdown_executor()
+        self._executor.shutdown(wait=True)
 
     def request_stop(self) -> None:
         self._stop_event.set()
@@ -152,11 +158,10 @@ class BaseExecutor(ABC):
         topics: list[str],
         processing_delay_ms: int,
     ) -> ConsumerSimulator:
-        return self.simulator_factory.create_consumer(
-            group_id=group_id,
-            topics=topics,
-            processing_delay_ms=processing_delay_ms,
-        )
+        from khaos.models.config import ConsumerConfig
+
+        config = ConsumerConfig(group_id=group_id, processing_delay_ms=processing_delay_ms)
+        return self.simulator_factory.create_consumer(topics=topics, config=config)
 
     def _to_key_distribution(self, name: str) -> KeyDistribution:
         mapping = {

@@ -312,6 +312,49 @@ def validate_producer_config(config: dict, path: str, result: ValidationResult) 
             )
 
 
+def _validate_incident_type_fields(
+    incident: dict, incident_type: str, path: str, result: ValidationResult, strict: bool = True
+) -> None:
+    if incident_type in ("stop_broker", "start_broker"):
+        if "broker" not in incident:
+            result.add_error(
+                f"{path}.broker", f"Incident type '{incident_type}' requires 'broker' field"
+            )
+        elif incident["broker"] not in VALID_BROKERS:
+            valid = ", ".join(sorted(VALID_BROKERS))
+            result.add_error(f"{path}.broker", f"Invalid broker. Valid: {valid}")
+
+    if incident_type == "increase_consumer_delay":
+        if "delay_ms" not in incident:
+            result.add_error(
+                f"{path}.delay_ms",
+                "Incident type 'increase_consumer_delay' requires 'delay_ms' field",
+            )
+        elif strict and (not isinstance(incident["delay_ms"], int) or incident["delay_ms"] < 0):
+            result.add_error(f"{path}.delay_ms", "Field 'delay_ms' must be a non-negative integer")
+
+    if incident_type == "change_producer_rate":
+        if "rate" not in incident:
+            result.add_error(
+                f"{path}.rate", "Incident type 'change_producer_rate' requires 'rate' field"
+            )
+        elif strict and (not isinstance(incident["rate"], int | float) or incident["rate"] < 0):
+            result.add_error(f"{path}.rate", "Field 'rate' must be a non-negative number")
+
+    if incident_type == "pause_consumer":
+        if "duration_seconds" not in incident:
+            result.add_error(
+                f"{path}.duration_seconds",
+                "Incident type 'pause_consumer' requires 'duration_seconds' field",
+            )
+        elif strict and (
+            not isinstance(incident["duration_seconds"], int) or incident["duration_seconds"] < 1
+        ):
+            result.add_error(
+                f"{path}.duration_seconds", "Field 'duration_seconds' must be a positive integer"
+            )
+
+
 def validate_incident(incident: dict, path: str, result: ValidationResult) -> None:
     if not isinstance(incident, dict):
         result.add_error(path, "Incident must be an object/dict")
@@ -354,43 +397,7 @@ def validate_incident(incident: dict, path: str, result: ValidationResult) -> No
     if "target" in incident:
         validate_target(incident["target"], f"{path}.target", result)
 
-    # Validate type-specific required fields
-    if incident_type in ("stop_broker", "start_broker"):
-        if "broker" not in incident:
-            result.add_error(
-                f"{path}.broker", f"Incident type '{incident_type}' requires 'broker' field"
-            )
-        elif incident["broker"] not in VALID_BROKERS:
-            valid = ", ".join(sorted(VALID_BROKERS))
-            result.add_error(f"{path}.broker", f"Invalid broker. Valid: {valid}")
-
-    if incident_type == "increase_consumer_delay":
-        if "delay_ms" not in incident:
-            result.add_error(
-                f"{path}.delay_ms",
-                "Incident type 'increase_consumer_delay' requires 'delay_ms' field",
-            )
-        elif not isinstance(incident["delay_ms"], int) or incident["delay_ms"] < 0:
-            result.add_error(f"{path}.delay_ms", "Field 'delay_ms' must be a non-negative integer")
-
-    if incident_type == "change_producer_rate":
-        if "rate" not in incident:
-            result.add_error(
-                f"{path}.rate", "Incident type 'change_producer_rate' requires 'rate' field"
-            )
-        elif not isinstance(incident["rate"], int | float) or incident["rate"] < 0:
-            result.add_error(f"{path}.rate", "Field 'rate' must be a non-negative number")
-
-    if incident_type == "pause_consumer":
-        if "duration_seconds" not in incident:
-            result.add_error(
-                f"{path}.duration_seconds",
-                "Incident type 'pause_consumer' requires 'duration_seconds' field",
-            )
-        elif not isinstance(incident["duration_seconds"], int) or incident["duration_seconds"] < 1:
-            result.add_error(
-                f"{path}.duration_seconds", "Field 'duration_seconds' must be a positive integer"
-            )
+    _validate_incident_type_fields(incident, incident_type, path, result, strict=True)
 
 
 def validate_target(target: dict, path: str, result: ValidationResult) -> None:
@@ -505,32 +512,4 @@ def validate_group_incident(incident: dict, path: str, result: ValidationResult)
     if "target" in incident:
         validate_target(incident["target"], f"{path}.target", result)
 
-    # Validate type-specific required fields
-    if incident_type in ("stop_broker", "start_broker"):
-        if "broker" not in incident:
-            result.add_error(
-                f"{path}.broker", f"Incident type '{incident_type}' requires 'broker' field"
-            )
-        elif incident["broker"] not in VALID_BROKERS:
-            valid = ", ".join(sorted(VALID_BROKERS))
-            result.add_error(f"{path}.broker", f"Invalid broker. Valid: {valid}")
-
-    if incident_type == "increase_consumer_delay":
-        if "delay_ms" not in incident:
-            result.add_error(
-                f"{path}.delay_ms",
-                "Incident type 'increase_consumer_delay' requires 'delay_ms' field",
-            )
-
-    if incident_type == "change_producer_rate":
-        if "rate" not in incident:
-            result.add_error(
-                f"{path}.rate", "Incident type 'change_producer_rate' requires 'rate' field"
-            )
-
-    if incident_type == "pause_consumer":
-        if "duration_seconds" not in incident:
-            result.add_error(
-                f"{path}.duration_seconds",
-                "Incident type 'pause_consumer' requires 'duration_seconds' field",
-            )
+    _validate_incident_type_fields(incident, incident_type, path, result, strict=False)

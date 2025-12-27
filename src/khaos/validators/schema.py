@@ -90,7 +90,7 @@ class SchemaValidator:
                     f"{path}.cardinality", "Field 'cardinality' must be a positive integer"
                 )
 
-    def _validate_int_field(
+    def _validate_numeric_range(
         self, field_def: dict[str, Any], path: str, result: ValidationResult
     ) -> None:
         if "min" in field_def:
@@ -111,6 +111,11 @@ class SchemaValidator:
             and min_val > max_val
         ):
             result.add_error(f"{path}", "min cannot be greater than max")
+
+    def _validate_int_field(
+        self, field_def: dict[str, Any], path: str, result: ValidationResult
+    ) -> None:
+        self._validate_numeric_range(field_def, path, result)
 
         if "cardinality" in field_def:
             if not isinstance(field_def["cardinality"], int) or field_def["cardinality"] < 1:
@@ -121,24 +126,7 @@ class SchemaValidator:
     def _validate_float_field(
         self, field_def: dict[str, Any], path: str, result: ValidationResult
     ) -> None:
-        if "min" in field_def:
-            if not isinstance(field_def["min"], int | float):
-                result.add_error(f"{path}.min", "Field 'min' must be a number")
-
-        if "max" in field_def:
-            if not isinstance(field_def["max"], int | float):
-                result.add_error(f"{path}.max", "Field 'max' must be a number")
-
-        min_val = field_def.get("min")
-        max_val = field_def.get("max")
-        if (
-            min_val is not None
-            and max_val is not None
-            and isinstance(min_val, int | float)
-            and isinstance(max_val, int | float)
-            and min_val > max_val
-        ):
-            result.add_error(f"{path}", "min cannot be greater than max")
+        self._validate_numeric_range(field_def, path, result)
 
     def _validate_enum_field(
         self, field_def: dict[str, Any], path: str, result: ValidationResult

@@ -16,10 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed `execute()` to `start()` and `run()` to `_run()` in executors
 - Use `asyncio.get_running_loop()` instead of deprecated `get_event_loop()`
 - Use `asyncio.to_thread()` for Docker operations in `LocalExecutor`
+- `ConsumerSimulator` now uses `ConsumerConfig` object (consistent with `ProducerSimulator`)
+- Eliminated global `_executor` singleton - `ThreadPoolExecutor` is now owned by `BaseExecutor`
+- Extracted duplicate validation logic in `validators/schema.py` and `validators/scenario.py`
 
 ### Fixed
 - Incident console prints not showing during execution (Rich Live console sharing)
 - Async callable type hints for broker handler functions
+
+### Removed
+- `khaos.runtime` module (global executor singleton)
 
 ## [0.5.1] - 2025-12-27
 

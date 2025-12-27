@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from khaos.generators.flow import FlowProducer
 from khaos.kafka.consumer import ConsumerSimulator
 from khaos.kafka.producer import ProducerSimulator
 from khaos.models.cluster import ClusterConfig
-from khaos.models.config import ProducerConfig
+from khaos.models.config import ConsumerConfig, ProducerConfig
 from khaos.models.flow import FlowConfig
 from khaos.scenarios.scenario import TopicConfig
 
@@ -15,29 +17,27 @@ class SimulatorFactory:
     def __init__(
         self,
         bootstrap_servers: str,
+        executor: ThreadPoolExecutor,
         cluster_config: ClusterConfig | None = None,
     ):
         self.bootstrap_servers = bootstrap_servers
+        self.executor = executor
         self.cluster_config = cluster_config
 
     def create_producer(self, config: ProducerConfig) -> ProducerSimulator:
         return ProducerSimulator(
             bootstrap_servers=self.bootstrap_servers,
+            executor=self.executor,
             config=config,
             cluster_config=self.cluster_config,
         )
 
-    def create_consumer(
-        self,
-        group_id: str,
-        topics: list[str],
-        processing_delay_ms: int = 0,
-    ) -> ConsumerSimulator:
+    def create_consumer(self, topics: list[str], config: ConsumerConfig) -> ConsumerSimulator:
         return ConsumerSimulator(
             bootstrap_servers=self.bootstrap_servers,
-            group_id=group_id,
             topics=topics,
-            processing_delay_ms=processing_delay_ms,
+            config=config,
+            executor=self.executor,
             cluster_config=self.cluster_config,
         )
 
@@ -45,6 +45,7 @@ class SimulatorFactory:
         return FlowProducer(
             flow=flow,
             bootstrap_servers=self.bootstrap_servers,
+            executor=self.executor,
             cluster_config=self.cluster_config,
         )
 
@@ -75,13 +76,13 @@ class SimulatorFactory:
 
         for g in range(topic.num_consumer_groups):
             group_id = f"{topic.name}-group-{g + 1}"
+            config = ConsumerConfig(
+                group_id=group_id,
+                processing_delay_ms=topic.consumer_delay_ms,
+            )
 
             for c in range(topic.consumers_per_group):
-                consumer = self.create_consumer(
-                    group_id=group_id,
-                    topics=[topic.name],
-                    processing_delay_ms=topic.consumer_delay_ms,
-                )
+                consumer = self.create_consumer(topics=[topic.name], config=config)
                 consumers.append((group_id, f"{group_id}-consumer-{c + 1}", consumer))
 
         return consumers

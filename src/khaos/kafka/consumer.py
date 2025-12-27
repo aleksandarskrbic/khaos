@@ -4,6 +4,7 @@ import asyncio
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from confluent_kafka import Consumer, KafkaError
@@ -11,13 +12,12 @@ from confluent_kafka import Consumer, KafkaError
 from khaos.defaults import (
     DEFAULT_AUTO_COMMIT_INTERVAL_MS,
     DEFAULT_MAX_POLL_INTERVAL_MS,
-    DEFAULT_SESSION_TIMEOUT_MS,
 )
 from khaos.errors import KhaosConnectionError, format_kafka_error
 from khaos.kafka.config import build_kafka_config
 from khaos.kafka.simulator import Simulator, SimulatorStats
 from khaos.models.cluster import ClusterConfig
-from khaos.runtime import get_executor
+from khaos.models.config import ConsumerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -43,36 +43,33 @@ class ConsumerSimulator(Simulator[ConsumerStats]):
     def __init__(
         self,
         bootstrap_servers: str,
-        group_id: str,
         topics: list[str],
-        processing_delay_ms: int = 0,
-        auto_offset_reset: str = "latest",
-        max_poll_records: int = 500,
+        config: ConsumerConfig,
+        executor: ThreadPoolExecutor,
         cluster_config: ClusterConfig | None = None,
     ):
-        super().__init__()
+        super().__init__(executor)
         self.bootstrap_servers = bootstrap_servers
-        self.group_id = group_id
         self.topics = topics
-        self.processing_delay_ms = processing_delay_ms
+        self.config = config
         self.cluster_config = cluster_config
         self.stats = ConsumerStats()
 
-        config = build_kafka_config(
+        kafka_config = build_kafka_config(
             bootstrap_servers,
             cluster_config,
             **{
-                "group.id": group_id,
-                "auto.offset.reset": auto_offset_reset,
+                "group.id": config.group_id,
+                "auto.offset.reset": config.auto_offset_reset,
                 "enable.auto.commit": True,
                 "auto.commit.interval.ms": DEFAULT_AUTO_COMMIT_INTERVAL_MS,
                 "max.poll.interval.ms": DEFAULT_MAX_POLL_INTERVAL_MS,
-                "session.timeout.ms": DEFAULT_SESSION_TIMEOUT_MS,
+                "session.timeout.ms": config.session_timeout_ms,
             },
         )
 
         try:
-            self._consumer = Consumer(config)
+            self._consumer = Consumer(kafka_config)
             self._consumer.subscribe(topics)
         except Exception as e:
             raise KhaosConnectionError(
@@ -96,13 +93,12 @@ class ConsumerSimulator(Simulator[ConsumerStats]):
         """
         start_time = time.time()
         loop = asyncio.get_running_loop()
-        executor = get_executor()
 
         while not self.should_stop:
             if duration_seconds > 0 and (time.time() - start_time) >= duration_seconds:
                 break
 
-            msg = await loop.run_in_executor(executor, self._poll_sync, 0.1)
+            msg = await loop.run_in_executor(self._executor, self._poll_sync, 0.1)
 
             if msg is None:
                 continue
@@ -120,8 +116,8 @@ class ConsumerSimulator(Simulator[ConsumerStats]):
                 on_message(msg)
 
             # Simulate processing delay
-            if self.processing_delay_ms > 0:
-                await asyncio.sleep(self.processing_delay_ms / 1000.0)
+            if self.config.processing_delay_ms > 0:
+                await asyncio.sleep(self.config.processing_delay_ms / 1000.0)
 
     def close(self) -> None:
         try:

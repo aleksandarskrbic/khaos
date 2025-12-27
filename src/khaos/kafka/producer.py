@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from confluent_kafka import Producer
@@ -13,7 +14,6 @@ from khaos.kafka.config import build_kafka_config
 from khaos.kafka.simulator import Simulator, SimulatorStats
 from khaos.models.cluster import ClusterConfig
 from khaos.models.config import ProducerConfig
-from khaos.runtime import get_executor
 
 
 @dataclass
@@ -37,10 +37,11 @@ class ProducerSimulator(Simulator[ProducerStats]):
     def __init__(
         self,
         bootstrap_servers: str,
+        executor: ThreadPoolExecutor,
         config: ProducerConfig | None = None,
         cluster_config: ClusterConfig | None = None,
     ):
-        super().__init__()
+        super().__init__(executor)
         self.bootstrap_servers = bootstrap_servers
         self.config = config or ProducerConfig()
         self.cluster_config = cluster_config
@@ -102,7 +103,6 @@ class ProducerSimulator(Simulator[ProducerStats]):
         interval = 1.0 / messages_per_second if messages_per_second > 0 else 0
 
         loop = asyncio.get_running_loop()
-        executor = get_executor()
 
         start_time = time.time()
         message_count = 0
@@ -114,7 +114,7 @@ class ProducerSimulator(Simulator[ProducerStats]):
             value = message_generator.generate()
             key = key_generator.generate() if key_generator else None
 
-            await loop.run_in_executor(executor, self._produce_sync, topic, value, key)
+            await loop.run_in_executor(self._executor, self._produce_sync, topic, value, key)
             message_count += 1
 
             if interval > 0:

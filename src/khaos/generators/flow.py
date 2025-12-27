@@ -5,6 +5,7 @@ import json
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,7 +24,6 @@ from khaos.kafka.config import build_kafka_config
 from khaos.kafka.simulator import Simulator, SimulatorStats
 from khaos.models.cluster import ClusterConfig
 from khaos.models.flow import FlowConfig, FlowStep
-from khaos.runtime import get_executor
 
 
 @dataclass
@@ -57,9 +57,10 @@ class FlowProducer(Simulator[FlowStats]):
         self,
         flow: FlowConfig,
         bootstrap_servers: str,
+        executor: ThreadPoolExecutor,
         cluster_config: ClusterConfig | None = None,
     ):
-        super().__init__()
+        super().__init__(executor)
         self.flow = flow
         self.bootstrap_servers = bootstrap_servers
         self.cluster_config = cluster_config
@@ -135,7 +136,6 @@ class FlowProducer(Simulator[FlowStats]):
 
     async def produce_flow_instance(self) -> None:
         loop = asyncio.get_running_loop()
-        executor = get_executor()
 
         first_step_data: dict[str, Any] | None = None
         correlation_id: str | None = None
@@ -161,7 +161,9 @@ class FlowProducer(Simulator[FlowStats]):
             # Use correlation_id as key for partitioning
             key = correlation_id.encode() if correlation_id else None
 
-            await loop.run_in_executor(executor, self._produce_sync, step.topic, value_bytes, key)
+            await loop.run_in_executor(
+                self._executor, self._produce_sync, step.topic, value_bytes, key
+            )
 
         self.stats.record_flow_complete()
 
