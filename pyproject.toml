@@ -1,6 +1,6 @@
 [project]
 name = "khaos-cli"
-version = "0.5.1"
+version = "0.6.0"
 description = "Kafka data generator and load testing tool - generate fake messages, simulate producers and consumers, test broker failures, and run chaos engineering scenarios"
 readme = "README.md"
 license = "Apache-2.0"

@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2025-12-28
+
+### Added
+- Unit tests for `generators/schema.py` (SchemaPayloadGenerator)
+- Unit tests for `errors.py` (error formatting functions)
+- Unit tests for `serialization/avro.py` (Avro schema conversion and serialization)
 
 ### Changed
 - Extracted `TopicManager`, `SimulatorFactory`, `IncidentScheduler` from `BaseExecutor`
@@ -19,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ConsumerSimulator` now uses `ConsumerConfig` object (consistent with `ProducerSimulator`)
 - Eliminated global `_executor` singleton - `ThreadPoolExecutor` is now owned by `BaseExecutor`
 - Extracted duplicate validation logic in `validators/schema.py` and `validators/scenario.py`
+- Replaced mypy with ty type checker from Astral
 
 ### Fixed
 - Incident console prints not showing during execution (Rich Live console sharing)
@@ -147,7 +153,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI/CD pipeline with linting, testing, type checking
 - PyPI publishing workflow
 
-[Unreleased]: https://github.com/aleksandarskrbic/khaos/compare/v0.5.1...HEAD
+[0.6.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/aleksandarskrbic/khaos/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.3.0...v0.4.0
