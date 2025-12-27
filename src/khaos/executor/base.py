@@ -212,7 +212,9 @@ class BaseExecutor(ABC):
                     for idx in indices:
                         if idx < len(self.consumers):
                             self.consumers[idx]._stop_event.clear()
-                            asyncio.create_task(self.consumers[idx].consume_loop(duration_seconds=0))
+                            asyncio.create_task(
+                                self.consumers[idx].consume_loop(duration_seconds=0)
+                            )
 
                 case StopConsumer(index=idx):
                     if idx < len(self.consumers):
