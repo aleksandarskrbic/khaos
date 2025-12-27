@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from khaos.models.defaults import (
+from khaos.defaults import (
     DEFAULT_KEY_CARDINALITY,
     DEFAULT_MAX_SIZE_BYTES,
     DEFAULT_MIN_SIZE_BYTES,

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from khaos.models.defaults import (
+from khaos.defaults import (
     DEFAULT_ACKS,
     DEFAULT_AUTO_OFFSET_RESET,
     DEFAULT_BATCH_SIZE,

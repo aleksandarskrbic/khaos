@@ -7,12 +7,12 @@ from dataclasses import dataclass, field
 
 from confluent_kafka import Producer
 
+from khaos.defaults import FLUSH_TIMEOUT_SECONDS
 from khaos.errors import KhaosConnectionError, format_kafka_error
 from khaos.kafka.config import build_kafka_config
 from khaos.kafka.simulator import Simulator, SimulatorStats
 from khaos.models.cluster import ClusterConfig
 from khaos.models.config import ProducerConfig
-from khaos.models.defaults import FLUSH_TIMEOUT_SECONDS
 from khaos.runtime import get_executor
 
 
@@ -101,7 +101,7 @@ class ProducerSimulator(Simulator[ProducerStats]):
         messages_per_second = self.config.messages_per_second
         interval = 1.0 / messages_per_second if messages_per_second > 0 else 0
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         executor = get_executor()
 
         start_time = time.time()

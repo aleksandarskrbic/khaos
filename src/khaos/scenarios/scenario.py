@@ -1,3 +1,5 @@
+"""Scenario data models and parsing."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -5,19 +7,8 @@ from typing import Any
 
 from khaos.models.flow import FlowConfig
 from khaos.models.schema import FieldSchema
-from khaos.scenarios.incidents import (
-    ChangeProducerRate,
-    ConsumerTarget,
-    Incident,
-    IncidentGroup,
-    IncreaseConsumerDelay,
-    PauseConsumers,
-    ProducerTarget,
-    RebalanceConsumer,
-    Schedule,
-    StartBrokerIncident,
-    StopBrokerIncident,
-)
+from khaos.scenarios.incidents import Incident, IncidentGroup
+from khaos.scenarios.parser import ScenarioParser
 
 
 @dataclass
@@ -63,77 +54,6 @@ class TopicConfig:
     subject_name: str | None = None  # Required when schema_provider is "registry"
 
 
-def _parse_schedule(data: dict[str, Any]) -> Schedule:
-    return Schedule(
-        at_seconds=data.get("at_seconds"),
-        every_seconds=data.get("every_seconds"),
-        initial_delay_seconds=data.get("initial_delay_seconds", 0),
-    )
-
-
-def _parse_consumer_target(data: dict[str, Any] | None) -> ConsumerTarget:
-    if not data:
-        return ConsumerTarget()
-    return ConsumerTarget(
-        topic=data.get("topic"),
-        group=data.get("group"),
-        percentage=data.get("percentage"),
-        count=data.get("count"),
-    )
-
-
-def _parse_producer_target(data: dict[str, Any] | None) -> ProducerTarget:
-    if not data:
-        return ProducerTarget()
-    return ProducerTarget(
-        topic=data.get("topic"),
-        percentage=data.get("percentage"),
-        count=data.get("count"),
-    )
-
-
-def _parse_incident(data: dict[str, Any]) -> Incident:
-    incident_type = data["type"]
-    schedule = _parse_schedule(data)
-
-    match incident_type:
-        case "stop_broker":
-            return StopBrokerIncident(broker=data["broker"], schedule=schedule)
-
-        case "start_broker":
-            return StartBrokerIncident(broker=data["broker"], schedule=schedule)
-
-        case "pause_consumer":
-            return PauseConsumers(
-                duration_seconds=data["duration_seconds"],
-                target=_parse_consumer_target(data.get("target")),
-                schedule=schedule,
-            )
-
-        case "rebalance_consumer":
-            return RebalanceConsumer(
-                target=_parse_consumer_target(data.get("target")),
-                schedule=schedule,
-            )
-
-        case "increase_consumer_delay":
-            return IncreaseConsumerDelay(
-                delay_ms=data["delay_ms"],
-                target=_parse_consumer_target(data.get("target")),
-                schedule=schedule,
-            )
-
-        case "change_producer_rate":
-            return ChangeProducerRate(
-                rate=data["rate"],
-                target=_parse_producer_target(data.get("target")),
-                schedule=schedule,
-            )
-
-        case _:
-            raise ValueError(f"Unknown incident type: {incident_type}")
-
-
 @dataclass
 class Scenario:
     name: str
@@ -146,16 +66,16 @@ class Scenario:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Scenario:
+        parser = ScenarioParser()
+
+        # Parse topics
         topics = []
-        for topic_data in data.get("topics", []):
+        for raw_topic in data.get("topics", []):
+            topic_data = dict(raw_topic)  # Copy to avoid mutation
+
             msg_schema_data = topic_data.pop("message_schema", {})
-
-            fields_data = msg_schema_data.pop("fields", None)
-            field_schemas = None
-            if fields_data:
-                field_schemas = [FieldSchema.from_dict(f) for f in fields_data]
-
-            msg_schema = MessageSchemaConfig(**msg_schema_data, fields=field_schemas)
+            schema_data, field_schemas = parser.parse_message_schema(msg_schema_data)
+            msg_schema = MessageSchemaConfig(**schema_data, fields=field_schemas)
 
             prod_config_data = topic_data.pop("producer_config", {})
             prod_config = ProducerConfigData(**prod_config_data)
@@ -172,24 +92,13 @@ class Scenario:
             )
             topics.append(topic)
 
-        incidents: list[Incident] = []
-        incident_groups: list[IncidentGroup] = []
-        for incident_data in data.get("incidents", []):
-            if "group" in incident_data:
-                group_data = incident_data["group"]
-                group_incidents = [_parse_incident(inc) for inc in group_data.get("incidents", [])]
-                group = IncidentGroup(
-                    repeat=group_data.get("repeat", 1),
-                    interval_seconds=group_data.get("interval_seconds", 60),
-                    incidents=group_incidents,
-                )
-                incident_groups.append(group)
-            else:
-                incident = _parse_incident(incident_data)
-                incidents.append(incident)
+        # Parse incidents
+        incidents, incident_groups = parser.parse_incidents(data.get("incidents", []))
 
-        flows = [FlowConfig.from_dict(f) for f in data.get("flows", [])]
+        # Parse flows
+        flows = parser.parse_flows(data.get("flows", []))
 
+        # Parse schema registry
         schema_registry = None
         if data.get("schema_registry"):
             schema_registry = SchemaRegistryConfig.from_dict(data["schema_registry"])

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from khaos.models.defaults import (
+from khaos.defaults import (
     DEFAULT_PARTITIONS,
     DEFAULT_REPLICATION_FACTOR,
     DEFAULT_RETENTION_MS,

@@ -14,7 +14,7 @@ from khaos.scenarios.incidents import (
     StopConsumer,
     StopConsumers,
 )
-from khaos.scenarios.scenario import _parse_incident
+from khaos.scenarios.parser import parse_incident
 
 
 def make_consumer(group_id: str, topics: list[str], delay_ms: int = 0):
@@ -46,7 +46,7 @@ def make_context(
 
 class TestStopBrokerIncident:
     def test_returns_commands(self):
-        incident = _parse_incident({"type": "stop_broker", "broker": "kafka-1", "at_seconds": 10})
+        incident = parse_incident({"type": "stop_broker", "broker": "kafka-1", "at_seconds": 10})
         ctx = make_context()
 
         assert incident.get_commands(ctx) == [
@@ -58,7 +58,7 @@ class TestStopBrokerIncident:
 
 class TestStartBrokerIncident:
     def test_returns_commands(self):
-        incident = _parse_incident({"type": "start_broker", "broker": "kafka-2", "at_seconds": 30})
+        incident = parse_incident({"type": "start_broker", "broker": "kafka-2", "at_seconds": 30})
         ctx = make_context()
 
         assert incident.get_commands(ctx) == [
@@ -70,7 +70,7 @@ class TestStartBrokerIncident:
 
 class TestPauseConsumers:
     def test_pauses_all_consumers(self):
-        incident = _parse_incident(
+        incident = parse_incident(
             {
                 "type": "pause_consumer",
                 "duration_seconds": 10,
@@ -89,7 +89,7 @@ class TestPauseConsumers:
         ]
 
     def test_no_consumers_matched(self):
-        incident = _parse_incident(
+        incident = parse_incident(
             {
                 "type": "pause_consumer",
                 "duration_seconds": 10,
@@ -103,7 +103,7 @@ class TestPauseConsumers:
         ]
 
     def test_by_topic(self):
-        incident = _parse_incident(
+        incident = parse_incident(
             {
                 "type": "pause_consumer",
                 "duration_seconds": 5,
@@ -128,7 +128,7 @@ class TestPauseConsumers:
         ]
 
     def test_by_group(self):
-        incident = _parse_incident(
+        incident = parse_incident(
             {
                 "type": "pause_consumer",
                 "duration_seconds": 5,
@@ -153,7 +153,7 @@ class TestPauseConsumers:
         ]
 
     def test_by_count(self):
-        incident = _parse_incident(
+        incident = parse_incident(
             {
                 "type": "pause_consumer",
                 "duration_seconds": 5,
@@ -169,7 +169,7 @@ class TestPauseConsumers:
         assert len(commands[1].indices) == 2
 
     def test_by_percentage(self):
-        incident = _parse_incident(
+        incident = parse_incident(
             {
                 "type": "pause_consumer",
                 "duration_seconds": 5,
@@ -186,7 +186,7 @@ class TestPauseConsumers:
 
 class TestRebalanceConsumer:
     def test_returns_commands(self):
-        incident = _parse_incident({"type": "rebalance_consumer", "every_seconds": 20})
+        incident = parse_incident({"type": "rebalance_consumer", "every_seconds": 20})
         consumer = make_consumer("my-group", ["my-topic"], delay_ms=50)
         ctx = make_context(consumers=[consumer], rebalance_count=3)
 
@@ -205,7 +205,7 @@ class TestRebalanceConsumer:
         ]
 
     def test_no_consumers(self):
-        incident = _parse_incident({"type": "rebalance_consumer", "every_seconds": 20})
+        incident = parse_incident({"type": "rebalance_consumer", "every_seconds": 20})
         ctx = make_context(consumers=[])
 
         assert incident.get_commands(ctx) == [
@@ -215,7 +215,7 @@ class TestRebalanceConsumer:
 
 class TestIncreaseConsumerDelay:
     def test_sets_delay_for_all(self):
-        incident = _parse_incident(
+        incident = parse_incident(
             {
                 "type": "increase_consumer_delay",
                 "delay_ms": 100,
@@ -233,7 +233,7 @@ class TestIncreaseConsumerDelay:
         ]
 
     def test_by_topic(self):
-        incident = _parse_incident(
+        incident = parse_incident(
             {
                 "type": "increase_consumer_delay",
                 "delay_ms": 200,
@@ -256,7 +256,7 @@ class TestIncreaseConsumerDelay:
 
 class TestChangeProducerRate:
     def test_changes_rate_for_all(self):
-        incident = _parse_incident(
+        incident = parse_incident(
             {
                 "type": "change_producer_rate",
                 "rate": 500.0,
@@ -276,7 +276,7 @@ class TestChangeProducerRate:
         ]
 
     def test_by_topic(self):
-        incident = _parse_incident(
+        incident = parse_incident(
             {
                 "type": "change_producer_rate",
                 "rate": 100.0,
@@ -300,7 +300,7 @@ class TestChangeProducerRate:
         ]
 
     def test_no_producers(self):
-        incident = _parse_incident(
+        incident = parse_incident(
             {
                 "type": "change_producer_rate",
                 "rate": 100.0,

@@ -44,14 +44,6 @@ class SerializerFactory:
         self._is_schema_registry_running = is_schema_registry_running_fn
 
     def needs_schema_registry(self, topics: list[TopicConfig]) -> bool:
-        """Check if any topic requires Schema Registry.
-
-        Args:
-            topics: List of topic configurations
-
-        Returns:
-            True if Schema Registry is needed
-        """
         has_schema_format = any(
             topic.message_schema.data_format in ("avro", "protobuf") for topic in topics
         )
@@ -60,11 +52,6 @@ class SerializerFactory:
         return (has_schema_format and has_config) or has_registry_provider
 
     def get_schema_registry_config(self) -> SchemaRegistryConfig | None:
-        """Get Schema Registry configuration from scenarios.
-
-        Returns:
-            SchemaRegistryConfig if available, None otherwise
-        """
         for scenario in self._scenarios:
             if scenario.schema_registry:
                 return scenario.schema_registry
@@ -73,14 +60,6 @@ class SerializerFactory:
         return None
 
     def create_serializer_for_topic(self, topic: TopicConfig):
-        """Create a serializer for a topic based on its message schema.
-
-        Args:
-            topic: Topic configuration
-
-        Returns:
-            Serializer instance (AvroSerializer, ProtobufSerializer, or JsonSerializer)
-        """
         data_format = topic.message_schema.data_format
         message_name = topic.name.title().replace("-", "").replace("_", "") + "Record"
 
@@ -97,10 +76,10 @@ class SerializerFactory:
                 name=message_name,
             )
 
-            schema_registry = self.get_schema_registry_config()
-            if schema_registry:
+            schema_registry_config = self.get_schema_registry_config()
+            if schema_registry_config:
                 return AvroSerializer(
-                    schema_registry_url=schema_registry.url,
+                    schema_registry_url=schema_registry_config.url,
                     schema=avro_schema,
                     topic=topic.name,
                 )
@@ -120,10 +99,10 @@ class SerializerFactory:
                 name=message_name,
             )
 
-            schema_registry = self.get_schema_registry_config()
-            if schema_registry:
+            schema_registry_config = self.get_schema_registry_config()
+            if schema_registry_config:
                 return ProtobufSerializer(
-                    schema_registry_url=schema_registry.url,
+                    schema_registry_url=schema_registry_config.url,
                     message_class=message_class,
                     topic=topic.name,
                 )
@@ -139,17 +118,6 @@ class SerializerFactory:
         fields: list | None,
         raw_avro_schema: dict | None = None,
     ):
-        """Create serializer with explicit format and fields.
-
-        Args:
-            topic: Topic configuration
-            data_format: "avro", "protobuf", or "json"
-            fields: List of FieldSchema for data generation
-            raw_avro_schema: Original Avro schema from registry (preserves name/namespace)
-
-        Returns:
-            Serializer instance
-        """
         message_name = topic.name.title().replace("-", "").replace("_", "") + "Record"
 
         if data_format == "avro":
@@ -163,10 +131,10 @@ class SerializerFactory:
             # Use raw schema if provided (from registry), otherwise generate
             avro_schema = raw_avro_schema or field_schemas_to_avro(fields, name=message_name)
 
-            schema_registry = self.get_schema_registry_config()
-            if schema_registry:
+            schema_registry_config = self.get_schema_registry_config()
+            if schema_registry_config:
                 return AvroSerializer(
-                    schema_registry_url=schema_registry.url,
+                    schema_registry_url=schema_registry_config.url,
                     schema=avro_schema,
                     topic=topic.name,
                 )
@@ -183,10 +151,10 @@ class SerializerFactory:
 
             _, message_class = field_schemas_to_protobuf(fields, name=message_name)
 
-            schema_registry = self.get_schema_registry_config()
-            if schema_registry:
+            schema_registry_config = self.get_schema_registry_config()
+            if schema_registry_config:
                 return ProtobufSerializer(
-                    schema_registry_url=schema_registry.url,
+                    schema_registry_url=schema_registry_config.url,
                     message_class=message_class,
                     topic=topic.name,
                 )

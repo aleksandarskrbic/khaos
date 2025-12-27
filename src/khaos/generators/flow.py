@@ -10,18 +10,18 @@ from typing import Any
 
 from confluent_kafka import Producer
 
-from khaos.errors import KhaosConnectionError, format_kafka_error
-from khaos.generators.field import create_field_generator
-from khaos.kafka.config import build_kafka_config
-from khaos.kafka.simulator import Simulator, SimulatorStats
-from khaos.models.cluster import ClusterConfig
-from khaos.models.defaults import (
+from khaos.defaults import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_FLOW_ACKS,
     DEFAULT_FLOW_COMPRESSION,
     DEFAULT_LINGER_MS,
     FLUSH_TIMEOUT_SECONDS,
 )
+from khaos.errors import KhaosConnectionError, format_kafka_error
+from khaos.generators.field import create_field_generator
+from khaos.kafka.config import build_kafka_config
+from khaos.kafka.simulator import Simulator, SimulatorStats
+from khaos.models.cluster import ClusterConfig
 from khaos.models.flow import FlowConfig, FlowStep
 from khaos.runtime import get_executor
 
@@ -134,7 +134,7 @@ class FlowProducer(Simulator[FlowStats]):
         return json.dumps(message).encode(), message
 
     async def produce_flow_instance(self) -> None:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         executor = get_executor()
 
         first_step_data: dict[str, Any] | None = None

@@ -46,7 +46,7 @@ class KafkaAdmin:
 
         futures = self._client.create_topics([topic])
 
-        for _topic_name, future in futures.items():
+        for _, future in futures.items():
             try:
                 future.result()
             except KafkaException as e:

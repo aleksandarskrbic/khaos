@@ -98,6 +98,7 @@ ignore = [
     "S101",     # Use of assert (ok in tests)
     "S110",     # Try-except-pass (intentional silent close)
     "S112",     # Try-except-continue (intentional skip invalid files)
+    "S310",     # URL open (we control the URLs)
     "S311",     # Pseudo-random generators (fine for test data generation)
     "S603",     # Subprocess call (we control inputs)
     "S607",     # Partial executable path (we use docker/compose)
@@ -112,6 +113,7 @@ ignore = [
     "PLW0603",  # Global statement (singleton executor pattern)
     "TC001",    # TYPE_CHECKING import (used at runtime for dataclasses)
     "TC002",    # Move import into TYPE_CHECKING block (prefer simple imports)
+    "TC003",    # Move stdlib import into TYPE_CHECKING block (prefer simple imports)
 ]
 
 [tool.ruff.lint.per-file-ignores]

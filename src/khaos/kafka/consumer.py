@@ -8,15 +8,15 @@ from dataclasses import dataclass, field
 
 from confluent_kafka import Consumer, KafkaError
 
-from khaos.errors import KhaosConnectionError, format_kafka_error
-from khaos.kafka.config import build_kafka_config
-from khaos.kafka.simulator import Simulator, SimulatorStats
-from khaos.models.cluster import ClusterConfig
-from khaos.models.defaults import (
+from khaos.defaults import (
     DEFAULT_AUTO_COMMIT_INTERVAL_MS,
     DEFAULT_MAX_POLL_INTERVAL_MS,
     DEFAULT_SESSION_TIMEOUT_MS,
 )
+from khaos.errors import KhaosConnectionError, format_kafka_error
+from khaos.kafka.config import build_kafka_config
+from khaos.kafka.simulator import Simulator, SimulatorStats
+from khaos.models.cluster import ClusterConfig
 from khaos.runtime import get_executor
 
 logger = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ class ConsumerSimulator(Simulator[ConsumerStats]):
             on_message: Optional callback invoked for each message.
         """
         start_time = time.time()
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         executor = get_executor()
 
         while not self.should_stop:

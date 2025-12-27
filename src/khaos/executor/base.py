@@ -11,44 +11,22 @@ from abc import ABC, abstractmethod
 from rich.console import Console
 from rich.live import Live
 
+from khaos.defaults import FLUSH_TIMEOUT_SECONDS
+from khaos.executor.incident_scheduler import IncidentScheduler
 from khaos.executor.result import ExecutionResult
 from khaos.executor.serializer import SerializerFactory
+from khaos.executor.simulator_factory import SimulatorFactory
 from khaos.executor.stats import StatsDisplay
+from khaos.executor.topic_manager import TopicManager
 from khaos.generators.flow import FlowProducer
 from khaos.generators.key import create_key_generator
 from khaos.generators.payload import create_payload_generator
-from khaos.kafka.admin import KafkaAdmin
 from khaos.kafka.consumer import ConsumerSimulator
 from khaos.kafka.producer import ProducerSimulator
-from khaos.models.config import ProducerConfig
-from khaos.models.defaults import (
-    CONSUMER_CLOSE_WAIT_SECONDS,
-    DEFAULT_FLOW_PARTITIONS,
-    DEFAULT_REPLICATION_FACTOR,
-    FLUSH_TIMEOUT_SECONDS,
-    TOPIC_CREATION_WAIT_SECONDS,
-)
-from khaos.models.flow import FlowConfig, FlowStep
+from khaos.models.flow import FlowConfig, StepConsumerConfig
 from khaos.models.message import KeyDistribution, MessageSchema
-from khaos.models.topic import TopicConfig as KafkaTopicConfig
 from khaos.runtime import shutdown_executor
-from khaos.scenarios.incidents import (
-    Command,
-    CreateConsumer,
-    Delay,
-    Incident,
-    IncidentContext,
-    IncidentGroup,
-    IncrementRebalanceCount,
-    PrintMessage,
-    ResumeConsumers,
-    SetConsumerDelay,
-    SetProducerRate,
-    StartBroker,
-    StopBroker,
-    StopConsumer,
-    StopConsumers,
-)
+from khaos.scenarios.incidents import Incident, IncidentGroup
 from khaos.scenarios.scenario import Scenario, TopicConfig
 from khaos.serialization import SchemaRegistryProvider
 
@@ -57,8 +35,6 @@ logger = logging.getLogger(__name__)
 
 
 class BaseExecutor(ABC):
-    """Base class for scenario executors."""
-
     def __init__(
         self,
         bootstrap_servers: str,
@@ -68,31 +44,28 @@ class BaseExecutor(ABC):
         self.bootstrap_servers = bootstrap_servers
         self.scenarios = scenarios
         self.no_consumers = no_consumers
-        self.admin = KafkaAdmin(bootstrap_servers)
+
+        self.topic_manager = TopicManager(bootstrap_servers)
+        self.simulator_factory = SimulatorFactory(bootstrap_servers=self.bootstrap_servers)
 
         self._stop_event = asyncio.Event()
         self.producers: list[ProducerSimulator] = []
         self.consumers: list[ConsumerSimulator] = []
         self.flow_producers: list[FlowProducer] = []
-        self.rebalance_count = 0
 
         # Per-topic tracking for accurate stats
         self._producers_by_topic: dict[str, list[ProducerSimulator]] = {}
-        # Nested structure: {topic_name: {group_id: [consumer1, consumer2, ...]}}
         self._consumers_by_topic: dict[str, dict[str, list[ConsumerSimulator]]] = {}
-        # Flat structure for incident targeting: {group_id: [consumer1, consumer2, ...]}
         self._consumers_by_group: dict[str, list[ConsumerSimulator]] = {}
-        # Flat structure: {topic_name: [consumer1, consumer2, ...]}
         self._consumers_by_topic_flat: dict[str, list[ConsumerSimulator]] = {}
-        # Map topic to scenario name for display
         self._topic_to_scenario: dict[str, str] = {}
-        # Flow producers by flow name
         self._flow_producers_by_name: dict[str, FlowProducer] = {}
 
         self._all_topics: list[TopicConfig] = []
         self._all_incidents: list[Incident] = []
         self._all_incident_groups: list[IncidentGroup] = []
         self._all_flows: list[FlowConfig] = []
+
         for scenario in scenarios:
             for topic in scenario.topics:
                 self._topic_to_scenario[topic.name] = scenario.name
@@ -102,8 +75,13 @@ class BaseExecutor(ABC):
             self._all_flows.extend(scenario.flows)
 
     @abstractmethod
-    def _is_schema_registry_running(self) -> bool:
-        pass
+    def _is_schema_registry_running(self) -> bool: ...
+
+    @abstractmethod
+    async def _handle_stop_broker(self, broker: str) -> None: ...
+
+    @abstractmethod
+    async def _handle_start_broker(self, broker: str) -> None: ...
 
     def _create_serializer_factory(self) -> SerializerFactory:
         return SerializerFactory(
@@ -122,41 +100,25 @@ class BaseExecutor(ABC):
             consumers_by_topic=self._consumers_by_topic,
         )
 
+    def _create_incident_scheduler(self) -> IncidentScheduler:
+        return IncidentScheduler(
+            consumers=self.consumers,
+            producers=self.producers,
+            bootstrap_servers=self.bootstrap_servers,
+            consumers_by_topic=self._consumers_by_topic_flat,
+            consumers_by_group=self._consumers_by_group,
+            producers_by_topic=self._producers_by_topic,
+            create_consumer_fn=self._create_single_consumer,
+            handle_stop_broker_fn=self._handle_stop_broker,
+            handle_start_broker_fn=self._handle_start_broker,
+            should_stop_fn=lambda: self.should_stop,
+            console=console,
+        )
+
     async def setup(self) -> None:
-        """Set up topics and resources. Override in subclasses for additional setup."""
-        created_topics: set[str] = set()
-
-        for topic in self._all_topics:
-            console.print(
-                f"[dim]Creating topic: {topic.name} ({topic.partitions} partitions)[/dim]"
-            )
-            topic_config = KafkaTopicConfig(
-                name=topic.name,
-                partitions=topic.partitions,
-                replication_factor=topic.replication_factor,
-            )
-            self.admin.delete_topic(topic.name)
-            self.admin.create_topic(topic_config)
-            created_topics.add(topic.name)
-
-        for flow in self._all_flows:
-            for topic_name in flow.get_all_topics():
-                if topic_name not in created_topics:
-                    console.print(f"[dim]Creating topic for flow: {topic_name}[/dim]")
-                    topic_config = KafkaTopicConfig(
-                        name=topic_name,
-                        partitions=DEFAULT_FLOW_PARTITIONS,
-                        replication_factor=DEFAULT_REPLICATION_FACTOR,
-                    )
-                    self.admin.delete_topic(topic_name)
-                    self.admin.create_topic(topic_config)
-                    created_topics.add(topic_name)
-
-        if created_topics:
-            await asyncio.sleep(TOPIC_CREATION_WAIT_SECONDS)
+        await self.topic_manager.setup_topics(self._all_topics, self._all_flows)
 
     async def teardown(self) -> None:
-        """Clean up resources."""
         for producer in self.producers:
             producer.stop()
             producer.flush(timeout=FLUSH_TIMEOUT_SECONDS)
@@ -172,7 +134,6 @@ class BaseExecutor(ABC):
         shutdown_executor()
 
     def request_stop(self) -> None:
-        """Request all producers and consumers to stop."""
         self._stop_event.set()
         for producer in self.producers:
             producer.stop()
@@ -183,64 +144,7 @@ class BaseExecutor(ABC):
 
     @property
     def should_stop(self) -> bool:
-        """Check if stop has been requested."""
         return self._stop_event.is_set()
-
-    async def execute_commands(self, commands: list[Command]) -> None:
-        """Execute a list of incident commands."""
-        for cmd in commands:
-            if self.should_stop:
-                break
-
-            match cmd:
-                case Delay(seconds=s):
-                    await asyncio.sleep(s)
-
-                case PrintMessage(message=msg, style=style):
-                    console.print(f"\n[{style}]{msg}[/]")
-
-                case SetConsumerDelay(index=idx, delay_ms=delay):
-                    if idx < len(self.consumers):
-                        self.consumers[idx].processing_delay_ms = delay
-
-                case SetProducerRate(index=idx, rate=r):
-                    if idx < len(self.producers):
-                        self.producers[idx].messages_per_second = r
-
-                case IncrementRebalanceCount():
-                    self.rebalance_count += 1
-
-                case StopConsumers(indices=indices):
-                    for idx in indices:
-                        if idx < len(self.consumers):
-                            self.consumers[idx].stop()
-
-                case ResumeConsumers(indices=indices):
-                    for idx in indices:
-                        if idx < len(self.consumers):
-                            self.consumers[idx].resume()
-                            asyncio.create_task(
-                                self.consumers[idx].consume_loop(duration_seconds=0)
-                            )
-
-                case StopConsumer(index=idx):
-                    if idx < len(self.consumers):
-                        self.consumers[idx].stop()
-                        # Wait for poll to finish before closing
-                        await asyncio.sleep(CONSUMER_CLOSE_WAIT_SECONDS)
-                        self.consumers[idx].close()
-
-                case CreateConsumer(index=idx, group_id=gid, topics=t, processing_delay_ms=d):
-                    new_consumer = self._create_single_consumer(gid, t, d)
-                    if idx < len(self.consumers):
-                        self.consumers[idx] = new_consumer
-                    asyncio.create_task(new_consumer.consume_loop(duration_seconds=0))
-
-                case StopBroker(broker=b):
-                    await self._handle_stop_broker(b)
-
-                case StartBroker(broker=b):
-                    await self._handle_start_broker(b)
 
     def _create_single_consumer(
         self,
@@ -248,24 +152,13 @@ class BaseExecutor(ABC):
         topics: list[str],
         processing_delay_ms: int,
     ) -> ConsumerSimulator:
-        """Create a single consumer. Override in subclasses for custom config."""
-        return ConsumerSimulator(
-            bootstrap_servers=self.bootstrap_servers,
+        return self.simulator_factory.create_consumer(
             group_id=group_id,
             topics=topics,
             processing_delay_ms=processing_delay_ms,
         )
 
-    async def _handle_stop_broker(self, broker: str) -> None:  # noqa: B027
-        """Handle StopBroker command. Override in subclasses."""
-        pass
-
-    async def _handle_start_broker(self, broker: str) -> None:  # noqa: B027
-        """Handle StartBroker command. Override in subclasses."""
-        pass
-
     def _to_key_distribution(self, name: str) -> KeyDistribution:
-        """Convert string to KeyDistribution enum."""
         mapping = {
             "uniform": KeyDistribution.UNIFORM,
             "zipfian": KeyDistribution.ZIPFIAN,
@@ -274,95 +167,65 @@ class BaseExecutor(ABC):
         }
         return mapping.get(name, KeyDistribution.UNIFORM)
 
-    def _create_producers_for_topic(
-        self, topic: TopicConfig
-    ) -> list[tuple[str, ProducerSimulator]]:
-        """Create producers for a topic. Override in subclasses for custom config."""
+    def _register_producer(self, topic_name: str, producer: ProducerSimulator) -> None:
+        self.producers.append(producer)
+        if topic_name not in self._producers_by_topic:
+            self._producers_by_topic[topic_name] = []
+        self._producers_by_topic[topic_name].append(producer)
+
+    def _register_consumer(
+        self, topic_name: str, group_id: str, consumer: ConsumerSimulator
+    ) -> None:
+        self.consumers.append(consumer)
+
+        if topic_name not in self._consumers_by_topic:
+            self._consumers_by_topic[topic_name] = {}
+        if group_id not in self._consumers_by_topic[topic_name]:
+            self._consumers_by_topic[topic_name][group_id] = []
+        self._consumers_by_topic[topic_name][group_id].append(consumer)
+
+        if topic_name not in self._consumers_by_topic_flat:
+            self._consumers_by_topic_flat[topic_name] = []
+        self._consumers_by_topic_flat[topic_name].append(consumer)
+
+        if group_id not in self._consumers_by_group:
+            self._consumers_by_group[group_id] = []
+        self._consumers_by_group[group_id].append(consumer)
+
+    def _create_producers_for_topic(self, topic: TopicConfig) -> list[ProducerSimulator]:
         producers = []
-        config = ProducerConfig(
-            messages_per_second=topic.producer_rate,
-            batch_size=topic.producer_config.batch_size,
-            linger_ms=topic.producer_config.linger_ms,
-            acks=topic.producer_config.acks,
-            compression_type=topic.producer_config.compression_type,
-        )
-        if topic.name not in self._producers_by_topic:
-            self._producers_by_topic[topic.name] = []
-        for i in range(topic.num_producers):
-            producer = ProducerSimulator(
-                bootstrap_servers=self.bootstrap_servers,
-                config=config,
-            )
-            self.producers.append(producer)
-            self._producers_by_topic[topic.name].append(producer)
-            producers.append((f"{topic.name}-producer-{i + 1}", producer))
+        for _name, producer in self.simulator_factory.create_producers_for_topic(topic):
+            self._register_producer(topic.name, producer)
+            producers.append(producer)
         return producers
 
-    def _create_consumers_for_topic(
-        self, topic: TopicConfig
-    ) -> list[tuple[str, str, ConsumerSimulator]]:
-        """Create consumers for a topic. Override in subclasses for custom config."""
+    def _create_consumers_for_topic(self, topic: TopicConfig) -> list[ConsumerSimulator]:
         consumers = []
-        if topic.name not in self._consumers_by_topic:
-            self._consumers_by_topic[topic.name] = {}
-        if topic.name not in self._consumers_by_topic_flat:
-            self._consumers_by_topic_flat[topic.name] = []
-
-        for g in range(topic.num_consumer_groups):
-            group_id = f"{topic.name}-group-{g + 1}"
-            if group_id not in self._consumers_by_topic[topic.name]:
-                self._consumers_by_topic[topic.name][group_id] = []
-            if group_id not in self._consumers_by_group:
-                self._consumers_by_group[group_id] = []
-
-            for c in range(topic.consumers_per_group):
-                consumer = self._create_single_consumer(
-                    group_id=group_id,
-                    topics=[topic.name],
-                    processing_delay_ms=topic.consumer_delay_ms,
-                )
-                self.consumers.append(consumer)
-                self._consumers_by_topic[topic.name][group_id].append(consumer)
-                self._consumers_by_topic_flat[topic.name].append(consumer)
-                self._consumers_by_group[group_id].append(consumer)
-                consumers.append((group_id, f"{group_id}-consumer-{c + 1}", consumer))
+        for group_id, _name, consumer in self.simulator_factory.create_consumers_for_topic(topic):
+            self._register_consumer(topic.name, group_id, consumer)
+            consumers.append(consumer)
         return consumers
 
     def _create_flow_step_consumers(
         self,
         flow_name: str,
-        step: FlowStep,
+        topic_name: str,
+        consumers: StepConsumerConfig,
         duration_seconds: int,
         result: ExecutionResult,
     ) -> list:
-        """Create consumers for a flow step."""
         tasks = []
-        config = step.consumers
-        assert config is not None
-        topic_name = step.topic
 
-        if topic_name not in self._consumers_by_topic:
-            self._consumers_by_topic[topic_name] = {}
-        if topic_name not in self._consumers_by_topic_flat:
-            self._consumers_by_topic_flat[topic_name] = []
-
-        for g in range(config.groups):
+        for g in range(consumers.groups):
             group_id = f"{flow_name}-{topic_name}-group-{g + 1}"
-            if group_id not in self._consumers_by_topic[topic_name]:
-                self._consumers_by_topic[topic_name][group_id] = []
-            if group_id not in self._consumers_by_group:
-                self._consumers_by_group[group_id] = []
 
-            for _c in range(config.per_group):
+            for _c in range(consumers.per_group):
                 consumer = self._create_single_consumer(
                     group_id=group_id,
                     topics=[topic_name],
-                    processing_delay_ms=config.delay_ms,
+                    processing_delay_ms=consumers.delay_ms,
                 )
-                self.consumers.append(consumer)
-                self._consumers_by_topic[topic_name][group_id].append(consumer)
-                self._consumers_by_topic_flat[topic_name].append(consumer)
-                self._consumers_by_group[group_id].append(consumer)
+                self._register_consumer(topic_name, group_id, consumer)
 
                 async def consumer_task(cons=consumer, gid=group_id):
                     try:
@@ -375,97 +238,20 @@ class BaseExecutor(ABC):
 
         return tasks
 
-    def _build_incident_context(self) -> IncidentContext:
-        """Build context for incident execution."""
-        return IncidentContext(
-            consumers=self.consumers,
-            producers=self.producers,
-            bootstrap_servers=self.bootstrap_servers,
-            rebalance_count=self.rebalance_count,
-            consumers_by_topic=self._consumers_by_topic_flat,
-            consumers_by_group=self._consumers_by_group,
-            producers_by_topic=self._producers_by_topic,
-        )
-
-    async def _schedule_incident(self, incident: Incident, start_time: float) -> None:
-        """Schedule an incident for execution."""
-        schedule = incident.schedule
-
-        if schedule.every_seconds:
-            # Recurring incident
-            await asyncio.sleep(schedule.initial_delay_seconds)
-            while not self.should_stop:
-                ctx = self._build_incident_context()
-                commands = incident.get_commands(ctx)
-                await self.execute_commands(commands)
-                await asyncio.sleep(schedule.every_seconds)
-        elif schedule.at_seconds is not None:
-            # One-time incident at specific time
-            elapsed = time.time() - start_time
-            wait_time = schedule.at_seconds - elapsed
-            if wait_time > 0:
-                await asyncio.sleep(wait_time)
-            if not self.should_stop:
-                ctx = self._build_incident_context()
-                commands = incident.get_commands(ctx)
-                await self.execute_commands(commands)
-
-    async def _schedule_incident_group(self, group: IncidentGroup, start_time: float) -> None:
-        """Schedule an incident group for execution."""
-        for cycle in range(group.repeat):
-            if self.should_stop:
-                break
-
-            cycle_start = start_time + (cycle * group.interval_seconds)
-
-            # Wait until this cycle should start
-            now = time.time()
-            wait_time = cycle_start - now
-            if wait_time > 0:
-                await asyncio.sleep(wait_time)
-
-            if self.should_stop:
-                break
-
-            console.print(f"\n[bold magenta]>>> GROUP: Cycle {cycle + 1}/{group.repeat}[/]")
-
-            # Execute all incidents in the group
-            for incident in group.incidents:
-                if self.should_stop:
-                    break
-
-                schedule = incident.schedule
-
-                # at_seconds is relative to cycle start
-                if schedule.at_seconds is not None:
-                    incident_time = cycle_start + schedule.at_seconds
-                    now = time.time()
-                    wait_time = incident_time - now
-                    if wait_time > 0:
-                        await asyncio.sleep(wait_time)
-
-                if self.should_stop:
-                    break
-
-                ctx = self._build_incident_context()
-                commands = incident.get_commands(ctx)
-                await self.execute_commands(commands)
-
-    async def run(self, duration_seconds: int) -> ExecutionResult:
-        """Run the scenario execution."""
+    async def _run(self, duration_seconds: int) -> ExecutionResult:
         result = ExecutionResult()
         start_time = time.time()
         tasks = []
 
         serializer_factory = self._create_serializer_factory()
+        incident_scheduler = self._create_incident_scheduler()
 
         # Create schema registry provider for caching (if needed)
         schema_registry_provider: SchemaRegistryProvider | None = None
-        schema_registry = serializer_factory.get_schema_registry_config()
-        if schema_registry:
-            schema_registry_provider = SchemaRegistryProvider(schema_registry.url)
+        schema_registry_config = serializer_factory.get_schema_registry_config()
+        if schema_registry_config:
+            schema_registry_provider = SchemaRegistryProvider(schema_registry_config.url)
 
-        # Create producers and consumers for all topics
         for topic in self._all_topics:
             fields = topic.message_schema.fields
             data_format = topic.message_schema.data_format
@@ -475,7 +261,7 @@ class BaseExecutor(ABC):
             if topic.schema_provider == "registry" and topic.subject_name:
                 if not schema_registry_provider:
                     result.add_error(
-                        f"Topic '{topic.name}' uses registry provider but no schema_registry"
+                        f"Topic '{topic.name}' uses registry provider but no schema_registry_config"
                     )
                     continue
 
@@ -486,9 +272,7 @@ class BaseExecutor(ABC):
                     data_format, fields = schema_registry_provider.get_field_schemas(
                         topic.subject_name
                     )
-                    # Get raw schema to preserve original name/namespace for serialization
                     _, raw_schema = schema_registry_provider.get_raw_schema(topic.subject_name)
-                    # For Avro, raw_schema is a dict
                     if data_format == "avro" and isinstance(raw_schema, dict):
                         raw_avro_schema = raw_schema
                     console.print(
@@ -498,7 +282,6 @@ class BaseExecutor(ABC):
                     result.add_error(f"Failed to fetch schema for '{topic.subject_name}': {e}")
                     continue
 
-            # Create message schema
             msg_schema = MessageSchema(
                 min_size_bytes=topic.message_schema.min_size_bytes,
                 max_size_bytes=topic.message_schema.max_size_bytes,
@@ -507,17 +290,15 @@ class BaseExecutor(ABC):
                 fields=fields,
             )
 
-            # Create serializer based on data format
             serializer = serializer_factory.create_serializer_with_format(
                 topic, data_format, fields, raw_avro_schema
             )
 
-            # Producers
             producers = self._create_producers_for_topic(topic)
             key_gen = create_key_generator(msg_schema)
             payload_gen = create_payload_generator(msg_schema, serializer=serializer)
 
-            for _name, producer in producers:
+            for producer in producers:
 
                 async def producer_task(p=producer, t=topic.name, kg=key_gen, pg=payload_gen):
                     try:
@@ -539,23 +320,20 @@ class BaseExecutor(ABC):
             if not self.no_consumers:
                 consumers = self._create_consumers_for_topic(topic)
 
-                for _group_id, _name, consumer in consumers:
+                for consumer in consumers:
 
-                    async def consumer_task(c=consumer, gid=_group_id):
+                    async def consumer_task(c=consumer):
                         try:
                             await c.consume_loop(duration_seconds=duration_seconds)
                         except Exception as e:
-                            logger.exception(f"Consumer error for group '{gid}': {e}")
+                            logger.exception(f"Consumer error: {e}")
                             result.add_error(f"Consumer error: {e}")
 
                     tasks.append(consumer_task())
 
         # Create flow producers and their consumers
         for flow in self._all_flows:
-            flow_producer = FlowProducer(
-                flow=flow,
-                bootstrap_servers=self.bootstrap_servers,
-            )
+            flow_producer = self.simulator_factory.create_flow_producer(flow)
             self.flow_producers.append(flow_producer)
             self._flow_producers_by_name[flow.name] = flow_producer
 
@@ -570,25 +348,22 @@ class BaseExecutor(ABC):
 
             tasks.append(flow_task())
 
-            # Create consumers for flow steps (if configured and not no_consumers mode)
+            # Create consumers for flow steps
             if not self.no_consumers:
                 for step in flow.steps:
                     if step.consumers:
                         tasks.extend(
                             self._create_flow_step_consumers(
-                                flow.name, step, duration_seconds, result
+                                flow.name, step.topic, step.consumers, duration_seconds, result
                             )
                         )
 
-        # Schedule incidents
         for incident in self._all_incidents:
-            tasks.append(self._schedule_incident(incident, start_time))
+            tasks.append(incident_scheduler.schedule_incident(incident, start_time))
 
-        # Schedule incident groups
         for group in self._all_incident_groups:
-            tasks.append(self._schedule_incident_group(group, start_time))
+            tasks.append(incident_scheduler.schedule_incident_group(group, start_time))
 
-        # Create stats display
         stats_display = self._create_stats_display()
 
         # Display update task
@@ -598,7 +373,6 @@ class BaseExecutor(ABC):
                 await asyncio.sleep(0.5)
                 if duration_seconds > 0 and (time.time() - start_time) >= duration_seconds:
                     break
-            # Signal all tasks to stop when duration is reached
             self.request_stop()
 
         # Run with live display
@@ -612,7 +386,6 @@ class BaseExecutor(ABC):
             except asyncio.CancelledError:
                 pass
 
-        # Collect results
         result.messages_produced = sum(p.get_stats().messages_sent for p in self.producers)
         result.messages_consumed = sum(c.get_stats().messages_consumed for c in self.consumers)
         result.flows_completed = sum(fp.get_stats().flows_completed for fp in self.flow_producers)
@@ -621,8 +394,7 @@ class BaseExecutor(ABC):
 
         return result
 
-    async def execute(self, duration_seconds: int) -> ExecutionResult:
-        """Execute the scenario with signal handling."""
+    async def start(self, duration_seconds: int) -> ExecutionResult:
         loop = asyncio.get_event_loop()
 
         def signal_handler():
@@ -634,7 +406,7 @@ class BaseExecutor(ABC):
 
         try:
             await self.setup()
-            result = await self.run(duration_seconds)
+            result = await self._run(duration_seconds)
             return result
         finally:
             await self.teardown()

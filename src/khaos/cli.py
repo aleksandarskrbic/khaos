@@ -268,7 +268,7 @@ def run_scenario(
             docker_manager=docker_manager,
             no_consumers=no_consumers,
         )
-        result = asyncio.run(executor.execute(duration_seconds=duration))
+        result = asyncio.run(executor.start(duration_seconds=duration))
 
         console.print("\n[bold green]Scenario completed![/bold green]")
         console.print(f"  Messages produced: {result.messages_produced:,}")
@@ -419,7 +419,7 @@ def simulate_external(
             skip_topic_creation=skip_topic_creation,
             no_consumers=no_consumers,
         )
-        result = asyncio.run(executor.execute(duration_seconds=duration))
+        result = asyncio.run(executor.start(duration_seconds=duration))
 
         console.print("\n[bold green]Scenario completed![/bold green]")
         console.print(f"  Messages produced: {result.messages_produced:,}")

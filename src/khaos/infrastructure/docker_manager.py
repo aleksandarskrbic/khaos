@@ -1,7 +1,7 @@
+"""Docker-based Kafka cluster management."""
+
 from __future__ import annotations
 
-import json
-import subprocess
 import time
 from enum import Enum
 from pathlib import Path
@@ -9,13 +9,11 @@ from pathlib import Path
 from confluent_kafka.admin import AdminClient
 from rich.console import Console
 
-from khaos.models.defaults import (
-    KAFKA_READY_TIMEOUT_SECONDS,
-    SCHEMA_REGISTRY_READY_TIMEOUT_SECONDS,
-)
+from khaos.defaults import KAFKA_READY_TIMEOUT_SECONDS
+from khaos.infrastructure.compose_runner import DockerComposeRunner
+from khaos.infrastructure.schema_registry_manager import SchemaRegistryManager
 
 DOCKER_DIR = Path(__file__).parent.parent.parent.parent / "docker"
-SCHEMA_REGISTRY_URL = "http://localhost:8081"
 
 
 class ClusterMode(str, Enum):
@@ -24,9 +22,12 @@ class ClusterMode(str, Enum):
 
 
 class DockerManager:
+    """Manages Docker-based Kafka cluster lifecycle."""
+
     def __init__(self, console: Console | None = None):
         self._console = console or Console()
         self._active_compose_file: Path | None = None
+        self._schema_registry = SchemaRegistryManager(self._console)
 
     @staticmethod
     def _get_compose_file(mode: ClusterMode) -> Path:
@@ -44,60 +45,23 @@ class DockerManager:
         if self._active_compose_file is not None:
             return self._active_compose_file
 
-        result = subprocess.run(
-            ["docker", "ps", "--filter", "name=zookeeper", "--format", "{{.Names}}"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-
-        if "zookeeper" in result.stdout:
+        if DockerComposeRunner.is_container_running("zookeeper"):
             self._active_compose_file = self._get_compose_file(ClusterMode.ZOOKEEPER)
             return self._active_compose_file
 
-        result = subprocess.run(
-            ["docker", "ps", "--filter", "name=kafka-1", "--format", "{{.Names}}"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-
-        if "kafka-1" in result.stdout:
+        if DockerComposeRunner.is_container_running("kafka-1"):
             self._active_compose_file = self._get_compose_file(ClusterMode.KRAFT)
             return self._active_compose_file
 
         return None
 
     def cluster_up(self, mode: ClusterMode = ClusterMode.KRAFT) -> None:
+        """Start Kafka cluster."""
         compose_file = self._get_compose_file(mode)
         mode_label = "KRaft" if mode == ClusterMode.KRAFT else "ZooKeeper"
 
         self._console.print(f"[bold blue]Starting Kafka cluster ({mode_label} mode)...[/bold blue]")
-
-        try:
-            subprocess.run(
-                ["docker", "compose", "-f", str(compose_file), "up", "-d"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError as e:
-            stderr = e.stderr or ""
-            if (
-                "Cannot connect to the Docker daemon" in stderr
-                or "Is the docker daemon running" in stderr
-            ):
-                raise RuntimeError(
-                    "Docker is not running. Please start Docker Desktop and try again."
-                )
-            if "port is already allocated" in stderr:
-                raise RuntimeError(
-                    "Ports 9092-9094 already in use. Stop other Kafka instances or free the ports."
-                )
-            if "no such file or directory" in stderr.lower() or "not found" in stderr.lower():
-                raise RuntimeError(f"Docker compose file not found: {compose_file}")
-            raise RuntimeError(f"Failed to start Kafka cluster: {stderr or e}")
-
+        DockerComposeRunner.up(compose_file)
         self._active_compose_file = compose_file
         self._console.print(
             f"[bold green]Kafka containers started ({mode_label} mode)![/bold green]"
@@ -105,9 +69,18 @@ class DockerManager:
         self.wait_for_kafka()
 
     def cluster_down(self, remove_volumes: bool = True) -> None:
-        # Stop Schema Registry first (if running)
-        if self.is_schema_registry_running():
-            self._stop_schema_registry_with_volumes()
+        """Stop Kafka cluster."""
+        if self._schema_registry.is_running():
+            mode = self.get_active_mode()
+            if mode:
+                self._schema_registry.stop_with_volumes(
+                    self._get_schema_registry_compose_file(mode)
+                )
+            else:
+                for m in ClusterMode:
+                    self._schema_registry.stop_with_volumes(
+                        self._get_schema_registry_compose_file(m)
+                    )
 
         compose_file = self._get_active_compose_file()
 
@@ -116,91 +89,20 @@ class DockerManager:
                 "[yellow]No active cluster detected, checking both modes...[/yellow]"
             )
             for mode in ClusterMode:
-                self._stop_compose(self._get_compose_file(mode), remove_volumes, silent=True)
+                DockerComposeRunner.down(self._get_compose_file(mode), remove_volumes, silent=True)
             self._console.print("[bold green]Kafka cluster stopped![/bold green]")
             return
 
         self._console.print("[bold blue]Stopping Kafka cluster...[/bold blue]")
-        self._stop_compose(compose_file, remove_volumes, silent=False)
+        DockerComposeRunner.down(compose_file, remove_volumes, silent=False)
         self._active_compose_file = None
         self._console.print("[bold green]Kafka cluster stopped![/bold green]")
 
-    def _stop_schema_registry_with_volumes(self) -> None:
-        """Stop Schema Registry and remove its volumes to clear schema data."""
-        mode = self.get_active_mode()
-        if mode is None:
-            for m in ClusterMode:
-                compose_file = self._get_schema_registry_compose_file(m)
-                subprocess.run(
-                    ["docker", "compose", "-f", str(compose_file), "down", "-v"],
-                    check=False,
-                    capture_output=True,
-                )
-            return
-
-        compose_file = self._get_schema_registry_compose_file(mode)
-        self._console.print("[dim]Stopping Schema Registry...[/dim]")
-        subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), "down", "-v"],
-            check=False,
-            capture_output=True,
-        )
-
-    def _stop_compose(self, compose_file: Path, remove_volumes: bool, silent: bool) -> None:
-        cmd = ["docker", "compose", "-f", str(compose_file), "down"]
-        if remove_volumes:
-            cmd.append("-v")
-        try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
-        except subprocess.CalledProcessError as e:
-            if not silent:
-                stderr = e.stderr or ""
-                if "Cannot connect to the Docker daemon" in stderr:
-                    raise RuntimeError(
-                        "Docker is not running. Please start Docker Desktop and try again."
-                    )
-                raise RuntimeError(f"Failed to stop Kafka cluster: {stderr or e}")
-
     def cluster_status(self) -> dict[str, dict[str, str]]:
         compose_file = self._get_active_compose_file()
-
         if compose_file is None:
             return {}
-
-        result = subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), "ps", "--format", "json"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if not result.stdout.strip():
-            return {}
-
-        try:
-            lines = result.stdout.strip().split("\n")
-            services = {}
-            for line in lines:
-                if line.strip():
-                    data = json.loads(line)
-                    service_name = data.get("Service", data.get("Name", "unknown"))
-                    state = data.get("State", "unknown")
-
-                    url = "-"
-                    publishers = data.get("Publishers", [])
-                    if publishers:
-                        for pub in publishers:
-                            published_port = pub.get("PublishedPort")
-                            if published_port:
-                                if service_name == "kafka-ui":
-                                    url = f"http://localhost:{published_port}"
-                                else:
-                                    url = f"localhost:{published_port}"
-                                break
-
-                    services[service_name] = {"state": state, "url": url}
-            return services
-        except json.JSONDecodeError:
-            return {}
+        return DockerComposeRunner.ps(compose_file)
 
     def get_active_mode(self) -> ClusterMode | None:
         compose_file = self._get_active_compose_file()
@@ -267,10 +169,7 @@ class DockerManager:
             raise RuntimeError("No active Kafka cluster found")
 
         self._console.print(f"[bold red]Stopping broker: {broker_name}[/bold red]")
-        subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), "stop", broker_name],
-            check=True,
-        )
+        DockerComposeRunner.stop_service(compose_file, broker_name)
 
     def start_broker(self, broker_name: str) -> None:
         compose_file = self._get_active_compose_file()
@@ -278,90 +177,30 @@ class DockerManager:
             raise RuntimeError("No active Kafka cluster found")
 
         self._console.print(f"[bold green]Starting broker: {broker_name}[/bold green]")
-        subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), "start", broker_name],
-            check=True,
-        )
+        DockerComposeRunner.start_service(compose_file, broker_name)
 
     def is_schema_registry_running(self) -> bool:
-        result = subprocess.run(
-            ["docker", "ps", "--filter", "name=schema-registry", "--format", "{{.Names}}"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        return "schema-registry" in result.stdout
-
-    def get_schema_registry_url(self) -> str | None:
-        if self.is_schema_registry_running():
-            return SCHEMA_REGISTRY_URL
-        return None
+        return self._schema_registry.is_running()
 
     def start_schema_registry(self) -> None:
-        if self.is_schema_registry_running():
-            self._console.print("[dim]Schema Registry already running[/dim]")
-            return
-
         mode = self.get_active_mode()
         if mode is None:
             raise RuntimeError("No active Kafka cluster found. Start cluster first.")
 
         compose_file = self._get_schema_registry_compose_file(mode)
-        self._console.print("[bold blue]Starting Schema Registry...[/bold blue]")
-
-        try:
-            subprocess.run(
-                ["docker", "compose", "-f", str(compose_file), "up", "-d"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError as e:
-            stderr = e.stderr or ""
-            raise RuntimeError(f"Failed to start Schema Registry: {stderr or e}")
-
-        self._wait_for_schema_registry()
-        self._console.print("[bold green]Schema Registry is ready![/bold green]")
-
-    def _wait_for_schema_registry(
-        self, timeout: int = SCHEMA_REGISTRY_READY_TIMEOUT_SECONDS
-    ) -> None:
-        import urllib.error
-        import urllib.request
-
-        url = f"{SCHEMA_REGISTRY_URL}/subjects"
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                req = urllib.request.urlopen(url, timeout=5)  # noqa: S310
-                if req.status == 200:
-                    return
-            except (urllib.error.URLError, OSError):
-                pass
-            time.sleep(2)
-
-        raise TimeoutError(f"Schema Registry did not become ready within {timeout} seconds")
+        self._schema_registry.start(compose_file)
 
     def stop_schema_registry(self) -> None:
-        if not self.is_schema_registry_running():
+        """Stop Schema Registry."""
+        if not self._schema_registry.is_running():
             return
 
         mode = self.get_active_mode()
         if mode is None:
             for m in ClusterMode:
                 compose_file = self._get_schema_registry_compose_file(m)
-                subprocess.run(
-                    ["docker", "compose", "-f", str(compose_file), "down"],
-                    check=False,
-                    capture_output=True,
-                )
+                DockerComposeRunner.down(compose_file, remove_volumes=False, silent=True)
             return
 
         compose_file = self._get_schema_registry_compose_file(mode)
-        self._console.print("[bold blue]Stopping Schema Registry...[/bold blue]")
-        subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), "down"],
-            check=True,
-            capture_output=True,
-        )
-        self._console.print("[bold green]Schema Registry stopped![/bold green]")
+        self._schema_registry.stop(compose_file)

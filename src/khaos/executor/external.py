@@ -5,37 +5,25 @@ from __future__ import annotations
 from rich.console import Console
 
 from khaos.executor.base import BaseExecutor
+from khaos.executor.simulator_factory import SimulatorFactory
+from khaos.executor.topic_manager import TopicManager
 from khaos.kafka.admin import KafkaAdmin
-from khaos.kafka.consumer import ConsumerSimulator
-from khaos.kafka.producer import ProducerSimulator
 from khaos.models.cluster import ClusterConfig
-from khaos.models.config import ProducerConfig
 from khaos.scenarios.incidents import IncidentGroup, StartBrokerIncident, StopBrokerIncident
-from khaos.scenarios.scenario import Scenario, TopicConfig
+from khaos.scenarios.scenario import Scenario
 
 console = Console()
 
 
 def _is_infrastructure_incident(incident: object) -> bool:
-    """Check if an incident requires infrastructure control."""
     return isinstance(incident, (StopBrokerIncident, StartBrokerIncident))
 
 
 def _get_incident_type_name(incident: object) -> str:
-    """Get the type name of an incident."""
     return type(incident).__name__
 
 
 class ExternalExecutor(BaseExecutor):
-    """Executor for external Kafka clusters.
-
-    This executor:
-    - Uses ClusterConfig for security settings (SASL, SSL, etc.)
-    - Filters out infrastructure incidents (StopBroker/StartBroker)
-    - Optionally skips topic creation
-    - Passes cluster_config to producers/consumers
-    """
-
     def __init__(
         self,
         cluster_config: ClusterConfig,
@@ -54,22 +42,33 @@ class ExternalExecutor(BaseExecutor):
             no_consumers=no_consumers,
         )
 
-        # Override admin with cluster config
         self.admin = KafkaAdmin(
             cluster_config.bootstrap_servers,
             cluster_config=cluster_config,
         )
+        self.topic_manager = TopicManager(cluster_config.bootstrap_servers)
+
+    def _create_simulator_factory(self) -> SimulatorFactory:
+        return SimulatorFactory(
+            bootstrap_servers=self.cluster_config.bootstrap_servers,
+            cluster_config=self.cluster_config,
+        )
 
     def _is_schema_registry_running(self) -> bool:
-        """External clusters may have Schema Registry configured separately."""
-        # For external clusters, assume Schema Registry is available if configured
         return any(s.schema_registry for s in self.scenarios)
+
+    async def _handle_stop_broker(self, broker: str) -> None:
+        """Broker incidents are filtered out for external clusters"""
+        pass
+
+    async def _handle_start_broker(self, broker: str) -> None:
+        """Broker incidents are filtered out for external clusters"""
+        pass
 
     def _filter_infrastructure_incidents(
         self,
         scenarios: list[Scenario],
     ) -> list[Scenario]:
-        """Filter out infrastructure incidents not supported on external clusters."""
         filtered = []
         skipped_count = 0
 
@@ -127,51 +126,7 @@ class ExternalExecutor(BaseExecutor):
 
         return filtered
 
-    def _create_single_consumer(
-        self,
-        group_id: str,
-        topics: list[str],
-        processing_delay_ms: int,
-    ) -> ConsumerSimulator:
-        """Create a consumer with cluster config for security."""
-        return ConsumerSimulator(
-            bootstrap_servers=self.bootstrap_servers,
-            group_id=group_id,
-            topics=topics,
-            processing_delay_ms=processing_delay_ms,
-            cluster_config=self.cluster_config,
-        )
-
-    def _create_producers_for_topic(
-        self, topic: TopicConfig
-    ) -> list[tuple[str, ProducerSimulator]]:
-        """Create producers with cluster config for security."""
-        producers = []
-        config = ProducerConfig(
-            messages_per_second=topic.producer_rate,
-            batch_size=topic.producer_config.batch_size,
-            linger_ms=topic.producer_config.linger_ms,
-            acks=topic.producer_config.acks,
-            compression_type=topic.producer_config.compression_type,
-        )
-
-        if topic.name not in self._producers_by_topic:
-            self._producers_by_topic[topic.name] = []
-
-        for i in range(topic.num_producers):
-            producer = ProducerSimulator(
-                bootstrap_servers=self.bootstrap_servers,
-                config=config,
-                cluster_config=self.cluster_config,
-            )
-            self.producers.append(producer)
-            self._producers_by_topic[topic.name].append(producer)
-            producers.append((f"{topic.name}-producer-{i + 1}", producer))
-
-        return producers
-
     async def setup(self) -> None:
-        """Set up topics (unless skipped)."""
         if self.skip_topic_creation:
             console.print("[dim]Skipping topic creation (--skip-topic-creation)[/dim]")
             return
