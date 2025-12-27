@@ -44,6 +44,12 @@
 
 ## Installation
 
+### Using Homebrew (macOS/Linux)
+
+```bash
+brew install khaos
+```
+
 ### Using uv (recommended)
 
 ```bash
