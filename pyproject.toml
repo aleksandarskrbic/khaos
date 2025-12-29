@@ -1,6 +1,6 @@
 [project]
 name = "khaos-cli"
-version = "0.6.2"
+version = "0.6.3"
 description = "Kafka data generator and load testing tool - generate fake messages, simulate producers and consumers, test broker failures, and run chaos engineering scenarios"
 readme = "README.md"
 license = "Apache-2.0"
@@ -55,6 +55,7 @@ packages = ["src/khaos"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "scenarios" = "khaos/bundled_scenarios"
+"docker" = "khaos/bundled_docker"
 
 [dependency-groups]
 dev = [

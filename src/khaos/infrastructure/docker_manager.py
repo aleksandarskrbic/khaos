@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from enum import Enum
+from importlib.resources import files
 from pathlib import Path
 
 from confluent_kafka.admin import AdminClient
@@ -13,7 +14,17 @@ from khaos.defaults import KAFKA_READY_TIMEOUT_SECONDS
 from khaos.infrastructure.compose_runner import DockerComposeRunner
 from khaos.infrastructure.schema_registry_manager import SchemaRegistryManager
 
-DOCKER_DIR = Path(__file__).parent.parent.parent.parent / "docker"
+# Development: project root docker/
+_DEV_DOCKER_DIR = Path(__file__).parent.parent.parent.parent / "docker"
+# Installed: bundled inside package
+_BUNDLED_DOCKER_DIR = files("khaos") / "bundled_docker"
+
+
+def _get_docker_dir() -> Path:
+    """Get the docker directory, preferring dev path if it exists."""
+    if _DEV_DOCKER_DIR.exists():
+        return _DEV_DOCKER_DIR
+    return Path(str(_BUNDLED_DOCKER_DIR))
 
 
 class ClusterMode(str, Enum):
@@ -31,15 +42,17 @@ class DockerManager:
 
     @staticmethod
     def _get_compose_file(mode: ClusterMode) -> Path:
+        docker_dir = _get_docker_dir()
         if mode == ClusterMode.KRAFT:
-            return DOCKER_DIR / "docker-compose.kraft.yml"
-        return DOCKER_DIR / "docker-compose.zk.yml"
+            return docker_dir / "docker-compose.kraft.yml"
+        return docker_dir / "docker-compose.zk.yml"
 
     @staticmethod
     def _get_schema_registry_compose_file(mode: ClusterMode) -> Path:
+        docker_dir = _get_docker_dir()
         if mode == ClusterMode.KRAFT:
-            return DOCKER_DIR / "docker-compose.schema-registry.kraft.yml"
-        return DOCKER_DIR / "docker-compose.schema-registry.zk.yml"
+            return docker_dir / "docker-compose.schema-registry.kraft.yml"
+        return docker_dir / "docker-compose.schema-registry.zk.yml"
 
     def _get_active_compose_file(self) -> Path | None:
         if self._active_compose_file is not None:
