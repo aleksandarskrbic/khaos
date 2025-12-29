@@ -39,3 +39,6 @@ SCHEMA_REGISTRY_READY_TIMEOUT_SECONDS = 60
 
 # Executor defaults
 DEFAULT_EXECUTOR_WORKERS = 16
+
+# Schema Registry defaults
+DEFAULT_SCHEMA_REGISTRY_URL = "http://localhost:8081"

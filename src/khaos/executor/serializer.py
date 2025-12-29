@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from rich.console import Console
 
+from khaos.defaults import DEFAULT_SCHEMA_REGISTRY_URL
 from khaos.models.schema import FieldSchema
 from khaos.scenarios.scenario import Scenario, SchemaRegistryConfig, TopicConfig
 
@@ -23,8 +24,6 @@ from khaos.serialization import (
 )
 
 console = Console()
-
-SCHEMA_REGISTRY_URL = "http://localhost:8081"
 
 
 class SerializerFactory:
@@ -57,7 +56,7 @@ class SerializerFactory:
             if scenario.schema_registry:
                 return scenario.schema_registry
         if self._is_schema_registry_running():
-            return SchemaRegistryConfig(url=SCHEMA_REGISTRY_URL)
+            return SchemaRegistryConfig(url=DEFAULT_SCHEMA_REGISTRY_URL)
         return None
 
     def _create_serializer(

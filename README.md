@@ -15,6 +15,41 @@
 
 > **Khaos** is a Kafka data generator, load testing tool, and chaos engineering CLI. Generate synthetic test data, simulate realistic producer and consumer workloads, and inject failures into your Kafka cluster. Perfect for testing Spark Streaming, Apache Flink, and Kafka Streams applications.
 
+## Table of Contents
+
+- [Use Cases](#use-cases)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Shell Completion](#shell-completion)
+- [CLI Reference](#cli-reference)
+  - [Commands Overview](#commands-overview)
+  - [`run` vs `simulate`](#run-vs-simulate)
+  - [Cluster Modes](#cluster-modes)
+  - [`khaos cluster-up`](#khaos-cluster-up)
+  - [`khaos cluster-down`](#khaos-cluster-down)
+  - [`khaos cluster-status`](#khaos-cluster-status)
+  - [`khaos list`](#khaos-list)
+  - [`khaos validate`](#khaos-validate)
+  - [`khaos run`](#khaos-run)
+  - [`khaos simulate`](#khaos-simulate)
+- [Learning Stream Processing](#learning-stream-processing)
+- [Available Scenarios](#available-scenarios)
+- [Creating Custom Scenarios](#creating-custom-scenarios)
+  - [Basic Structure](#basic-structure)
+  - [Topic Configuration](#topic-configuration)
+  - [Message Schema](#message-schema)
+  - [Structured Field Schemas](#structured-field-schemas)
+  - [Serialization Formats](#serialization-formats)
+  - [Producer Config](#producer-config)
+  - [Incident Primitives](#incident-primitives)
+  - [Incident Groups](#incident-groups-repeating-incidents)
+- [Correlated Event Flows](#correlated-event-flows)
+- [Kafka Cluster Details](#kafka-cluster-details)
+- [Running with Docker](#running-with-docker)
+- [License](#license)
+
 ## Use Cases
 
 - **Kafka Data Generator**: Generate fake Kafka messages with realistic schemas for testing
