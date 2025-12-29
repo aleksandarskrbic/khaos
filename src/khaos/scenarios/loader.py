@@ -1,10 +1,22 @@
+from importlib.resources import files
 from pathlib import Path
 
 import yaml
 
 from khaos.scenarios.scenario import Scenario
 
-SCENARIOS_DIR = Path(__file__).parent.parent.parent.parent / "scenarios"
+# Development: project root scenarios/
+_DEV_SCENARIOS_DIR = Path(__file__).parent.parent.parent.parent / "scenarios"
+# Installed: bundled inside package
+_BUNDLED_SCENARIOS_DIR = files("khaos") / "bundled_scenarios"
+
+
+def _get_scenarios_dir() -> Path:
+    """Get the scenarios directory, preferring dev path if it exists."""
+    if _DEV_SCENARIOS_DIR.exists():
+        return _DEV_SCENARIOS_DIR
+    # Use bundled scenarios from package
+    return Path(str(_BUNDLED_SCENARIOS_DIR))
 
 
 def load_scenario(path: Path) -> Scenario:
@@ -21,7 +33,7 @@ def discover_scenarios(base_dir: Path | None = None) -> dict[str, Path]:
     - scenarios/chaos/broker-chaos.yaml -> "chaos/broker-chaos"
     """
     if base_dir is None:
-        base_dir = SCENARIOS_DIR
+        base_dir = _get_scenarios_dir()
 
     if not base_dir.exists():
         return {}
