@@ -57,7 +57,7 @@ class KafkaAdmin:
     def delete_topic(self, topic_name: str) -> None:
         futures = self._client.delete_topics([topic_name])
 
-        for _name, future in futures.items():
+        for _, future in futures.items():
             try:
                 future.result()
             except KafkaException as e:

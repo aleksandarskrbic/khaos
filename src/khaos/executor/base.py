@@ -7,6 +7,7 @@ import logging
 import signal
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Coroutine
 from concurrent.futures import ThreadPoolExecutor
 
 from rich.console import Console
@@ -32,6 +33,43 @@ from khaos.serialization import SchemaRegistryProvider
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+
+class TaskRunner:
+    """Collects async tasks and runs them with error handling."""
+
+    def __init__(self, result: ExecutionResult):
+        self._tasks: list[Coroutine] = []
+        self._result = result
+
+    def add(
+        self,
+        coroutine: Coroutine,
+        context: str | None = None,
+        cleanup: Callable[[], None] | None = None,
+    ) -> None:
+        if context is None and cleanup is None:
+            self._tasks.append(coroutine)
+            return
+
+        async def wrapped():
+            try:
+                await coroutine
+            except Exception as e:
+                if context:
+                    logger.exception(f"{context}: {e}")
+                    self._result.add_error(f"{context}: {e}")
+            finally:
+                if cleanup:
+                    cleanup()
+
+        self._tasks.append(wrapped())
+
+    async def run(self) -> None:
+        try:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+        except asyncio.CancelledError:
+            pass
 
 
 class BaseExecutor(ABC):
@@ -163,15 +201,6 @@ class BaseExecutor(ABC):
         config = ConsumerConfig(group_id=group_id, processing_delay_ms=processing_delay_ms)
         return self.simulator_factory.create_consumer(topics=topics, config=config)
 
-    def _to_key_distribution(self, name: str) -> KeyDistribution:
-        mapping = {
-            "uniform": KeyDistribution.UNIFORM,
-            "zipfian": KeyDistribution.ZIPFIAN,
-            "single_key": KeyDistribution.SINGLE_KEY,
-            "round_robin": KeyDistribution.ROUND_ROBIN,
-        }
-        return mapping.get(name, KeyDistribution.UNIFORM)
-
     def _register_producer(self, topic_name: str, producer: ProducerSimulator) -> None:
         self.producers.append(producer)
         if topic_name not in self._producers_by_topic:
@@ -185,28 +214,32 @@ class BaseExecutor(ABC):
 
         if topic_name not in self._consumers_by_topic:
             self._consumers_by_topic[topic_name] = {}
+
         if group_id not in self._consumers_by_topic[topic_name]:
             self._consumers_by_topic[topic_name][group_id] = []
+
         self._consumers_by_topic[topic_name][group_id].append(consumer)
 
         if topic_name not in self._consumers_by_topic_flat:
             self._consumers_by_topic_flat[topic_name] = []
+
         self._consumers_by_topic_flat[topic_name].append(consumer)
 
         if group_id not in self._consumers_by_group:
             self._consumers_by_group[group_id] = []
+
         self._consumers_by_group[group_id].append(consumer)
 
     def _create_producers_for_topic(self, topic: TopicConfig) -> list[ProducerSimulator]:
         producers = []
-        for _name, producer in self.simulator_factory.create_producers_for_topic(topic):
+        for _, producer in self.simulator_factory.create_producers_for_topic(topic):
             self._register_producer(topic.name, producer)
             producers.append(producer)
         return producers
 
     def _create_consumers_for_topic(self, topic: TopicConfig) -> list[ConsumerSimulator]:
         consumers = []
-        for group_id, _name, consumer in self.simulator_factory.create_consumers_for_topic(topic):
+        for group_id, _, consumer in self.simulator_factory.create_consumers_for_topic(topic):
             self._register_consumer(topic.name, group_id, consumer)
             consumers.append(consumer)
         return consumers
@@ -217,14 +250,12 @@ class BaseExecutor(ABC):
         topic_name: str,
         consumers: StepConsumerConfig,
         duration_seconds: int,
-        result: ExecutionResult,
-    ) -> list:
-        tasks = []
-
+        runner: TaskRunner,
+    ) -> None:
         for g in range(consumers.groups):
             group_id = f"{flow_name}-{topic_name}-group-{g + 1}"
 
-            for _c in range(consumers.per_group):
+            for _ in range(consumers.per_group):
                 consumer = self._create_single_consumer(
                     group_id=group_id,
                     topics=[topic_name],
@@ -232,21 +263,15 @@ class BaseExecutor(ABC):
                 )
                 self._register_consumer(topic_name, group_id, consumer)
 
-                async def consumer_task(cons=consumer, gid=group_id):
-                    try:
-                        await cons.consume_loop(duration_seconds=duration_seconds)
-                    except Exception as e:
-                        logger.exception(f"Flow consumer error for group '{gid}': {e}")
-                        result.add_error(f"Flow consumer error: {e}")
-
-                tasks.append(consumer_task())
-
-        return tasks
+                runner.add(
+                    consumer.consume_loop(duration_seconds=duration_seconds),
+                    f"Flow consumer error for group '{group_id}'",
+                )
 
     async def _run(self, duration_seconds: int) -> ExecutionResult:
         result = ExecutionResult()
         start_time = time.time()
-        tasks = []
+        runner = TaskRunner(result)
 
         serializer_factory = self._create_serializer_factory()
         incident_scheduler = self._create_incident_scheduler()
@@ -290,7 +315,7 @@ class BaseExecutor(ABC):
             msg_schema = MessageSchema(
                 min_size_bytes=topic.message_schema.min_size_bytes,
                 max_size_bytes=topic.message_schema.max_size_bytes,
-                key_distribution=self._to_key_distribution(topic.message_schema.key_distribution),
+                key_distribution=KeyDistribution.from_string(topic.message_schema.key_distribution),
                 key_cardinality=topic.message_schema.key_cardinality,
                 fields=fields,
             )
@@ -304,37 +329,25 @@ class BaseExecutor(ABC):
             payload_gen = create_payload_generator(msg_schema, serializer=serializer)
 
             for producer in producers:
-
-                async def producer_task(p=producer, t=topic.name, kg=key_gen, pg=payload_gen):
-                    try:
-                        await p.produce_at_rate(
-                            topic=t,
-                            message_generator=pg,
-                            key_generator=kg,
-                            duration_seconds=duration_seconds,
-                        )
-                    except Exception as e:
-                        logger.exception(f"Producer error for topic '{t}': {e}")
-                        result.add_error(f"Producer error: {e}")
-                    finally:
-                        p.flush()
-
-                tasks.append(producer_task())
+                runner.add(
+                    producer.produce_at_rate(
+                        topic=topic.name,
+                        message_generator=payload_gen,
+                        key_generator=key_gen,
+                        duration_seconds=duration_seconds,
+                    ),
+                    f"Producer error for topic '{topic.name}'",
+                    cleanup=lambda p=producer: p.flush(),
+                )
 
             # Consumers (skip if no_consumers mode)
             if not self.no_consumers:
                 consumers = self._create_consumers_for_topic(topic)
-
                 for consumer in consumers:
-
-                    async def consumer_task(c=consumer):
-                        try:
-                            await c.consume_loop(duration_seconds=duration_seconds)
-                        except Exception as e:
-                            logger.exception(f"Consumer error: {e}")
-                            result.add_error(f"Consumer error: {e}")
-
-                    tasks.append(consumer_task())
+                    runner.add(
+                        consumer.consume_loop(duration_seconds=duration_seconds),
+                        "Consumer error",
+                    )
 
         # Create flow producers and their consumers
         for flow in self._all_flows:
@@ -342,32 +355,25 @@ class BaseExecutor(ABC):
             self.flow_producers.append(flow_producer)
             self._flow_producers_by_name[flow.name] = flow_producer
 
-            async def flow_task(fp=flow_producer):
-                try:
-                    await fp.run_at_rate(duration_seconds=duration_seconds)
-                except Exception as e:
-                    logger.exception(f"Flow producer error for '{fp.flow.name}': {e}")
-                    result.add_error(f"Flow producer error: {e}")
-                finally:
-                    fp.flush()
-
-            tasks.append(flow_task())
+            runner.add(
+                flow_producer.run_at_rate(duration_seconds=duration_seconds),
+                f"Flow producer error for '{flow.name}'",
+                cleanup=lambda fp=flow_producer: fp.flush(),
+            )
 
             # Create consumers for flow steps
             if not self.no_consumers:
                 for step in flow.steps:
                     if step.consumers:
-                        tasks.extend(
-                            self._create_flow_step_consumers(
-                                flow.name, step.topic, step.consumers, duration_seconds, result
-                            )
+                        self._create_flow_step_consumers(
+                            flow.name, step.topic, step.consumers, duration_seconds, runner
                         )
 
         for incident in self._all_incidents:
-            tasks.append(incident_scheduler.schedule_incident(incident, start_time))
+            runner.add(incident_scheduler.schedule_incident(incident, start_time))
 
         for group in self._all_incident_groups:
-            tasks.append(incident_scheduler.schedule_incident_group(group, start_time))
+            runner.add(incident_scheduler.schedule_incident_group(group, start_time))
 
         stats_display = self._create_stats_display()
 
@@ -384,12 +390,8 @@ class BaseExecutor(ABC):
         with Live(
             stats_display.generate_stats_table(), refresh_per_second=4, console=console
         ) as live:
-            tasks.append(update_display(live))
-
-            try:
-                await asyncio.gather(*tasks, return_exceptions=True)
-            except asyncio.CancelledError:
-                pass
+            runner.add(update_display(live))
+            await runner.run()
 
         result.messages_produced = sum(p.get_stats().messages_sent for p in self.producers)
         result.messages_consumed = sum(c.get_stats().messages_consumed for c in self.consumers)

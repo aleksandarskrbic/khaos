@@ -60,57 +60,62 @@ class SerializerFactory:
             return SchemaRegistryConfig(url=SCHEMA_REGISTRY_URL)
         return None
 
-    def create_serializer_for_topic(self, topic: TopicConfig):
-        data_format = topic.message_schema.data_format
-        message_name = topic.name.title().replace("-", "").replace("_", "") + "Record"
+    def _create_serializer(
+        self,
+        data_format: str,
+        fields: list[FieldSchema] | None,
+        topic_name: str,
+        raw_avro_schema: dict | None = None,
+    ):
+        """Create a serializer based on format and fields."""
+        message_name = topic_name.title().replace("-", "").replace("_", "") + "Record"
 
         if data_format == "avro":
-            if not topic.message_schema.fields:
+            if not fields:
                 console.print(
-                    f"[yellow]Warning: Topic '{topic.name}' uses Avro but has no fields. "
+                    f"[yellow]Warning: Topic '{topic_name}' uses Avro but has no fields. "
                     "Falling back to JSON.[/yellow]"
                 )
                 return JsonSerializer()
 
-            avro_schema = field_schemas_to_avro(
-                topic.message_schema.fields,
-                name=message_name,
-            )
-
+            avro_schema = raw_avro_schema or field_schemas_to_avro(fields, name=message_name)
             schema_registry_config = self.get_schema_registry_config()
+
             if schema_registry_config:
                 return AvroSerializer(
                     schema_registry_url=schema_registry_config.url,
                     schema=avro_schema,
-                    topic=topic.name,
+                    topic=topic_name,
                 )
-
             return AvroSerializerNoRegistry(schema=avro_schema)
 
         if data_format == "protobuf":
-            if not topic.message_schema.fields:
+            if not fields:
                 console.print(
-                    f"[yellow]Warning: Topic '{topic.name}' uses Protobuf but has no fields. "
+                    f"[yellow]Warning: Topic '{topic_name}' uses Protobuf but has no fields. "
                     "Falling back to JSON.[/yellow]"
                 )
                 return JsonSerializer()
 
-            _, message_class = field_schemas_to_protobuf(
-                topic.message_schema.fields,
-                name=message_name,
-            )
-
+            _, message_class = field_schemas_to_protobuf(fields, name=message_name)
             schema_registry_config = self.get_schema_registry_config()
+
             if schema_registry_config:
                 return ProtobufSerializer(
                     schema_registry_url=schema_registry_config.url,
                     message_class=message_class,
-                    topic=topic.name,
+                    topic=topic_name,
                 )
-
             return ProtobufSerializerNoRegistry(message_class=message_class)
 
         return JsonSerializer()
+
+    def create_serializer_for_topic(self, topic: TopicConfig):
+        return self._create_serializer(
+            data_format=topic.message_schema.data_format,
+            fields=topic.message_schema.fields,
+            topic_name=topic.name,
+        )
 
     def create_serializer_with_format(
         self,
@@ -119,47 +124,9 @@ class SerializerFactory:
         fields: list[FieldSchema] | None,
         raw_avro_schema: dict | None = None,
     ):
-        message_name = topic.name.title().replace("-", "").replace("_", "") + "Record"
-
-        if data_format == "avro":
-            if not fields:
-                console.print(
-                    f"[yellow]Warning: Topic '{topic.name}' uses Avro but has no fields. "
-                    "Falling back to JSON.[/yellow]"
-                )
-                return JsonSerializer()
-
-            # Use raw schema if provided (from registry), otherwise generate
-            avro_schema = raw_avro_schema or field_schemas_to_avro(fields, name=message_name)
-
-            schema_registry_config = self.get_schema_registry_config()
-            if schema_registry_config:
-                return AvroSerializer(
-                    schema_registry_url=schema_registry_config.url,
-                    schema=avro_schema,
-                    topic=topic.name,
-                )
-
-            return AvroSerializerNoRegistry(schema=avro_schema)
-
-        if data_format == "protobuf":
-            if not fields:
-                console.print(
-                    f"[yellow]Warning: Topic '{topic.name}' uses Protobuf but has no fields. "
-                    "Falling back to JSON.[/yellow]"
-                )
-                return JsonSerializer()
-
-            _, message_class = field_schemas_to_protobuf(fields, name=message_name)
-
-            schema_registry_config = self.get_schema_registry_config()
-            if schema_registry_config:
-                return ProtobufSerializer(
-                    schema_registry_url=schema_registry_config.url,
-                    message_class=message_class,
-                    topic=topic.name,
-                )
-
-            return ProtobufSerializerNoRegistry(message_class=message_class)
-
-        return JsonSerializer()
+        return self._create_serializer(
+            data_format=data_format,
+            fields=fields,
+            topic_name=topic.name,
+            raw_avro_schema=raw_avro_schema,
+        )

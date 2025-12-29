@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import datetime
 import random
 import string
 import uuid
 from abc import ABC, abstractmethod
-from datetime import UTC
+from datetime import UTC, date, datetime
 from typing import Any
 
 from faker import Faker
@@ -100,7 +99,7 @@ class UuidFieldGenerator(FieldGenerator):
 
 class TimestampFieldGenerator(FieldGenerator):
     def generate(self) -> int:
-        return int(datetime.datetime.now(UTC).timestamp() * 1000)
+        return int(datetime.now(UTC).timestamp() * 1000)
 
 
 class EnumFieldGenerator(FieldGenerator):
@@ -149,9 +148,9 @@ class FakerFieldGenerator(FieldGenerator):
         value = provider_method()
 
         # Convert date/datetime to ISO string for JSON serialization
-        if isinstance(value, datetime.datetime):
+        if isinstance(value, datetime):
             return value.isoformat()
-        if isinstance(value, datetime.date):
+        if isinstance(value, date):
             return value.isoformat()
 
         return value

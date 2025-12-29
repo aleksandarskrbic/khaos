@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2025-12-29
+
+### Changed
+- Added `TaskRunner` class for cleaner async task management in executor
+- Added `KeyDistribution.from_string()` classmethod
+- Consolidated duplicate serializer methods into `_create_serializer()` helper
+- Fixed datetime imports in `generators/field.py`
+- Cleaned up unused loop variables to use `_` convention
+
 ## [0.6.0] - 2025-12-28
 
 ### Added
@@ -153,6 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI/CD pipeline with linting, testing, type checking
 - PyPI publishing workflow
 
+[0.6.1]: https://github.com/aleksandarskrbic/khaos/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/aleksandarskrbic/khaos/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.4.0...v0.5.0

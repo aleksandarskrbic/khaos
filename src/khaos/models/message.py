@@ -17,6 +17,13 @@ class KeyDistribution(Enum):
     SINGLE_KEY = "single_key"  # All messages to one partition
     ROUND_ROBIN = "round_robin"  # Sequential key assignment
 
+    @classmethod
+    def from_string(cls, name: str) -> KeyDistribution:
+        try:
+            return cls(name) if name else cls.UNIFORM
+        except ValueError:
+            return cls.UNIFORM
+
 
 @dataclass
 class MessageSchema:
