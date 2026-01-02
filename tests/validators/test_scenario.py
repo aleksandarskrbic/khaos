@@ -5,6 +5,7 @@ import yaml
 
 from khaos.validators.scenario import (
     ValidationResult,
+    validate_consumer_config,
     validate_incident,
     validate_incident_group,
     validate_message_schema,
@@ -177,6 +178,106 @@ class TestValidateProducerConfig:
             result = ValidationResult(valid=True)
             validate_producer_config({"compression_type": comp}, "producer_config", result)
             assert result.valid
+
+    def test_invalid_duplicate_rate_bounds(self):
+        result = ValidationResult(valid=True)
+        validate_producer_config({"duplicate_rate": -0.1}, "producer_config", result)
+        assert not result.valid
+        assert any("duplicate_rate" in e.path for e in result.errors)
+
+        result = ValidationResult(valid=True)
+        validate_producer_config({"duplicate_rate": 1.5}, "producer_config", result)
+        assert not result.valid
+
+    def test_valid_duplicate_rate(self):
+        for rate in [0.0, 0.1, 0.5, 1.0]:
+            result = ValidationResult(valid=True)
+            validate_producer_config({"duplicate_rate": rate}, "producer_config", result)
+            assert result.valid
+
+    def test_high_duplicate_rate_warning(self):
+        result = ValidationResult(valid=True)
+        validate_producer_config({"duplicate_rate": 0.6}, "producer_config", result)
+        assert result.valid
+        assert len(result.warnings) > 0
+        assert any("duplicate_rate" in w.path for w in result.warnings)
+
+
+class TestValidateConsumerConfig:
+    def test_valid_config(self):
+        result = ValidationResult(valid=True)
+        config = {
+            "failure_rate": 0.1,
+            "commit_failure_rate": 0.05,
+            "on_failure": "dlq",
+            "max_retries": 3,
+        }
+        validate_consumer_config(config, "consumer_config", result)
+        assert result.valid
+
+    def test_invalid_failure_rate_bounds(self):
+        result = ValidationResult(valid=True)
+        validate_consumer_config({"failure_rate": -0.1}, "consumer_config", result)
+        assert not result.valid
+        assert any("failure_rate" in e.path for e in result.errors)
+
+        result = ValidationResult(valid=True)
+        validate_consumer_config({"failure_rate": 1.5}, "consumer_config", result)
+        assert not result.valid
+
+    def test_invalid_commit_failure_rate_bounds(self):
+        result = ValidationResult(valid=True)
+        validate_consumer_config({"commit_failure_rate": -0.1}, "consumer_config", result)
+        assert not result.valid
+        assert any("commit_failure_rate" in e.path for e in result.errors)
+
+        result = ValidationResult(valid=True)
+        validate_consumer_config({"commit_failure_rate": 2.0}, "consumer_config", result)
+        assert not result.valid
+
+    def test_invalid_on_failure_value(self):
+        result = ValidationResult(valid=True)
+        validate_consumer_config({"on_failure": "invalid"}, "consumer_config", result)
+        assert not result.valid
+        assert any("on_failure" in e.path for e in result.errors)
+
+    def test_invalid_max_retries(self):
+        result = ValidationResult(valid=True)
+        validate_consumer_config({"max_retries": -1}, "consumer_config", result)
+        assert not result.valid
+        assert any("max_retries" in e.path for e in result.errors)
+
+    def test_all_valid_on_failure_values(self):
+        for action in ["skip", "dlq", "retry"]:
+            result = ValidationResult(valid=True)
+            validate_consumer_config({"on_failure": action}, "consumer_config", result)
+            assert result.valid
+
+    def test_high_failure_rate_warning(self):
+        result = ValidationResult(valid=True)
+        validate_consumer_config({"failure_rate": 0.6}, "consumer_config", result)
+        assert result.valid  # Still valid, just has warning
+        assert len(result.warnings) > 0
+        assert any("failure_rate" in w.path for w in result.warnings)
+
+    def test_high_commit_failure_rate_warning(self):
+        result = ValidationResult(valid=True)
+        validate_consumer_config({"commit_failure_rate": 0.7}, "consumer_config", result)
+        assert result.valid
+        assert len(result.warnings) > 0
+        assert any("commit_failure_rate" in w.path for w in result.warnings)
+
+    def test_dlq_mode_warning(self):
+        result = ValidationResult(valid=True)
+        validate_consumer_config({"on_failure": "dlq"}, "consumer_config", result)
+        assert result.valid
+        assert len(result.warnings) > 0
+        assert any("DLQ" in w.message for w in result.warnings)
+
+    def test_empty_config_is_valid(self):
+        result = ValidationResult(valid=True)
+        validate_consumer_config({}, "consumer_config", result)
+        assert result.valid
 
 
 class TestValidateIncident:

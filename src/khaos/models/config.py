@@ -1,12 +1,17 @@
 from dataclasses import dataclass
+from typing import Literal
 
 from khaos.defaults import (
     DEFAULT_ACKS,
     DEFAULT_AUTO_OFFSET_RESET,
     DEFAULT_BATCH_SIZE,
+    DEFAULT_COMMIT_FAILURE_RATE,
     DEFAULT_COMPRESSION_TYPE,
+    DEFAULT_DUPLICATE_RATE,
+    DEFAULT_FAILURE_RATE,
     DEFAULT_LINGER_MS,
     DEFAULT_MAX_POLL_RECORDS,
+    DEFAULT_MAX_RETRIES,
     DEFAULT_MESSAGES_PER_SECOND,
     DEFAULT_PROCESSING_DELAY_MS,
     DEFAULT_SESSION_TIMEOUT_MS,
@@ -20,6 +25,7 @@ class ProducerConfig:
     linger_ms: int = DEFAULT_LINGER_MS
     acks: str = DEFAULT_ACKS
     compression_type: str = DEFAULT_COMPRESSION_TYPE
+    duplicate_rate: float = DEFAULT_DUPLICATE_RATE
 
     def __post_init__(self):
         if self.messages_per_second <= 0:
@@ -28,6 +34,11 @@ class ProducerConfig:
             raise ValueError("acks must be '0', '1', or 'all'")
         if self.compression_type not in ("none", "gzip", "snappy", "lz4", "zstd"):
             raise ValueError("Invalid compression_type")
+        if not 0.0 <= self.duplicate_rate <= 1.0:
+            raise ValueError("duplicate_rate must be between 0.0 and 1.0")
+
+
+OnFailureAction = Literal["skip", "dlq", "retry"]
 
 
 @dataclass
@@ -37,9 +48,27 @@ class ConsumerConfig:
     max_poll_records: int = DEFAULT_MAX_POLL_RECORDS
     auto_offset_reset: str = DEFAULT_AUTO_OFFSET_RESET
     session_timeout_ms: int = DEFAULT_SESSION_TIMEOUT_MS
+    # Failure simulation fields
+    failure_rate: float = DEFAULT_FAILURE_RATE
+    commit_failure_rate: float = DEFAULT_COMMIT_FAILURE_RATE
+    on_failure: OnFailureAction = "skip"
+    max_retries: int = DEFAULT_MAX_RETRIES
 
     def __post_init__(self):
         if self.processing_delay_ms < 0:
             raise ValueError("processing_delay_ms cannot be negative")
         if self.auto_offset_reset not in ("earliest", "latest"):
             raise ValueError("auto_offset_reset must be 'earliest' or 'latest'")
+        if not 0.0 <= self.failure_rate <= 1.0:
+            raise ValueError("failure_rate must be between 0.0 and 1.0")
+        if not 0.0 <= self.commit_failure_rate <= 1.0:
+            raise ValueError("commit_failure_rate must be between 0.0 and 1.0")
+        if self.on_failure not in ("skip", "dlq", "retry"):
+            raise ValueError("on_failure must be 'skip', 'dlq', or 'retry'")
+        if self.max_retries < 0:
+            raise ValueError("max_retries cannot be negative")
+
+    @property
+    def failure_simulation_enabled(self) -> bool:
+        """Check if any failure simulation is enabled."""
+        return self.failure_rate > 0.0 or self.commit_failure_rate > 0.0

@@ -13,6 +13,7 @@ VALID_DATA_FORMATS = {"json", "avro", "protobuf"}
 VALID_ACKS = {"0", "1", "all", "-1"}
 VALID_BROKERS = {"kafka-1", "kafka-2", "kafka-3"}
 VALID_SCHEMA_PROVIDERS = {"inline", "registry"}
+VALID_ON_FAILURE_ACTIONS = {"skip", "dlq", "retry"}
 
 
 def validate_scenario_file(file_path: Path) -> ValidationResult:
@@ -171,6 +172,9 @@ def validate_topic(topic: dict, path: str, result: ValidationResult) -> None:
     if "producer_config" in topic:
         validate_producer_config(topic["producer_config"], f"{path}.producer_config", result)
 
+    if "consumer_config" in topic:
+        validate_consumer_config(topic["consumer_config"], f"{path}.consumer_config", result)
+
     # Validate schema_provider
     if schema_provider not in VALID_SCHEMA_PROVIDERS:
         result.add_error(
@@ -309,6 +313,71 @@ def validate_producer_config(config: dict, path: str, result: ValidationResult) 
                 f"{path}.compression_type",
                 f"Invalid compression_type '{config['compression_type']}'. "
                 f"Valid values: {', '.join(sorted(VALID_COMPRESSION_TYPES))}",
+            )
+
+    if "duplicate_rate" in config:
+        rate = config["duplicate_rate"]
+        if not isinstance(rate, int | float) or not 0.0 <= rate <= 1.0:
+            result.add_error(
+                f"{path}.duplicate_rate",
+                "Field 'duplicate_rate' must be a number between 0.0 and 1.0",
+            )
+        elif rate > 0.5:
+            result.add_warning(
+                f"{path}.duplicate_rate",
+                f"High duplicate rate ({rate:.0%}) will produce many duplicate messages",
+            )
+
+
+def validate_consumer_config(config: dict, path: str, result: ValidationResult) -> None:
+    if not isinstance(config, dict):
+        result.add_error(path, "consumer_config must be an object/dict")
+        return
+
+    if "failure_rate" in config:
+        rate = config["failure_rate"]
+        if not isinstance(rate, int | float) or not 0.0 <= rate <= 1.0:
+            result.add_error(
+                f"{path}.failure_rate",
+                "Field 'failure_rate' must be a number between 0.0 and 1.0",
+            )
+        elif rate > 0.5:
+            result.add_warning(
+                f"{path}.failure_rate",
+                f"High failure rate ({rate:.0%}) may cause significant message loss",
+            )
+
+    if "commit_failure_rate" in config:
+        rate = config["commit_failure_rate"]
+        if not isinstance(rate, int | float) or not 0.0 <= rate <= 1.0:
+            result.add_error(
+                f"{path}.commit_failure_rate",
+                "Field 'commit_failure_rate' must be a number between 0.0 and 1.0",
+            )
+        elif rate > 0.5:
+            result.add_warning(
+                f"{path}.commit_failure_rate",
+                f"High commit failure rate ({rate:.0%}) may cause significant reprocessing",
+            )
+
+    if "on_failure" in config:
+        if config["on_failure"] not in VALID_ON_FAILURE_ACTIONS:
+            result.add_error(
+                f"{path}.on_failure",
+                f"Invalid on_failure '{config['on_failure']}'. "
+                f"Valid values: {', '.join(sorted(VALID_ON_FAILURE_ACTIONS))}",
+            )
+        elif config["on_failure"] == "dlq":
+            result.add_warning(
+                f"{path}.on_failure",
+                "DLQ mode enabled - ensure DLQ topics exist or are auto-created",
+            )
+
+    if "max_retries" in config:
+        if not isinstance(config["max_retries"], int) or config["max_retries"] < 0:
+            result.add_error(
+                f"{path}.max_retries",
+                "Field 'max_retries' must be a non-negative integer",
             )
 
 

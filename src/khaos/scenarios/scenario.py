@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from khaos.models.flow import FlowConfig
 from khaos.models.schema import FieldSchema
@@ -36,6 +36,15 @@ class ProducerConfigData:
     linger_ms: int = 5
     acks: str = "1"
     compression_type: str = "lz4"
+    duplicate_rate: float = 0.0
+
+
+@dataclass
+class ConsumerConfigData:
+    failure_rate: float = 0.0
+    commit_failure_rate: float = 0.0
+    on_failure: Literal["skip", "dlq", "retry"] = "skip"
+    max_retries: int = 3
 
 
 @dataclass
@@ -50,6 +59,7 @@ class TopicConfig:
     consumer_delay_ms: int = 0
     message_schema: MessageSchemaConfig = field(default_factory=MessageSchemaConfig)
     producer_config: ProducerConfigData = field(default_factory=ProducerConfigData)
+    consumer_config: ConsumerConfigData = field(default_factory=ConsumerConfigData)
     schema_provider: str = "inline"  # "inline" or "registry"
     subject_name: str | None = None  # Required when schema_provider is "registry"
 
@@ -80,6 +90,9 @@ class Scenario:
             prod_config_data = topic_data.pop("producer_config", {})
             prod_config = ProducerConfigData(**prod_config_data)
 
+            cons_config_data = topic_data.pop("consumer_config", {})
+            cons_config = ConsumerConfigData(**cons_config_data)
+
             schema_provider = topic_data.pop("schema_provider", "inline")
             subject_name = topic_data.pop("subject_name", None)
 
@@ -87,6 +100,7 @@ class Scenario:
                 **topic_data,
                 message_schema=msg_schema,
                 producer_config=prod_config,
+                consumer_config=cons_config,
                 schema_provider=schema_provider,
                 subject_name=subject_name,
             )

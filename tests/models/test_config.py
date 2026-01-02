@@ -12,6 +12,7 @@ class TestProducerConfig:
         assert config.linger_ms == 5
         assert config.acks == "all"
         assert config.compression_type == "none"
+        assert config.duplicate_rate == 0.0
 
     def test_custom_values(self):
         config = ProducerConfig(
@@ -20,6 +21,7 @@ class TestProducerConfig:
             linger_ms=10,
             acks="1",
             compression_type="lz4",
+            duplicate_rate=0.1,
         )
 
         assert config.messages_per_second == 500.0
@@ -27,6 +29,7 @@ class TestProducerConfig:
         assert config.linger_ms == 10
         assert config.acks == "1"
         assert config.compression_type == "lz4"
+        assert config.duplicate_rate == 0.1
 
     def test_messages_per_second_must_be_positive(self):
         with pytest.raises(ValueError) as exc_info:
@@ -59,6 +62,19 @@ class TestProducerConfig:
                 config = ProducerConfig(acks=acks, compression_type=comp)
                 assert config.acks == acks
                 assert config.compression_type == comp
+
+    def test_duplicate_rate_validation_bounds(self):
+        ProducerConfig(duplicate_rate=0.0)
+        ProducerConfig(duplicate_rate=0.5)
+        ProducerConfig(duplicate_rate=1.0)
+
+        with pytest.raises(ValueError) as exc_info:
+            ProducerConfig(duplicate_rate=-0.1)
+        assert "duplicate_rate must be between 0.0 and 1.0" in str(exc_info.value)
+
+        with pytest.raises(ValueError) as exc_info:
+            ProducerConfig(duplicate_rate=1.5)
+        assert "duplicate_rate must be between 0.0 and 1.0" in str(exc_info.value)
 
 
 class TestConsumerConfig:
@@ -96,3 +112,89 @@ class TestConsumerConfig:
             ConsumerConfig(group_id="test", auto_offset_reset="none")
 
         assert "auto_offset_reset must be" in str(exc_info.value)
+
+    # Failure simulation tests
+    def test_failure_simulation_default_values(self):
+        config = ConsumerConfig(group_id="test-group")
+
+        assert config.failure_rate == 0.0
+        assert config.commit_failure_rate == 0.0
+        assert config.on_failure == "skip"
+        assert config.max_retries == 3
+        assert config.failure_simulation_enabled is False
+
+    def test_failure_simulation_enabled_with_failure_rate(self):
+        config = ConsumerConfig(group_id="test-group", failure_rate=0.1)
+
+        assert config.failure_simulation_enabled is True
+
+    def test_failure_simulation_enabled_with_commit_failure_rate(self):
+        config = ConsumerConfig(group_id="test-group", commit_failure_rate=0.05)
+
+        assert config.failure_simulation_enabled is True
+
+    def test_failure_rate_validation_bounds(self):
+        # Valid values
+        ConsumerConfig(group_id="test", failure_rate=0.0)
+        ConsumerConfig(group_id="test", failure_rate=0.5)
+        ConsumerConfig(group_id="test", failure_rate=1.0)
+
+        # Invalid: below 0
+        with pytest.raises(ValueError) as exc_info:
+            ConsumerConfig(group_id="test", failure_rate=-0.1)
+        assert "failure_rate must be between 0.0 and 1.0" in str(exc_info.value)
+
+        # Invalid: above 1
+        with pytest.raises(ValueError) as exc_info:
+            ConsumerConfig(group_id="test", failure_rate=1.1)
+        assert "failure_rate must be between 0.0 and 1.0" in str(exc_info.value)
+
+    def test_commit_failure_rate_validation_bounds(self):
+        # Valid values
+        ConsumerConfig(group_id="test", commit_failure_rate=0.0)
+        ConsumerConfig(group_id="test", commit_failure_rate=0.5)
+        ConsumerConfig(group_id="test", commit_failure_rate=1.0)
+
+        # Invalid: below 0
+        with pytest.raises(ValueError) as exc_info:
+            ConsumerConfig(group_id="test", commit_failure_rate=-0.1)
+        assert "commit_failure_rate must be between 0.0 and 1.0" in str(exc_info.value)
+
+        # Invalid: above 1
+        with pytest.raises(ValueError) as exc_info:
+            ConsumerConfig(group_id="test", commit_failure_rate=1.5)
+        assert "commit_failure_rate must be between 0.0 and 1.0" in str(exc_info.value)
+
+    def test_on_failure_validation(self):
+        # Valid values
+        ConsumerConfig(group_id="test", on_failure="skip")
+        ConsumerConfig(group_id="test", on_failure="dlq")
+        ConsumerConfig(group_id="test", on_failure="retry")
+
+        # Invalid value
+        with pytest.raises(ValueError) as exc_info:
+            ConsumerConfig(group_id="test", on_failure="invalid")  # type: ignore[arg-type]
+        assert "on_failure must be 'skip', 'dlq', or 'retry'" in str(exc_info.value)
+
+    def test_max_retries_validation(self):
+        ConsumerConfig(group_id="test", max_retries=0)
+        ConsumerConfig(group_id="test", max_retries=5)
+
+        with pytest.raises(ValueError) as exc_info:
+            ConsumerConfig(group_id="test", max_retries=-1)
+        assert "max_retries cannot be negative" in str(exc_info.value)
+
+    def test_full_failure_simulation_config(self):
+        config = ConsumerConfig(
+            group_id="test-group",
+            failure_rate=0.1,
+            commit_failure_rate=0.05,
+            on_failure="dlq",
+            max_retries=5,
+        )
+
+        assert config.failure_rate == 0.1
+        assert config.commit_failure_rate == 0.05
+        assert config.on_failure == "dlq"
+        assert config.max_retries == 5
+        assert config.failure_simulation_enabled is True

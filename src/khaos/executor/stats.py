@@ -48,6 +48,10 @@ class StatsDisplay:
             return f"Scenario: {self._scenario_names[0]}"
         return f"Scenarios: {', '.join(self._scenario_names)}"
 
+    def _has_failure_simulation(self) -> bool:
+        """Check if any consumer has failure simulation enabled."""
+        return any(c.config.failure_simulation_enabled for c in self._consumers)
+
     def generate_stats_table(self) -> Table:
         """Generate a Rich table with current execution stats."""
         table = Table(title=self.get_display_title())
@@ -55,6 +59,11 @@ class StatsDisplay:
         table.add_column("Produced", style="green")
         table.add_column("Consumed", style="yellow")
         table.add_column("Lag", style="red")
+
+        has_failures = self._has_failure_simulation()
+        if has_failures:
+            table.add_column("Failed", style="magenta")
+            table.add_column("DLQ", style="blue")
 
         for topic in self._topics:
             topic_producers = self._producers_by_topic.get(topic.name, [])
@@ -70,26 +79,50 @@ class StatsDisplay:
             lag = produced - total_consumed
             lag_display = f"[red]{lag:,}[/red]" if lag > 100 else f"[green]{lag:,}[/green]"
 
-            table.add_row(
+            # Aggregate failure stats for topic
+            total_failures = sum(
+                c.get_stats().simulated_failures
+                for group_consumers in topic_groups.values()
+                for c in group_consumers
+            )
+            total_dlq = sum(
+                c.get_stats().dlq_sent
+                for group_consumers in topic_groups.values()
+                for c in group_consumers
+            )
+
+            row = [
                 f"[bold]{topic.name}[/bold]",
                 f"[bold]{produced:,}[/bold]",
                 f"[bold]{total_consumed:,}[/bold]",
                 lag_display,
-            )
+            ]
+            if has_failures:
+                row.append(f"[magenta]{total_failures:,}[/magenta]" if total_failures else "")
+                row.append(f"[blue]{total_dlq:,}[/blue]" if total_dlq else "")
+
+            table.add_row(*row)
 
             group_names = list(topic_groups.keys())
             for g_idx, group_id in enumerate(group_names):
                 consumers = topic_groups[group_id]
                 group_consumed = sum(c.get_stats().messages_consumed for c in consumers)
+                group_failures = sum(c.get_stats().simulated_failures for c in consumers)
+                group_dlq = sum(c.get_stats().dlq_sent for c in consumers)
                 is_last_group = g_idx == len(group_names) - 1
                 group_prefix = "└─ " if is_last_group else "├─ "
 
-                table.add_row(
+                group_row = [
                     f"[dim]  {group_prefix}{group_id}[/dim]",
                     "",
                     f"[dim]{group_consumed:,}[/dim]",
                     "",
-                )
+                ]
+                if has_failures:
+                    group_row.append(f"[dim]{group_failures:,}[/dim]" if group_failures else "")
+                    group_row.append(f"[dim]{group_dlq:,}[/dim]" if group_dlq else "")
+
+                table.add_row(*group_row)
 
         if self._flow_producers:
             table.add_section()
@@ -97,12 +130,15 @@ class StatsDisplay:
                 stats = flow_producer.get_stats()
                 flow = flow_producer.flow
 
-                table.add_row(
+                flow_row = [
                     f"[bold cyan]Flow: {flow.name}[/bold cyan]",
                     f"[bold]{stats.messages_sent:,}[/bold]",
                     "",
                     "",
-                )
+                ]
+                if has_failures:
+                    flow_row.extend(["", ""])
+                table.add_row(*flow_row)
 
                 unique_topics = list(dict.fromkeys(s.topic for s in flow.steps))
                 for idx, topic_name in enumerate(unique_topics):
@@ -138,26 +174,36 @@ class StatsDisplay:
                     else:
                         lag_display = f"[green]{lag:,}[/green]"
 
-                    table.add_row(
+                    topic_row = [
                         f"  {prefix} [cyan]{topic_name}[/cyan]",
                         produced_display,
                         consumed_display,
                         lag_display,
-                    )
+                    ]
+                    if has_failures:
+                        topic_row.extend(["", ""])
+                    table.add_row(*topic_row)
 
         table.add_section()
         total_produced = sum(p.get_stats().messages_sent for p in self._producers)
         total_flow_messages = sum(fp.get_stats().messages_sent for fp in self._flow_producers)
         total_consumed = sum(c.get_stats().messages_consumed for c in self._consumers)
         total_lag = total_produced - total_consumed
+        total_failures = sum(c.get_stats().simulated_failures for c in self._consumers)
+        total_dlq = sum(c.get_stats().dlq_sent for c in self._consumers)
 
-        table.add_row(
+        total_row = [
             "[bold]TOTAL[/bold]",
             f"[bold]{total_produced + total_flow_messages:,}[/bold]",
             f"[bold]{total_consumed:,}[/bold]",
             f"[bold red]{total_lag:,}[/bold red]"
             if total_lag > 100
             else f"[bold green]{total_lag:,}[/bold green]",
-        )
+        ]
+        if has_failures:
+            total_row.append(f"[bold magenta]{total_failures:,}[/bold magenta]")
+            total_row.append(f"[bold blue]{total_dlq:,}[/bold blue]")
+
+        table.add_row(*total_row)
 
         return table

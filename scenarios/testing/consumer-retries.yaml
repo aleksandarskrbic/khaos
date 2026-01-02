@@ -1,0 +1,85 @@
+name: consumer-retries
+description: "Test retry logic with transient failures"
+
+topics:
+  - name: events
+    partitions: 6
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 3
+    producer_rate: 300
+
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 200
+      fields:
+        - name: event_id
+          type: uuid
+        - name: event_type
+          type: enum
+          values: [user_signup, purchase, page_view, click, logout]
+        - name: user_id
+          type: string
+          cardinality: 1000
+        - name: session_id
+          type: uuid
+        - name: timestamp
+          type: timestamp
+        - name: properties
+          type: object
+          fields:
+            - name: browser
+              type: enum
+              values: [chrome, firefox, safari, edge]
+            - name: device
+              type: enum
+              values: [desktop, mobile, tablet]
+            - name: country
+              type: faker
+              provider: country_code
+
+    producer_config:
+      acks: "1"
+      compression_type: snappy
+
+    consumer_config:
+      failure_rate: 0.20          # 20% initial failure rate
+      commit_failure_rate: 0.0    # No commit failures
+      on_failure: retry           # Retry failed messages
+      max_retries: 3              # Up to 3 retry attempts
+
+  - name: notifications
+    partitions: 3
+    replication_factor: 3
+    num_producers: 1
+    num_consumer_groups: 1
+    consumers_per_group: 2
+    producer_rate: 100
+
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 50
+      fields:
+        - name: notification_id
+          type: uuid
+        - name: user_id
+          type: string
+          cardinality: 500
+        - name: channel
+          type: enum
+          values: [email, sms, push, in_app]
+        - name: message
+          type: faker
+          provider: sentence
+        - name: priority
+          type: enum
+          values: [low, medium, high, urgent]
+
+    producer_config:
+      acks: "all"
+
+    consumer_config:
+      failure_rate: 0.30          # 30% failure rate - simulate flaky notification service
+      on_failure: retry
+      max_retries: 5              # More retries for notifications

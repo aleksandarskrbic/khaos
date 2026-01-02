@@ -43,9 +43,13 @@
   - [Structured Field Schemas](#structured-field-schemas)
   - [Serialization Formats](#serialization-formats)
   - [Producer Config](#producer-config)
+  - [Consumer Config](#consumer-config)
   - [Incident Primitives](#incident-primitives)
   - [Incident Groups](#incident-groups-repeating-incidents)
 - [Correlated Event Flows](#correlated-event-flows)
+- [Testing Patterns](#testing-patterns)
+  - [Duplicate Message Simulation](#duplicate-message-simulation)
+  - [Consumer Failure Simulation](#consumer-failure-simulation)
 - [Kafka Cluster Details](#kafka-cluster-details)
 - [Running with Docker](#running-with-docker)
 - [License](#license)
@@ -553,6 +557,14 @@ Scenarios are organized into categories. Use `khaos list` to see all available s
 | `serialization/protobuf-example` | Protobuf serialization with Schema Registry |
 | `serialization/protobuf-no-registry` | Protobuf serialization without Schema Registry |
 
+### Testing Patterns (`testing/`)
+
+| Scenario | Description |
+|----------|-------------|
+| `testing/duplicate-messages` | Generate duplicate messages for deduplication testing |
+| `testing/consumer-failures` | Simulate consumer failures with DLQ |
+| `testing/consumer-retries` | Test retry logic with transient failures |
+
 ---
 
 ## Creating Custom Scenarios
@@ -825,6 +837,20 @@ topics:
 | `linger_ms` | `5` | Linger time in milliseconds |
 | `acks` | `all` | Acknowledgment mode: `0`, `1`, `all` |
 | `compression_type` | `none` | Compression: `none`, `gzip`, `snappy`, `lz4`, `zstd` |
+| `duplicate_rate` | `0.0` | Rate of duplicate messages (0.0-1.0). See [Duplicate Message Simulation](#duplicate-message-simulation) |
+
+### Consumer Config
+
+Configure consumer behavior including failure simulation for testing error handling and monitoring.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `failure_rate` | `0.0` | Rate of simulated processing failures (0.0-1.0) |
+| `commit_failure_rate` | `0.0` | Rate of simulated commit failures (0.0-1.0) |
+| `on_failure` | `skip` | Failure handling: `skip`, `dlq`, `retry` |
+| `max_retries` | `3` | Max retry attempts (when `on_failure: retry`) |
+
+See [Consumer Failure Simulation](#consumer-failure-simulation) for detailed usage.
 
 ### Incident Primitives
 
@@ -1044,6 +1070,119 @@ See `scenarios/flows/order-flow.yaml` for a complete example simulating:
 ```bash
 khaos run flows/order-flow --no-consumers -k
 ```
+
+---
+
+## Testing Patterns
+
+khaos provides specialized features for testing edge cases in stream processing applications.
+
+### Duplicate Message Simulation
+
+Generate duplicate messages to test deduplication logic in your consumers. When `duplicate_rate` is set, producers will occasionally send the same message twice with identical key and value.
+
+```yaml
+name: duplicate-test
+description: "Test deduplication logic"
+
+topics:
+  - name: orders
+    partitions: 6
+    num_producers: 2
+    producer_rate: 500
+
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 100
+      fields:
+        - name: order_id
+          type: uuid
+        - name: amount
+          type: float
+          min: 10.0
+          max: 1000.0
+
+    producer_config:
+      duplicate_rate: 0.10  # 10% of messages will be sent twice
+```
+
+**How it works:**
+- After producing each message, there's a `duplicate_rate` chance of immediately producing an exact copy
+- Duplicates have the same key and value as the original
+- The stats display shows total duplicates sent
+
+**Use cases:**
+- Testing Kafka Streams exactly-once semantics
+- Validating Flink deduplication operators
+- Testing idempotent consumer implementations
+
+### Consumer Failure Simulation
+
+Simulate consumer failures to test error handling, Dead Letter Queue (DLQ) patterns, and monitoring/alerting.
+
+```yaml
+name: failure-test
+description: "Test consumer error handling"
+
+topics:
+  - name: orders
+    partitions: 6
+    num_producers: 2
+    producer_rate: 500
+    num_consumer_groups: 1
+    consumers_per_group: 2
+
+    message_schema:
+      fields:
+        - name: order_id
+          type: uuid
+        - name: amount
+          type: float
+
+    consumer_config:
+      failure_rate: 0.10          # 10% of messages fail processing
+      commit_failure_rate: 0.05   # 5% of commits fail
+      on_failure: dlq             # Send failed messages to DLQ
+      max_retries: 3              # Only used with on_failure: retry
+```
+
+#### Failure Handling Modes
+
+| Mode | Description |
+|------|-------------|
+| `skip` | Log the failure and skip to the next message (default) |
+| `dlq` | Send failed messages to a Dead Letter Queue topic (`{topic}-dlq`) |
+| `retry` | Retry processing up to `max_retries` times before skipping |
+
+#### DLQ Message Format
+
+When `on_failure: dlq` is configured, failed messages are sent to `{original_topic}-dlq` with this format:
+
+```json
+{
+  "original_topic": "orders",
+  "original_partition": 2,
+  "original_offset": 12345,
+  "error": "simulated_processing_failure",
+  "timestamp": "2025-01-02T10:00:00Z",
+  "payload": { ... original message ... }
+}
+```
+
+#### Stats Display
+
+When failure simulation is enabled, the stats display shows additional columns:
+
+| Column | Description |
+|--------|-------------|
+| `Failed` | Number of simulated processing failures |
+| `DLQ` | Number of messages sent to Dead Letter Queue |
+
+**Use cases:**
+- Testing DLQ consumer implementations
+- Validating monitoring dashboards and alerts
+- Testing consumer error handling and recovery
+- Simulating transient failures for resilience testing
 
 ---
 

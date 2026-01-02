@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -21,6 +22,7 @@ class ProducerStats(SimulatorStats):
     messages_sent: int = 0
     bytes_sent: int = 0
     errors: int = 0
+    duplicates_sent: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def record_success(self, size: int) -> None:
@@ -31,6 +33,10 @@ class ProducerStats(SimulatorStats):
     def record_error(self) -> None:
         with self._lock:
             self.errors += 1
+
+    def record_duplicate(self) -> None:
+        with self._lock:
+            self.duplicates_sent += 1
 
 
 class ProducerSimulator(Simulator[ProducerStats]):
@@ -92,6 +98,9 @@ class ProducerSimulator(Simulator[ProducerStats]):
         result: int = self._producer.flush(timeout)
         return result
 
+    def _should_duplicate(self) -> bool:
+        return random.random() < self.config.duplicate_rate
+
     async def produce_at_rate(
         self,
         topic: str,
@@ -116,6 +125,12 @@ class ProducerSimulator(Simulator[ProducerStats]):
 
             await loop.run_in_executor(self._executor, self._produce_sync, topic, value, key)
             message_count += 1
+
+            # Produce duplicate with same key and value
+            if self._should_duplicate():
+                await loop.run_in_executor(self._executor, self._produce_sync, topic, value, key)
+                self.stats.record_duplicate()
+                message_count += 1
 
             if interval > 0:
                 expected_time = start_time + (message_count * interval)

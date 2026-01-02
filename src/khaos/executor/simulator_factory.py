@@ -59,6 +59,7 @@ class SimulatorFactory:
             linger_ms=topic.producer_config.linger_ms,
             acks=topic.producer_config.acks,
             compression_type=topic.producer_config.compression_type,
+            duplicate_rate=topic.producer_config.duplicate_rate,
         )
 
         producers = []
@@ -79,6 +80,10 @@ class SimulatorFactory:
             config = ConsumerConfig(
                 group_id=group_id,
                 processing_delay_ms=topic.consumer_delay_ms,
+                failure_rate=topic.consumer_config.failure_rate,
+                commit_failure_rate=topic.consumer_config.commit_failure_rate,
+                on_failure=topic.consumer_config.on_failure,
+                max_retries=topic.consumer_config.max_retries,
             )
 
             for c in range(topic.consumers_per_group):

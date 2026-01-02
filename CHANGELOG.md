@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-01-02
+
+### Added
+- **Consumer Failure Simulation** - Test error handling and monitoring with configurable failure rates
+  - `failure_rate` - Percentage of messages that fail processing (0.0-1.0)
+  - `commit_failure_rate` - Percentage of commits that fail (0.0-1.0)
+  - `on_failure` - Action on failure: `skip`, `dlq`, or `retry`
+  - `max_retries` - Maximum retry attempts when using retry mode
+- **Dead Letter Queue (DLQ)** support - Failed messages sent to `{topic}-dlq` with metadata
+- **Duplicate Message Simulation** - Test deduplication logic with `duplicate_rate` in producer config
+- New `DLQProducer` and `DLQMessage` classes in `kafka/dlq.py`
+- New test scenarios in `scenarios/testing/`:
+  - `duplicate-messages.yaml` - Producer duplicate simulation
+  - `consumer-failures.yaml` - Consumer failure with DLQ
+  - `consumer-retries.yaml` - Consumer retry patterns
+- Failure stats in real-time display: Failed, DLQ, Retries, Commit Failures
+- Testing Patterns section in README documentation
+
+### Changed
+- `ConsumerSimulator` now supports manual commit mode when failure simulation is enabled
+- `ConsumerStats` includes new fields: `simulated_failures`, `dlq_sent`, `retries`, `commit_failures`
+- `ProducerStats` includes new field: `duplicates_sent`
+
 ## [0.6.4] - 2025-12-29
 
 ### Changed
@@ -178,6 +201,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI/CD pipeline with linting, testing, type checking
 - PyPI publishing workflow
 
+[0.7.0]: https://github.com/aleksandarskrbic/khaos/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/aleksandarskrbic/khaos/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/aleksandarskrbic/khaos/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/aleksandarskrbic/khaos/compare/v0.6.1...v0.6.2
