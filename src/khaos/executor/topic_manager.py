@@ -12,6 +12,7 @@ from khaos.defaults import (
     TOPIC_CREATION_WAIT_SECONDS,
 )
 from khaos.kafka.admin import KafkaAdmin
+from khaos.models.cluster import ClusterConfig
 from khaos.models.flow import FlowConfig
 from khaos.models.topic import TopicConfig as KafkaTopicConfig
 from khaos.scenarios.scenario import TopicConfig
@@ -20,8 +21,8 @@ console = Console()
 
 
 class TopicManager:
-    def __init__(self, bootstrap_servers: str):
-        self.admin = KafkaAdmin(bootstrap_servers)
+    def __init__(self, bootstrap_servers: str, cluster_config: ClusterConfig | None = None):
+        self.admin = KafkaAdmin(bootstrap_servers, cluster_config=cluster_config)
 
     def create_topic(self, name: str, partitions: int, replication_factor: int) -> None:
         topic_config = KafkaTopicConfig(

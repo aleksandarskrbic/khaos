@@ -25,6 +25,7 @@ from khaos.generators.key import create_key_generator
 from khaos.generators.payload import create_payload_generator
 from khaos.kafka.consumer import ConsumerSimulator
 from khaos.kafka.producer import ProducerSimulator
+from khaos.models.cluster import ClusterConfig
 from khaos.models.flow import FlowConfig, StepConsumerConfig
 from khaos.models.message import KeyDistribution, MessageSchema
 from khaos.scenarios.incidents import Incident, IncidentGroup
@@ -78,18 +79,21 @@ class BaseExecutor(ABC):
         bootstrap_servers: str,
         scenarios: list[Scenario],
         no_consumers: bool = False,
+        cluster_config: ClusterConfig | None = None,
     ):
         self.bootstrap_servers = bootstrap_servers
         self.scenarios = scenarios
         self.no_consumers = no_consumers
+        self.cluster_config = cluster_config
 
         self._executor = ThreadPoolExecutor(
             max_workers=DEFAULT_EXECUTOR_WORKERS, thread_name_prefix="khaos"
         )
-        self.topic_manager = TopicManager(bootstrap_servers)
+        self.topic_manager = TopicManager(bootstrap_servers, cluster_config=cluster_config)
         self.simulator_factory = SimulatorFactory(
             bootstrap_servers=self.bootstrap_servers,
             executor=self._executor,
+            cluster_config=cluster_config,
         )
 
         self._stop_event = asyncio.Event()

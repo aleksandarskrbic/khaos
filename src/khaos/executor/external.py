@@ -5,8 +5,6 @@ from __future__ import annotations
 from rich.console import Console
 
 from khaos.executor.base import BaseExecutor
-from khaos.executor.topic_manager import TopicManager
-from khaos.kafka.admin import KafkaAdmin
 from khaos.models.cluster import ClusterConfig
 from khaos.scenarios.incidents import IncidentGroup, StartBrokerIncident, StopBrokerIncident
 from khaos.scenarios.scenario import Scenario
@@ -30,7 +28,6 @@ class ExternalExecutor(BaseExecutor):
         skip_topic_creation: bool = False,
         no_consumers: bool = False,
     ):
-        self.cluster_config = cluster_config
         self.skip_topic_creation = skip_topic_creation
 
         filtered_scenarios = self._filter_infrastructure_incidents(scenarios)
@@ -39,13 +36,8 @@ class ExternalExecutor(BaseExecutor):
             bootstrap_servers=cluster_config.bootstrap_servers,
             scenarios=filtered_scenarios,
             no_consumers=no_consumers,
-        )
-
-        self.admin = KafkaAdmin(
-            cluster_config.bootstrap_servers,
             cluster_config=cluster_config,
         )
-        self.topic_manager = TopicManager(cluster_config.bootstrap_servers)
 
     def _is_schema_registry_running(self) -> bool:
         return any(s.schema_registry for s in self.scenarios)

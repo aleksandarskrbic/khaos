@@ -34,14 +34,17 @@ class KafkaAdmin:
                 f"Cannot connect to Kafka at {bootstrap_servers}: {format_kafka_error(e)}"
             )
 
-    def create_topic(self, config: TopicConfig) -> None:
+    def create_topic(self, config: TopicConfig, set_retention: bool = True) -> None:
+        topic_config = {}
+        # Only set retention.ms for local clusters (external clusters may have policies)
+        if set_retention and self.cluster_config is None:
+            topic_config["retention.ms"] = str(config.retention_ms)
+
         topic = NewTopic(
             config.name,
             num_partitions=config.partitions,
             replication_factor=config.replication_factor,
-            config={
-                "retention.ms": str(config.retention_ms),
-            },
+            config=topic_config,
         )
 
         futures = self._client.create_topics([topic])
