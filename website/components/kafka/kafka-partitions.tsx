@@ -60,6 +60,10 @@ export function KafkaPartitions({
           className="mx-auto block h-auto w-full max-w-[420px]"
           role="img"
           aria-label={`Topology: khaos producing to topic ${topic} across ${n} partitions`}
+          style={{
+            fontFamily:
+              'var(--font-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+          }}
         >
           <defs>
             <marker
@@ -111,16 +115,6 @@ export function KafkaPartitions({
             stroke="var(--color-fd-muted-foreground)"
             markerEnd="url(#kp-arrow)"
           />
-          <text
-            x={(clientX + clientW + topicX) / 2}
-            y="43"
-            textAnchor="middle"
-            fontSize="9.5"
-            fill="var(--color-fd-muted-foreground)"
-            letterSpacing="0.05em"
-          >
-            PRODUCE
-          </text>
 
           <rect
             x={topicX}
