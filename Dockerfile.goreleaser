@@ -1,0 +1,10 @@
+# Release image, used by GoReleaser only. Its docker step builds in a minimal context
+# containing just this file and the already-built binary for the target platform, so
+# there is nothing to compile here -- the from-source build lives in ./Dockerfile.
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY khaos /khaos
+
+# Scenarios and the compose files are embedded in the binary, so no assets are copied.
+# Mount your own scenario with -v and pass its path, or use a bundled name.
+USER nonroot:nonroot
+ENTRYPOINT ["/khaos"]
