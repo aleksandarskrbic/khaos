@@ -1,0 +1,50 @@
+---
+title: Exit Codes & Output
+description: Khaos's exit code semantics and stream discipline, what goes to stdout vs. stderr, and how TUI vs. headless output works, for scripting and CI.
+---
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success. |
+| `1` | The command ran but failed: invalid scenario, invalid flag value, validation errors. |
+| `2` | Bad invocation: unknown command/flag, wrong argument count, an invalid `--duration`. Bare `khaos` with no arguments also exits `2`. |
+
+## Stream discipline
+
+| Output | Stream |
+| --- | --- |
+| `--help` | stdout |
+| Help text from a bare/malformed invocation | stderr |
+| `khaos list` table | stdout |
+| Validation errors and diagnostics | stderr |
+| Progress, spinners, log lines | stderr |
+| `run`/`simulate` final summary table | stdout |
+
+This split is deliberate: bare `khaos > out.txt` fails loudly with exit `2` rather than silently
+writing help text into the file, and `khaos validate ... 2>/dev/null` gives you a clean
+success/failure signal without diagnostic noise for scripting.
+
+## TUI vs. headless output
+
+`--tui auto` (the default) shows the live dashboard only when stdout is a real terminal and
+`CI`/`TERM=dumb` aren't set. Anywhere else, `run`/`simulate` fall back to a headless mode that
+logs one structured progress line every 10 seconds. This is a first-class output mode, not a
+degraded one: it's what you get automatically in CI, in a piped command, or with `--tui off`
+forced explicitly.
+
+Color and table styling in all commands (`list`, `validate`, `cluster-status`, the summary table)
+auto-disable when `NO_COLOR` is set, `TERM=dumb`, or stdout isn't a terminal, so piped output stays
+plain text.
+
+## Machine-readable output
+
+There is currently no `--json`/machine-readable flag for command output (`--log-json` affects
+*logs*, not the summary table or `list`/`cluster-status`). For CI, exit codes plus
+[`khaos validate`](/docs/guides/ci-cd-integration) are the current integration point.
+
+## Next
+
+- [CLI Reference](/docs/reference/cli): every command and flag.
+- [CI/CD Integration](/docs/guides/ci-cd-integration): using `validate` and exit codes in a pipeline.

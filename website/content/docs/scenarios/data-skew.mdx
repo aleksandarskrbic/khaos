@@ -1,0 +1,36 @@
+---
+title: Data Skew / Partition Imbalance
+description: The bundled chaos/uneven-assignment scenario, a structural partition/consumer mismatch, distinct from key-distribution skew.
+---
+
+Not every imbalance comes from a skewed key distribution. `chaos/uneven-assignment` produces one
+structurally, with no incidents at all:
+
+```yaml
+topics:
+  - name: events
+    partitions: 12
+    num_consumer_groups: 1
+    consumers_per_group: 5
+    producer_rate: 500
+    consumer_delay_ms: 10
+    message_schema:
+      key_distribution: uniform
+```
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run chaos/uneven-assignment" }]}
+/>
+
+12 partitions across 5 consumers in one group doesn't divide evenly: with Khaos's eager
+`Range`/`RoundRobin` assignment, some consumers end up with 3 partitions and others with 2. Traffic
+itself is perfectly uniform here (`key_distribution: uniform`); the imbalance is purely in how
+partitions get assigned to consumers, which is a different failure mode from
+[hot partitions](/docs/scenarios/hot-partitions) and worth testing separately. A dashboard or
+alert tuned only to catch skewed key distributions won't necessarily catch this.
+
+## Related
+
+- [Hot Partition Testing](/docs/guides/hot-partition-testing): key-distribution skew instead of assignment skew.
+- [Rebalance Testing](/docs/guides/rebalance-testing): how Khaos's consumer group assignment works.
+- [Scenario File Reference](/docs/reference/scenario-file#topic): `partitions` and `consumers_per_group`.

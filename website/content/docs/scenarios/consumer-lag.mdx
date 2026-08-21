@@ -1,0 +1,53 @@
+---
+title: Consumer Lag
+description: The bundled traffic/consumer-lag scenario, reproducing growing Kafka consumer lag with a producer rate consumers can't sustain.
+---
+
+<ConsumerLag
+  produceRate="2,000–3,000 msg/s"
+  consumeRate="slowed by consumer_delay_ms"
+  trend={["0", "growing", "growing", "growing", "…"]}
+/>
+
+`traffic/consumer-lag` runs two topics whose producer rate outpaces what their consumers can
+process, given an artificial per-message delay:
+
+```yaml
+topics:
+  - name: payments
+    partitions: 12
+    num_producers: 2
+    num_consumer_groups: 2
+    consumers_per_group: 2
+    producer_rate: 2000
+    consumer_delay_ms: 50
+    message_schema:
+      key_distribution: round_robin
+      key_cardinality: 100
+
+  - name: notifications
+    partitions: 12
+    num_producers: 3
+    num_consumer_groups: 2
+    consumers_per_group: 2
+    producer_rate: 3000
+    consumer_delay_ms: 100
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 200
+```
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run traffic/consumer-lag --lag-poll 5s" }]}
+/>
+
+`consumer_delay_ms` is applied per message, per consumer. It's what caps how fast each consumer
+can actually process, independent of how fast the producer publishes. With `--lag-poll`, the TUI
+shows both self-reported lag (from Khaos's own produced/consumed counters) and real broker-side lag
+from committed offsets, side by side.
+
+## Related
+
+- [Consumer Lag Testing](/docs/guides/consumer-lag-testing): the full guide, including how to size `consumer_delay_ms` and read `--lag-poll` output.
+- [Hot Partitions](/docs/scenarios/hot-partitions): a different way traffic gets uneven.
+- [Configuration Reference](/docs/reference/configuration#consumer): `consumer_delay_ms` and failure config.

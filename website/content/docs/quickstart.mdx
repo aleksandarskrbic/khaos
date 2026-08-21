@@ -1,0 +1,76 @@
+---
+title: Quick Start
+description: Run your first Kafka load test with Khaos in a couple of minutes using the bundled local Kafka cluster.
+---
+
+This walks through running a bundled scenario against Khaos's own local Kafka cluster: no
+existing Kafka cluster required. You'll need Docker running.
+
+## 1. List the bundled scenarios
+
+<Terminal
+  lines={[
+    { type: "command", text: "khaos list" },
+    { type: "output", text: "Available Scenarios" },
+    { type: "output", text: "  traffic/high-throughput   traffic/consumer-lag   traffic/hot-partition" },
+    { type: "output", text: "  chaos/broker-chaos        chaos/rebalance-storm  ..." },
+    { type: "output", text: "" },
+    { type: "output", text: "Usage: khaos run <scenario>" },
+    { type: "output", text: "Example: khaos run traffic/high-throughput" },
+  ]}
+/>
+
+## 2. Run a scenario
+
+<Terminal
+  lines={[
+    { type: "command", text: "khaos run traffic/high-throughput" },
+  ]}
+/>
+
+The first run starts the bundled 3-broker KRaft cluster automatically (this takes a few seconds,
+since Khaos waits until every broker actually answers, not just until Docker's proxy accepts a
+connection). Once the cluster is ready, Khaos creates the scenario's topics, starts producers and
+consumers, and opens a live terminal dashboard showing produced/consumed/lag per topic.
+
+Press `q`, `Esc`, or `Ctrl-C` to stop. A run with no [`--duration`](/docs/reference/cli#khaos-run-scenario) keeps
+going until you stop it.
+
+## 3. Try a failure scenario
+
+<Terminal
+  lines={[
+    { type: "command", text: "khaos run chaos/broker-chaos" },
+  ]}
+/>
+
+This scenario stops and restarts a broker on a schedule while traffic keeps flowing. Watch the
+`EVENTS` panel in the TUI for the broker-fault alerts, and the lag columns react as the cluster's
+in-sync replica set shrinks and recovers.
+
+## 4. Check on the cluster
+
+<Terminal
+  lines={[
+    { type: "command", text: "khaos cluster-status" },
+  ]}
+/>
+
+## 5. Tear it down
+
+<Terminal
+  lines={[
+    { type: "command", text: "khaos cluster-down" },
+  ]}
+/>
+
+By default Khaos tears the local cluster down again after a `run` finishes; pass
+[`--keep-cluster`](/docs/reference/cli#khaos-run-scenario) (`-k`) to leave it running between runs, which is
+useful while iterating on a scenario.
+
+## Next
+
+- [Core Concepts](/docs/concepts): how topics, scenarios, and incidents fit together.
+- [Kafka Load Testing](/docs/guides/kafka-load-testing): tuning throughput, batching, and acks.
+- [Consumer Lag Testing](/docs/guides/consumer-lag-testing): reproduce lag on purpose.
+- [Scenario File Reference](/docs/reference/scenario-file): write your own scenario.

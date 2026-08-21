@@ -1,0 +1,55 @@
+---
+title: Introduction
+description: Khaos is an open-source Kafka traffic generator, load-testing tool, and chaos engineering CLI written in Go, for reproducing realistic Kafka workloads and failure scenarios.
+---
+
+Khaos generates realistic Kafka traffic and reproduces the failure and performance conditions
+that only show up under real load: consumer lag, hot partitions, rebalances, and broker failures.
+It sits at the intersection of Kafka test data generation, traffic simulation, load testing, and
+chaos engineering: one CLI, driven by YAML scenario files, rather than several single-purpose tools.
+
+<Terminal
+  lines={[
+    { type: "command", text: "khaos run traffic/high-throughput" },
+  ]}
+/>
+
+## What Khaos is for
+
+- **Generating realistic Kafka test data**: structured, faker-backed records in JSON, Avro, or
+  Protobuf, with configurable key distributions and message schemas.
+- **Simulating producer and consumer traffic**: configurable throughput, batching, compression,
+  and consumer group topology against a real Kafka cluster.
+- **Load testing Kafka clusters and the applications that consume from them**: including Kafka
+  Streams and Flink jobs, which are ordinary consumers from Kafka's point of view.
+- **Reproducing failure conditions on purpose**: consumer lag, hot partitions, rebalances, broker
+  failures, and slow consumers, scheduled on a timeline via scenario `incidents`.
+
+See [Kafka Load Testing](/docs/guides/kafka-load-testing), [Kafka Data Generation](/docs/guides/kafka-data-generation),
+and the [Scenarios](/docs/scenarios/consumer-lag) section for what each of these looks like in practice.
+
+## How it works
+
+A **scenario** is a YAML file describing topics, the traffic to generate against them, and
+(optionally) a timeline of incidents to inject while the scenario runs. Khaos ships with a set of
+example scenarios (`khaos list`) covering traffic patterns and chaos conditions, and you can write
+your own. See the [Scenario File Reference](/docs/reference/scenario-file).
+
+Two commands run a scenario:
+
+- **`khaos run`**: runs against a bundled, local 3-broker Kafka cluster (KRaft by default), which
+  Khaos starts automatically via Docker Compose if it isn't already running.
+- **`khaos simulate`**: runs the same scenario against an external cluster you already have,
+  including managed clusters that need SASL/SSL authentication.
+
+Internally, the scenario engine is independent of any user interface: it exposes one read method,
+`Snapshot()`, and the terminal UI, the headless structured-log loop, and the final summary table all
+poll it. Nothing in the engine knows about terminals, so a headless run in a container behaves
+identically to an interactive one, and a stalled UI can't stall the run itself.
+
+## Where to go next
+
+- [Installation](/docs/installation): install the `khaos` binary.
+- [Quick Start](/docs/quickstart): run your first scenario in a couple of minutes.
+- [Core Concepts](/docs/concepts): topics, scenarios, incidents, and how they fit together.
+- [CLI Reference](/docs/reference/cli): every command and flag.

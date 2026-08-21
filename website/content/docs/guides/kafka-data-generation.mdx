@@ -1,0 +1,133 @@
+---
+title: Kafka Test Data Generation with Khaos
+description: Generate realistic Kafka test data with structured field schemas, faker-backed values, and JSON, Avro, or Protobuf serialization using Khaos.
+---
+
+Load and integration tests are only as good as the data behind them. Khaos generates Kafka
+messages from a declarative field schema (structured, realistic, and reproducible) rather than
+random bytes.
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run flows/order-flow --keep-cluster" }]}
+/>
+
+## Structured field schemas
+
+A topic's `message_schema.fields` describes each field's type and constraints:
+
+```yaml
+message_schema:
+  data_format: json
+  fields:
+    - name: order_id
+      type: uuid
+    - name: customer_id
+      type: string
+      cardinality: 500
+    - name: amount
+      type: float
+      min: 10.0
+      max: 1000.0
+    - name: items
+      type: array
+      min_items: 1
+      max_items: 5
+      items:
+        type: object
+        fields:
+          - name: product_id
+            type: uuid
+          - name: quantity
+            type: int
+            min: 1
+            max: 10
+```
+
+Supported field types: `string`, `int`, `float`, `boolean`, `uuid`, `timestamp` (epoch
+milliseconds), `enum`, nested `object`, `array`, and `faker`. `min`/`max` bound numeric fields;
+`min_length`/`max_length` bound strings; `min_items`/`max_items` bound arrays.
+
+**`cardinality`** bounds a `string` or `int` field to N distinct values, then cycles through them:
+useful for a `customer_id` that should repeat realistically across messages rather than being
+unique every time. **`values`** on an `enum` field supports weighting by repetition: listing a
+value twice makes it roughly twice as likely.
+
+If you skip `fields` entirely, Khaos generates a raw JSON payload sized to a `min_size_bytes`/
+`max_size_bytes` range instead, useful when you only care about throughput, not content, for a
+[load test](/docs/guides/kafka-load-testing).
+
+## Faker providers
+
+`type: faker` generates realistic values via a named `provider`:
+
+```yaml
+- name: customer_name
+  type: faker
+  provider: name
+- name: customer_email
+  type: faker
+  provider: email
+```
+
+Supported providers: `name`, `first_name`, `last_name`, `email`, `phone_number`, `ssn`, `address`,
+`street_address`, `city`, `state`, `country`, `country_code`, `postcode`, `zipcode`, `latitude`,
+`longitude`, `company`, `job`, `text`, `word`, `sentence`, `paragraph`, `url`, `domain_name`,
+`ipv4`, `ipv6`, `mac_address`, `user_agent`, `uuid4`, `credit_card_number`, `currency_code`, `date`,
+`date_time`, `date_this_month`, `date_this_year`, `date_time_this_month`, `date_time_this_year`,
+`bothify`, `numerify`, `lexify`.
+
+## Reproducibility
+
+Every field is generated from the same seeded random source. `--seed` fixes it: omit it and Khaos
+picks one and reports it, so you can rerun the exact same generated data later by passing that seed
+back in.
+
+## Key distributions
+
+How keys are chosen is part of the schema, not the field list: `key_distribution` and
+`key_cardinality` control it. See [Kafka Traffic Generation](/docs/guides/kafka-traffic-generation)
+for how that shapes partition load.
+
+## Serialization: JSON, Avro, Protobuf
+
+`data_format: json` (the default) needs nothing else. `avro` and `protobuf` either derive a schema
+from `fields` automatically and register it with a Confluent-compatible Schema Registry, or fetch
+an existing subject from the registry and generate data matching it:
+
+```yaml
+schema_registry:
+  url: http://localhost:8081
+
+topics:
+  - name: orders
+    message_schema:
+      data_format: avro
+      fields:
+        - name: order_id
+          type: uuid
+        - name: amount
+          type: float
+          min: 10.0
+          max: 1000.0
+        - name: status
+          type: enum
+          values: [PENDING, PROCESSING, COMPLETED, CANCELLED]
+```
+
+Without a registry configured, Avro and Protobuf still encode, but as bare unframed bytes rather
+than Confluent's standard wire format, fine for a self-contained test, not compatible with a
+consumer expecting the registry header. Credentials for a secured registry (Confluent Cloud, for
+example) are passed as CLI flags, never in the scenario file. See
+[Authentication](/docs/reference/authentication).
+
+## Correlated data across topics
+
+Realistic systems don't generate one topic in isolation: an order creates a payment, which
+triggers a shipment. `flows` generate exactly that: a sequence of related events across topics
+sharing a correlation ID. See [Kafka Traffic Generation](/docs/guides/kafka-traffic-generation#correlated-flows).
+
+## Related
+
+- [Kafka Load Testing](/docs/guides/kafka-load-testing): using generated data at scale.
+- [Kafka Traffic Generation](/docs/guides/kafka-traffic-generation): key distributions and correlated flows.
+- [Scenario File Reference](/docs/reference/scenario-file#field): the full field schema.

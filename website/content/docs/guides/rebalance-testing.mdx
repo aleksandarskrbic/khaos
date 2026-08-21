@@ -1,0 +1,64 @@
+---
+title: Kafka Consumer Rebalance Testing with Khaos
+description: Simulate Kafka consumer group rebalances on a schedule to test how your consumers behave during eager rebalancing, with Khaos.
+---
+
+A consumer group rebalance is disruptive by nature: when membership changes, every consumer in
+the group (not just the one that joined or left) pauses while partitions get reassigned. Whether
+your consumers handle that cleanly, with no double-processing, no dropped in-flight work, and a fast
+recovery, is hard to know until a rebalance actually happens. Khaos triggers real rebalances on a
+schedule so you can find out deliberately.
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run chaos/rebalance-storm" }]}
+/>
+
+## Triggering a real rebalance
+
+The `rebalance_consumer` incident closes one matched consumer entirely (a genuine departure from
+the group, not a pause) and then registers a fresh replacement. That departure and rejoin is what
+actually causes the group coordinator to rebalance:
+
+```yaml
+incidents:
+  - type: rebalance_consumer
+    every_seconds: 20
+    initial_delay_seconds: 15
+```
+
+`target:` (with `topic`, `group`, and `percentage` or `count`) narrows which consumer gets picked,
+if you have more than one group and want to isolate the effect. See
+[Scenario File Reference](/docs/reference/scenario-file#incidents) for the full incident schema.
+
+## Why it's disruptive by design
+
+Khaos's consumer groups use eager `Range`/`RoundRobin` assignment rather than cooperative-sticky,
+a deliberate choice, since it's what makes rebalance testing here meaningful: every consumer in the
+group stops processing while assignment is recomputed, not just the consumer that changed. If your
+production consumers use cooperative-sticky assignment instead, a Khaos-triggered rebalance will be
+more disruptive than what you'd see in production, useful as a worst-case test, but worth knowing
+going in.
+
+## A gap worth knowing about
+
+The replacement consumer that Khaos creates after a `rebalance_consumer` incident reverts to
+default `failure_rate`, `commit_failure_rate`, `on_failure`, and `max_retries`. It does not inherit
+whatever failure-simulation config the original consumer had. If you're specifically testing the
+interaction between failure simulation and rebalancing, account for that rather than assuming
+config carries over.
+
+## What to test
+
+- **In-flight work during a rebalance.** Does a consumer that was partway through processing a
+  batch handle losing its partition assignment cleanly, or does it double-process after
+  reassignment?
+- **Recovery time.** How long after a rebalance completes before consumption resumes at normal
+  throughput, and does lag from that gap get worked off, or does it linger?
+- **Offset commit timing relative to rebalance.** A consumer that commits infrequently has more to
+  reprocess (or lose, depending on commit strategy) when a rebalance interrupts it mid-batch.
+
+## Related
+
+- [Broker Failure Testing](/docs/guides/broker-failure-testing): another way a consumer group loses a member.
+- [Consumer Lag Testing](/docs/guides/consumer-lag-testing): the throughput dip a rebalance storm causes.
+- [Consumer Rebalances scenario](/docs/scenarios/consumer-rebalances): the full bundled scenario file.

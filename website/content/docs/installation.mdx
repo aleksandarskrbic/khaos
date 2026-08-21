@@ -1,0 +1,71 @@
+---
+title: Installation
+description: Install the Khaos CLI via go install, a prebuilt release binary, Docker, or from source.
+---
+
+Khaos ships as a single static binary with no runtime dependencies. Docker is only required if you
+want to use the bundled local Kafka cluster (`khaos run`); [`khaos simulate`](/docs/reference/cli#khaos-simulate-scenario)
+against an external cluster needs nothing but the binary.
+
+## go install
+
+Requires Go.
+
+<Terminal
+  lines={[
+    { type: "command", text: "go install github.com/aleksandarskrbic/khaos/cmd/khaos@latest" },
+  ]}
+/>
+
+## Download a release binary
+
+Prebuilt binaries for `linux`/`darwin`/`windows` on `amd64`/`arm64` are attached to every
+[GitHub release](https://github.com/aleksandarskrbic/khaos/releases). Download the archive for
+your platform, extract it, and put the `khaos` binary on your `PATH`.
+
+## Docker
+
+<Terminal
+  lines={[
+    {
+      type: "command",
+      text: "docker run --rm ghcr.io/aleksandarskrbic/khaos:latest simulate traffic/high-throughput --bootstrap-servers kafka:9092",
+    },
+  ]}
+/>
+
+Scenarios and the bundled compose files are embedded in the image, which runs as a non-root user on
+a distroless base, and nothing else ships with it. Because Docker-in-Docker isn't supported, the
+container image only supports `khaos simulate` against an external cluster, not `khaos run`'s
+managed local cluster.
+
+## From source
+
+<Terminal
+  lines={[
+    { type: "command", text: "git clone https://github.com/aleksandarskrbic/khaos.git" },
+    { type: "command", text: "cd khaos" },
+    { type: "command", text: "go build -o khaos ./cmd/khaos" },
+    { type: "command", text: "./khaos --help" },
+  ]}
+/>
+
+## Homebrew
+
+`khaos` exists in homebrew-core, but as of this writing that formula still builds the earlier
+Python implementation, not the Go rewrite described in these docs: the Go build isn't published to
+Homebrew yet. Until it is, use `go install`, a release binary, or Docker instead of `brew install`.
+
+## Verify
+
+<Terminal
+  lines={[
+    { type: "command", text: "khaos --version" },
+    { type: "command", text: "khaos --help" },
+  ]}
+/>
+
+## Next
+
+- [Quick Start](/docs/quickstart): run your first scenario.
+- [CLI Reference](/docs/reference/cli): every command and flag.

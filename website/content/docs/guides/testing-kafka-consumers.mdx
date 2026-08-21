@@ -1,0 +1,88 @@
+---
+title: Testing Kafka Consumers with Khaos
+description: Test Kafka consumer error handling, dead letter queues, retries, and duplicate-message handling with Khaos's consumer failure simulation.
+---
+
+Most Kafka consumer bugs don't show up against a clean, happy-path stream of messages: they show
+up when processing fails partway through, when a commit fails after processing succeeded, or when
+the same message arrives twice. Khaos simulates all three, at a configurable rate, without you
+writing any fault-injection code into the consumer itself.
+
+## Simulating processing failures
+
+`consumer_config.failure_rate` fails a configurable fraction of messages; `on_failure` decides what
+happens next:
+
+```yaml
+consumer_config:
+  failure_rate: 0.10 # 10% of messages fail processing
+  commit_failure_rate: 0.05 # 5% of commits fail independently
+  on_failure: dlq # send failed messages to orders-dlq
+```
+
+| `on_failure` | Behavior |
+| --- | --- |
+| `skip` (default) | Drop the message and move on. |
+| `retry` | Reprocess up to `max_retries` times before giving up. |
+| `dlq` | Publish to `{topic}-dlq` with an envelope containing the original topic, partition, offset, and error, then move on. |
+
+`commit_failure_rate` is independent of `failure_rate`: it simulates the message being processed
+successfully but the offset commit itself failing, which exercises different consumer code (will
+it reprocess on the next poll? does it double-handle a side effect?) than a caught processing
+exception does. Setting either above zero switches that consumer to manual offset commits.
+
+A full example, from the bundled `testing/consumer-failures` scenario:
+
+```yaml
+topics:
+  - name: orders
+    consumer_config:
+      failure_rate: 0.10
+      commit_failure_rate: 0.05
+      on_failure: dlq
+
+  - name: payments
+    consumer_config:
+      failure_rate: 0.15 # payments are "flaky" on purpose
+      commit_failure_rate: 0.02
+      on_failure: dlq
+```
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run testing/consumer-failures" }]}
+/>
+
+If you're using `on_failure: dlq`, make sure the `{topic}-dlq` topic exists (or your cluster allows
+auto-creation). Khaos publishes to it but doesn't create it.
+
+## Simulating duplicate delivery
+
+`producer_config.duplicate_rate` resends an identical key+value immediately after the original,
+with that probability, reproducing at-least-once duplicate delivery so you can verify your
+consumer's deduplication logic actually works, rather than assuming it does because duplicates
+never happened to show up in a test run:
+
+```yaml
+producer_config:
+  duplicate_rate: 0.15 # 15% of messages are duplicated
+```
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run testing/duplicate-messages" }]}
+/>
+
+This is a producer-side simulation of duplicate delivery, not a simulation of network-level
+retries: it's the right tool for "does my consumer handle seeing the same message twice," not for
+reproducing a specific retry mechanism.
+
+## What the summary shows
+
+When a topic's consumer config has failure simulation enabled, the TUI adds `FAILED` and `DLQ`
+columns to that topic's row automatically. They're absent when nothing's configured, so a plain
+scenario's output isn't cluttered with always-zero counters.
+
+## Related
+
+- [Consumer Lag Testing](/docs/guides/consumer-lag-testing): a different way consumers fall behind.
+- [Kafka Load Testing](/docs/guides/kafka-load-testing): combining failure simulation with sustained load.
+- [Configuration Reference](/docs/reference/configuration#consumer): every consumer config key.

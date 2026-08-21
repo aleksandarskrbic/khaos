@@ -1,0 +1,80 @@
+---
+title: Kafka Broker Failure Testing with Khaos
+description: Simulate Kafka broker failures, stop/restart cycles and leadership churn, while traffic is flowing, using Khaos's chaos engineering scenarios.
+---
+
+Brokers restart, get rescheduled, or fail, in a managed environment more often than most teams'
+test coverage accounts for. Khaos can stop and restart brokers in its bundled local cluster on a
+schedule, while producers and consumers keep running, so you can see how your clients actually
+behave through it: does the producer retry and recover, does the in-sync replica set shrink and
+come back, does a consumer group survive a leader election cleanly?
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run chaos/broker-chaos" }]}
+/>
+
+## Triggering it
+
+`stop_broker` and `start_broker` incidents target one of the three brokers in Khaos's bundled local
+cluster (`kafka-1`, `kafka-2`, `kafka-3`):
+
+```yaml
+incidents:
+  - type: stop_broker
+    at_seconds: 45
+    broker: kafka-2
+  - type: start_broker
+    at_seconds: 75
+    broker: kafka-2
+```
+
+For a repeated failure pattern rather than a single event, wrap it in a
+[group](/docs/reference/scenario-file#incident-groups):
+
+```yaml
+incidents:
+  - group:
+      repeat: 3
+      interval_seconds: 60
+      incidents:
+        - type: stop_broker
+          at_seconds: 0
+          broker: kafka-1
+        - type: start_broker
+          at_seconds: 30
+          broker: kafka-1
+```
+
+This only works against [`khaos run`](/docs/reference/cli#khaos-run-scenario)'s own managed cluster: Khaos
+controls those specific Docker containers. Against an external cluster via
+[`khaos simulate`](/docs/reference/external-clusters), both incident types are reported as skipped
+rather than applied, since Khaos has no way to stop infrastructure it doesn't own.
+
+## Test with `acks: "all"`
+
+`acks: "1"` only waits for the partition leader, so a broker failure that isn't the current leader
+often won't even show up in producer behavior. If you're specifically testing failure handling,
+set `producer_config.acks: "all"` so producers actually wait on (and can stall or retry against)
+the full in-sync replica set while it's degraded:
+
+```yaml
+producer_config:
+  acks: "all"
+```
+
+Both bundled broker-failure scenarios (`chaos/broker-chaos`, `chaos/leadership-churn`) use
+`acks: "all"` for exactly this reason.
+
+## What to test
+
+- **Producer retry and backoff behavior** while a broker is down and the ISR is shrunk.
+- **Consumer group survival** through a leader election: does the group keep consuming from the
+  new leader without a manual restart, and does lag recover once the broker comes back?
+- **Alerting on ISR shrinkage**, not just on total broker downtime: a broker flapping in and out
+  quickly can be worse for a cluster than one clean, longer outage.
+
+## Related
+
+- [Rebalance Testing](/docs/guides/rebalance-testing): a different disruption to consumer groups.
+- [Kafka Load Testing](/docs/guides/kafka-load-testing): combining broker failure with sustained load.
+- [Broker Failures scenario](/docs/scenarios/broker-failures): the full bundled scenario files.

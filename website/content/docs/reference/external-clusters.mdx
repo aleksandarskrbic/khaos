@@ -1,0 +1,56 @@
+---
+title: External Kafka Clusters
+description: Run Khaos scenarios against a Kafka cluster you already have, including managed clusters, using khaos simulate.
+---
+
+`khaos run` manages its own local Kafka cluster. To point Khaos at a cluster you already have (a
+shared dev cluster, a staging environment, or a managed service like Confluent Cloud, Amazon MSK,
+or Aiven), use [`khaos simulate`](/docs/reference/cli#khaos-simulate-scenario) instead.
+
+<Terminal
+  lines={[
+    {
+      type: "command",
+      text: "khaos simulate traffic/high-throughput --bootstrap-servers broker1:9092,broker2:9092",
+    },
+  ]}
+/>
+
+`--bootstrap-servers` is required for `simulate`. There's no cluster lifecycle to fall back to.
+For authenticated clusters, see [Authentication](/docs/reference/authentication).
+
+## What's different from `khaos run`
+
+- **No cluster lifecycle.** `simulate` never starts, stops, or recreates infrastructure. Only the
+  scenario's topics are managed (or not, with `--skip-topic-creation`).
+- **`retention.ms` isn't overridden.** `khaos run` sets a 7-day retention on topics it creates
+  locally; against an external cluster, Khaos leaves your cluster's configured defaults alone.
+- **Broker-failure incidents no-op.** `stop_broker`/`start_broker` in a scenario's `incidents` are
+  reported as skipped, with a warning event, rather than applied. Khaos has no way to stop a
+  broker on infrastructure it doesn't own. Everything else in a scenario (traffic, lag, rebalances,
+  consumer-side incidents) works the same as `khaos run`.
+- **`--keep-cluster` and `--mode` don't exist** on `simulate`. There's nothing local to keep
+  running or choose a topology for.
+
+## Topic creation on managed clusters
+
+If your account/role doesn't have `CreateTopics`/`DeleteTopics` rights (common on managed
+clusters with topics provisioned separately), pass `--skip-topic-creation` and make sure the
+scenario's topics already exist with compatible partition counts.
+
+DLQ topics (`{topic}-dlq`, used by [`on_failure: dlq`](/docs/reference/configuration#consumer))
+are never created by Khaos either way; they need to already exist or your cluster needs
+`auto.create.topics.enable=true`.
+
+## Measuring real lag
+
+Self-reported lag (`Produced - Consumed` from Khaos's own counters) works against any cluster with
+no extra permissions. Real broker-side lag via [`--lag-poll`](/docs/guides/consumer-lag-testing)
+needs `DescribeGroups`/`OffsetFetch`/`ListOffsets`. If your managed cluster denies that, Khaos
+reports the broker-side figure as `unknown` rather than failing the run.
+
+## Next
+
+- [Authentication](/docs/reference/authentication): SASL, TLS, and Schema Registry credentials.
+- [CLI Reference](/docs/reference/cli#khaos-simulate-scenario): the full flag list.
+- [Kafka Load Testing](/docs/guides/kafka-load-testing): what to tune once you're pointed at a real cluster.

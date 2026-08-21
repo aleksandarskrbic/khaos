@@ -1,0 +1,207 @@
+---
+title: Scenario File Reference
+description: The full YAML schema for Khaos scenario files, topics, message schemas, fields, incidents, and flows.
+---
+
+A scenario file has a `name`, at least one of `topics` or `flows`, and optionally an `incidents`
+timeline and a `schema_registry` block. Validate any scenario with
+[`khaos validate`](/docs/reference/cli#khaos-validate-scenario) before running it.
+
+## Top level
+
+| Key | Type | Required | Default |
+| --- | --- | --- | --- |
+| `name` | string | yes | - |
+| `description` | string | no | `""` |
+| `topics` | list of [Topic](#topic) | at least one of `topics`/`flows` | `[]` |
+| `flows` | list of [Flow](#flow) | at least one of `topics`/`flows` | `[]` |
+| `incidents` | list of [Incident](#incidents) / [group](#incident-groups) | no | `[]` |
+| `schema_registry` | `{ url }` | no | - |
+
+`schema_registry.url` must start with `http://` or `https://`. Credentials for the registry are
+never stored in the scenario file. They're passed as CLI flags. See [Authentication](/docs/reference/authentication).
+
+## Topic
+
+```yaml
+topics:
+  - name: orders
+    partitions: 12
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 2
+    producer_rate: 1000.0
+    consumer_delay_ms: 0
+```
+
+| Key | Type | Default |
+| --- | --- | --- |
+| `name` | string, required | - |
+| `partitions` | int, ≥ 1 | `12` |
+| `replication_factor` | int, 1–3 | `3` |
+| `num_producers` | int, ≥ 0 | `2` |
+| `num_consumer_groups` | int, ≥ 1 | `1` |
+| `consumers_per_group` | int, ≥ 1 | `2` |
+| `producer_rate` | float, > 0 (msg/s) | `1000.0` |
+| `consumer_delay_ms` | int, ≥ 0 | `0` |
+| `schema_provider` | `inline` \| `registry` | `inline` |
+| `subject_name` | string, required if `schema_provider: registry` | - |
+| `message_schema` | [MessageSchema](#message-schema) | - |
+| `producer_config` | [ProducerConf](#producer-config) | - |
+| `consumer_config` | [ConsumerConf](#consumer-config) | - |
+
+`replication_factor` is capped at 3: the bundled local cluster is always 3 brokers.
+
+## Message schema
+
+| Key | Type | Default |
+| --- | --- | --- |
+| `key_distribution` | `uniform` \| `zipfian` \| `single_key` \| `round_robin` | `uniform` |
+| `key_cardinality` | int, ≥ 1 (ignored for `single_key`) | `50` |
+| `min_size_bytes` / `max_size_bytes` | int (only used when `fields` is empty) | `200` / `500` |
+| `data_format` | `json` \| `avro` \| `protobuf` | `json` |
+| `fields` | list of [Field](#field) | `[]` |
+
+`zipfian` uses a fixed skew exponent (1.5, not configurable), the mechanism behind
+[hot-partition scenarios](/docs/scenarios/hot-partitions). `single_key` sends every message to one
+literal key, the most extreme hot-partition case. `data_format: avro`/`protobuf` with
+`schema_provider: inline` requires non-empty `fields`; `schema_provider: registry` forbids `fields`.
+
+## Field
+
+Recursive: used in `message_schema.fields`, flow step `fields`, and nested `object`/`array`
+fields.
+
+| Key | Applies to | Notes |
+| --- | --- | --- |
+| `name` | all except array `items` | |
+| `type` | all, required | `string`, `int`, `float`, `boolean`, `uuid`, `timestamp`, `enum`, `object`, `array`, `faker` |
+| `min` / `max` | `int`, `float` | |
+| `min_length` / `max_length` | `string` | default `5`/`20` |
+| `cardinality` | `string`, `int` | bounds distinct values, then cycles round-robin (ignored by `float`) |
+| `values` | `enum`, required | duplicate entries weight that value more heavily |
+| `fields` | `object`, required | nested `Field` list |
+| `items` | `array`, required | nested `Field` schema |
+| `min_items` / `max_items` | `array` | default `1`/`5` |
+| `provider` | `faker`, required | see [supported providers](/docs/guides/kafka-data-generation#faker-providers) |
+
+`timestamp` fields emit the current time as epoch milliseconds (an integer), not an ISO-8601
+string. `locale` is accepted on faker fields but has no effect.
+
+## Producer config
+
+| Key | Default | Valid values |
+| --- | --- | --- |
+| `batch_size` | `16384` | ≥ 0 |
+| `linger_ms` | `5` | ≥ 0 |
+| `acks` | `"1"` | `0`, `1`, `all` |
+| `compression_type` | `lz4` | `none`, `gzip`, `snappy`, `lz4`, `zstd` |
+| `duplicate_rate` | `0.0` | 0–1: probability of resending an identical key+value right after the original |
+
+## Consumer config
+
+| Key | Default | Valid values |
+| --- | --- | --- |
+| `failure_rate` | `0.0` | 0–1 |
+| `commit_failure_rate` | `0.0` | 0–1 |
+| `on_failure` | `skip` | `skip`, `dlq`, `retry` |
+| `max_retries` | `3` | ≥ 0 |
+
+Any non-zero `failure_rate`/`commit_failure_rate` switches that consumer to manual offset commits.
+`on_failure: dlq` routes failed records to `{topic}-dlq`. Khaos does not create that topic itself,
+so it must already exist or your cluster must allow topic auto-creation. See
+[Testing Kafka Consumers](/docs/guides/testing-kafka-consumers).
+
+## Incidents
+
+```yaml
+incidents:
+  - type: stop_broker
+    broker: kafka-2
+    at_seconds: 45
+  - type: start_broker
+    broker: kafka-2
+    at_seconds: 75
+```
+
+Every incident needs `at_seconds` (fire once) and/or `every_seconds` (fire repeatedly), plus an
+optional `initial_delay_seconds` applied before that schedule starts.
+
+| `type` | Required fields | What it does |
+| --- | --- | --- |
+| `stop_broker` | `broker` (`kafka-1`/`kafka-2`/`kafka-3`) | Stops the named broker container. No-op against an external cluster. |
+| `start_broker` | `broker` | Restarts a previously stopped broker. No-op against an external cluster. |
+| `pause_consumer` | `duration_seconds` | Pauses matched consumers, then resumes them. They stay in the consumer group. |
+| `rebalance_consumer` | - | Closes one matched consumer (a real group departure) and replaces it, which triggers a genuine rebalance. The replacement reverts to default `failure_rate`/`on_failure`/etc., not the original config. |
+| `increase_consumer_delay` | `delay_ms` | Sets a new artificial per-message processing delay on matched consumers, live. |
+| `change_producer_rate` | `rate` | Records a new target rate on matched producers. |
+
+Optional `target:` narrows which producers/consumers an incident applies to: `topic`, `group` (or
+`group_id`), and one of `percentage` (1–100) or `count`. An `indices` list is accepted by
+validation but not currently consulted when selecting targets. It does not narrow the selection.
+
+## Incident groups
+
+```yaml
+incidents:
+  - group:
+      repeat: 3
+      interval_seconds: 60
+      incidents:
+        - type: stop_broker
+          broker: kafka-1
+          at_seconds: 0
+        - type: start_broker
+          broker: kafka-1
+          at_seconds: 20
+```
+
+Repeats a fixed sequence of incidents `repeat` times, `interval_seconds` apart. Each member's own
+schedule is relative to the start of that repetition. `repeat` and `interval_seconds` are required.
+
+## Flow
+
+```yaml
+flows:
+  - name: order-flow
+    rate: 10.0
+    correlation:
+      type: uuid
+    steps:
+      - topic: orders-created
+        event_type: order_created
+        fields: [...]
+      - topic: orders-paid
+        event_type: order_paid
+        delay_ms: 500
+        fields: [...]
+```
+
+| Key | Default |
+| --- | --- |
+| `name` | required |
+| `rate` | `10.0` instances/sec |
+| `steps` | required list of [FlowStep](#flowstep) |
+| `correlation` | `{ type: uuid }` |
+
+`correlation.type` is `uuid` (a fresh correlation ID per flow instance) or `field_ref` (reuses a
+field's value from step 0: requires `field:` naming it). Every step's generated message uses the
+correlation value as its Kafka key, so a single flow instance's events land on one partition per
+topic. Flow messages always serialize as JSON: `data_format` doesn't apply to flows.
+
+### FlowStep
+
+| Key | Notes |
+| --- | --- |
+| `topic` | required |
+| `event_type` | required |
+| `delay_ms` | delay **before** this step fires; on step 0 it's a no-op |
+| `fields` | list of [Field](#field) |
+| `consumers` | optional `{ groups, per_group, delay_ms }`, spins up dedicated consumers for this step's topic |
+
+## Next
+
+- [Configuration Reference](/docs/reference/configuration): the same producer/consumer/topic keys, explained.
+- [Kafka Data Generation](/docs/guides/kafka-data-generation): field types and faker providers in practice.
+- [Scenarios](/docs/scenarios/consumer-lag): worked examples using this schema.

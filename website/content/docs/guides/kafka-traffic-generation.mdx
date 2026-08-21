@@ -1,0 +1,100 @@
+---
+title: Kafka Traffic Generation with Khaos
+description: Simulate realistic Kafka producer traffic, key distributions, multi-producer concurrency, and correlated event flows across topics, with Khaos.
+---
+
+Generating Kafka *traffic* is different from generating Kafka *data*: it's about the shape of how
+messages arrive (which partitions they land on, how many producers are sending concurrently, and
+whether events across topics are related to each other), not just what's inside any one message.
+
+## Key distributions
+
+`message_schema.key_distribution` decides which partition each message lands on:
+
+| Distribution | Behavior |
+| --- | --- |
+| `uniform` (default) | Spreads evenly across `key_cardinality` keys. |
+| `round_robin` | Cycles through keys in order: the most even distribution possible. |
+| `zipfian` | Skewed: a small number of keys get disproportionately more traffic, like a real popular-item/power-user distribution. |
+| `single_key` | Every message uses one literal key. The extreme case: everything on one partition. |
+
+```yaml
+message_schema:
+  key_distribution: zipfian
+  key_cardinality: 100
+```
+
+`zipfian` and `single_key` are how you deliberately reproduce a
+[hot partition](/docs/guides/hot-partition-testing) instead of hoping one shows up.
+
+## Producer concurrency
+
+`num_producers` runs that many independent producer instances against a topic concurrently, each
+targeting `producer_rate` messages/sec, and total offered load scales with both. Multiple producer
+instances is closer to how a real service with several application instances actually produces to
+Kafka than a single producer trying to hit a high rate alone.
+
+## Correlated flows
+
+Independent per-topic traffic is enough for a lot of testing, but real systems produce *related*
+events across topics: an order creates a payment, which reserves inventory, which creates a
+shipment. `flows` model that directly:
+
+```yaml
+flows:
+  - name: order-processing
+    rate: 50 # order flows per second
+    correlation:
+      type: uuid
+    steps:
+      - topic: orders
+        event_type: order_created
+        fields:
+          - name: order_id
+            type: uuid
+          - name: amount
+            type: float
+            min: 10.0
+            max: 1000.0
+
+      - topic: payments
+        event_type: payment_initiated
+        delay_ms: 200
+        fields:
+          - name: payment_id
+            type: uuid
+
+      - topic: shipments
+        event_type: shipment_created
+        delay_ms: 1000
+        fields:
+          - name: shipment_id
+            type: uuid
+```
+
+<ScenarioFlow
+  name="order-processing"
+  steps={[
+    { topic: "orders", eventType: "order_created" },
+    { topic: "payments", eventType: "payment_initiated", delayMs: 200 },
+    { topic: "payments", eventType: "payment_completed", delayMs: 500 },
+    { topic: "inventory", eventType: "inventory_reserved", delayMs: 100 },
+    { topic: "shipments", eventType: "shipment_created", delayMs: 1000 },
+  ]}
+/>
+
+Every step in one flow instance shares the same correlation ID (by default a fresh UUID per
+instance, or `field_ref` to reuse a field's value from the first step), used as the Kafka key for
+every message in that instance. `delay_ms` on a step is the delay *before* that step fires relative
+to the previous one, so a flow can model realistic pacing between related events, not just
+instantaneous fan-out.
+
+Flow messages always serialize as JSON: `data_format` doesn't apply to flows the way it does to
+`topics`.
+
+## Related
+
+- [Kafka Data Generation](/docs/guides/kafka-data-generation): what goes inside each message.
+- [Kafka Load Testing](/docs/guides/kafka-load-testing): pushing this traffic at scale.
+- [Hot Partition Testing](/docs/guides/hot-partition-testing): using `zipfian`/`single_key` on purpose.
+- [Scenario File Reference](/docs/reference/scenario-file#flow): the full flow/step schema.

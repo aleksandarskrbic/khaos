@@ -1,0 +1,129 @@
+---
+title: CLI Reference
+description: Every Khaos command, flag, default, and exit code, including run, simulate, list, validate, cluster-up, cluster-down, and cluster-status.
+---
+
+Khaos exposes seven commands with stable flags, shorthands, defaults, and exit codes. This is a
+compatibility contract pinned by the project's own CLI contract tests, not just a description of
+current behavior.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success. |
+| `1` | The command ran but failed: missing scenario argument, unknown scenario, invalid `--mode`/`--tui`/`--log-level`, validation errors. |
+| `2` | Bad invocation: unknown command or flag, wrong number of positional arguments, an invalid `--duration` value. Running bare `khaos` with no arguments also exits `2` (it prints help to stderr, deliberately, so `khaos > out.txt` fails loudly instead of silently writing help into the file). |
+
+`--help` always prints to stdout and exits `0`. See also [Exit Codes & Output](/docs/reference/exit-codes).
+
+## `khaos run <scenario>...`
+
+Runs one or more scenarios against the bundled local Kafka cluster, starting it automatically if
+it isn't already running.
+
+| Flag | Short | Default | Description |
+| --- | --- | --- | --- |
+| `--duration` | `-d` | `0` | Seconds, or a Go duration like `90s`/`10m`. `0` runs until you stop it. |
+| `--keep-cluster` | `-k` | `false` | Keep the local cluster running after the run ends. |
+| `--bootstrap-servers` | `-b` | - | Override the local cluster's bootstrap servers. |
+| `--mode` | `-m` | `kraft` | `kraft` or `zookeeper`. |
+| `--no-consumers` | | `false` | Produce only: start no consumers. |
+| `--skip-topic-creation` | | `false` | Don't create or delete topics; assume they already exist. |
+| `--recreate-topics` | | `true` | Delete and recreate every topic before the run (destructive). Set `--recreate-topics=false` to opt out. There is no separate `--no-recreate-topics` flag. |
+| `--schema-registry-url` | | - | Schema Registry URL. |
+| `--schema-registry-username` / `--schema-registry-password` | | - | Schema Registry basic auth. On Confluent Cloud, this is the **Schema Registry** API key/secret, not the Kafka cluster API key. See [Authentication](/docs/reference/authentication). |
+| `--schema-registry-token` | | - | Schema Registry bearer token, instead of basic auth. |
+| `--schema-registry-ca-location` / `--schema-registry-cert-location` / `--schema-registry-key-location` | | - | CA / client cert / client key for the registry connection (mTLS). |
+| `--lag-poll` | | `0` (off) | Poll brokers for real consumer-group lag at this interval, e.g. `5s`. See [Consumer Lag Testing](/docs/guides/consumer-lag-testing). |
+| `--seed` | | `0` | Seed for generated data. `0` picks one at random and reports it, so a run is reproducible after the fact. |
+| `--tui` | | `auto` | `auto`, `on`, or `off`. `auto` shows the live dashboard only on a real TTY (not in CI or with `TERM=dumb`). |
+| `--log-json` | | `false` | Emit structured JSON logs instead of text. |
+| `--log-level` | | `info` | `debug`, `info`, `warn`, `error`. |
+| `--metrics-addr` | | - | Serve `/healthz` on this address, e.g. `:9090`. |
+
+At least one scenario argument is required (`khaos list` to see the bundled ones).
+
+## `khaos simulate <scenario>...`
+
+Runs the same scenarios against an **external** Kafka cluster: no local cluster lifecycle
+management. Broker-failure incidents (`stop_broker`/`start_broker`) are reported as skipped rather
+than applied, since Khaos has no way to stop a broker it doesn't manage.
+
+Shares `run`'s scenario/tui/log/lag-poll/schema-registry flags (minus `--keep-cluster` and
+`--mode`, which don't apply without a local cluster), plus:
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--bootstrap-servers` (`-b`) | **required** | Comma-separated broker list. |
+| `--security-protocol` | `PLAINTEXT` | `PLAINTEXT`, `SSL`, `SASL_PLAINTEXT`, `SASL_SSL`. |
+| `--sasl-mechanism` | - | `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`. |
+| `--sasl-username` / `--sasl-password` | - | SASL credentials. |
+| `--ssl-ca-location` | - | CA certificate path. |
+| `--ssl-cert-location` / `--ssl-key-location` | - | Client certificate/key for mTLS (set together). |
+| `--ssl-key-password` | - | Not supported. Encrypted private keys are rejected; decrypt first with `openssl pkcs8 -topk8 -nocrypt -in enc.key -out plain.key`. |
+
+Missing `--bootstrap-servers` is reported before an empty scenario list. Full walkthrough:
+[Authentication](/docs/reference/authentication) and [External Kafka Clusters](/docs/reference/external-clusters).
+
+## `khaos list`
+
+Lists every bundled scenario, grouped by category (`traffic`, `chaos`, `flows`, `serialization`,
+`testing`). No flags.
+
+## `khaos validate [scenario...]`
+
+Validates one or more scenario files without running them. This is the same check Khaos's own CI runs
+against every bundled scenario. With no arguments, validates the entire bundled set.
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--strict` | `false` | Also reject keys no version of Khaos has ever read (typos, stale config). |
+
+Exits `1` if any scenario has errors; exits `0` if there are only warnings. See
+[CI/CD Integration](/docs/guides/ci-cd-integration).
+
+## `khaos cluster-up`
+
+Starts the bundled local Kafka cluster.
+
+| Flag | Short | Default | Description |
+| --- | --- | --- | --- |
+| `--mode` | `-m` | `kraft` | `kraft` or `zookeeper`. |
+| `--schema-registry` | | `false` | Also start Schema Registry. |
+
+Blocks until every broker actually answers a Kafka protocol probe, not just until Docker's proxy
+accepts a TCP connection, which can happen before the broker inside is ready.
+
+## `khaos cluster-down`
+
+| Flag | Short | Default | Description |
+| --- | --- | --- | --- |
+| `--volumes` | `-v` | `false` | Also remove data volumes. |
+| `--mode` | `-m` | `kraft` | `kraft` or `zookeeper`. |
+
+Tears down Schema Registry first (if running), then the broker stack.
+
+## `khaos cluster-status`
+
+| Flag | Short | Default | Description |
+| --- | --- | --- | --- |
+| `--mode` | `-m` | `kraft` | `kraft` or `zookeeper`. |
+
+Prints a table of running services. If nothing is running, prints a note to stderr and exits `0`
+(not an error), so `khaos cluster-status | wc -l` reliably counts services rather than prose.
+
+## Shell completion
+
+<Terminal
+  lines={[
+    { type: "command", text: "khaos completion zsh" },
+    { type: "comment", text: "also: bash, fish, powershell" },
+  ]}
+/>
+
+## Next
+
+- [Configuration Reference](/docs/reference/configuration): topic, producer, and consumer config keys.
+- [Scenario File Reference](/docs/reference/scenario-file): the full YAML schema.
+- [Exit Codes & Output](/docs/reference/exit-codes): stream discipline and TUI vs. headless output.

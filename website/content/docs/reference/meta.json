@@ -1,0 +1,11 @@
+{
+  "title": "Reference",
+  "pages": [
+    "cli",
+    "configuration",
+    "scenario-file",
+    "authentication",
+    "external-clusters",
+    "exit-codes"
+  ]
+}

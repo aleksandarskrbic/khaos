@@ -1,0 +1,43 @@
+---
+title: Consumer Rebalances
+description: The bundled chaos/rebalance-storm scenario, repeatedly triggering real Kafka consumer group rebalances while traffic is flowing.
+---
+
+`chaos/rebalance-storm` runs traffic against a 3-consumer group while repeatedly forcing genuine
+group rebalances:
+
+```yaml
+topics:
+  - name: events
+    partitions: 6
+    consumers_per_group: 3
+    producer_rate: 500
+    consumer_delay_ms: 5
+
+incidents:
+  - type: rebalance_consumer
+    every_seconds: 20
+    initial_delay_seconds: 15
+```
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run chaos/rebalance-storm" }]}
+/>
+
+`rebalance_consumer` doesn't just pause a consumer: it closes one matched consumer entirely (a
+real departure from the group) and then registers a fresh replacement in its place. That's what
+actually triggers the group coordinator to rebalance. Khaos's consumer groups use eager
+`Range`/`RoundRobin` assignment rather than cooperative-sticky, so every rebalance here is the
+disruptive, stop-the-world kind: every consumer in the group pauses processing while assignment
+is recomputed, not just the one that left.
+
+One thing to know before you rely on this for anything beyond "does a rebalance happen": the
+replacement consumer reverts to default `failure_rate`/`on_failure`/`max_retries` config, not
+whatever the original consumer had configured. If your scenario's failure simulation matters to
+what you're testing, keep that in mind across a rebalance.
+
+## Related
+
+- [Rebalance Testing](/docs/guides/rebalance-testing): the full guide.
+- [Broker Failures](/docs/scenarios/broker-failures): a different way a group loses a member.
+- [Scenario File Reference](/docs/reference/scenario-file#incidents): all incident types.

@@ -1,0 +1,85 @@
+---
+title: Consumer Lag Testing with Khaos
+description: Simulate Kafka consumer lag on purpose, both self-reported and real broker-side lag, to test alerting and backpressure handling with Khaos.
+---
+
+Consumer lag, the gap between what's been produced and what's been consumed, is usually
+discovered in production, by an alert, after it's already a problem. Khaos lets you reproduce it
+deliberately, on a cluster you control, so you can test how your consumers, dashboards, and alerts
+actually behave before that happens.
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run traffic/consumer-lag --lag-poll 5s" }]}
+/>
+
+## How lag actually grows
+
+Lag grows whenever consumers can't keep up with producers. Khaos gives you two independent knobs to
+force that:
+
+- **Outpace the consumers.** Set `producer_rate` higher than your consumer topology can realistically
+  sustain.
+- **Slow the consumers down directly.** `consumer_delay_ms` adds artificial per-message processing
+  time: the cleanest way to simulate "this consumer does real, slow work" without writing a slow
+  consumer.
+
+The bundled `traffic/consumer-lag` scenario combines both across two topics:
+
+```yaml
+topics:
+  - name: payments
+    producer_rate: 2000
+    consumer_delay_ms: 50
+    num_consumer_groups: 2
+    consumers_per_group: 2
+
+  - name: notifications
+    producer_rate: 3000
+    consumer_delay_ms: 100
+    num_consumer_groups: 2
+    consumers_per_group: 2
+```
+
+Under-provisioning `consumers_per_group` relative to a topic's `partitions` produces lag too, in a
+more structural way than a per-message delay does. It's worth testing as a distinct case, since the fix
+("add more consumers, up to the partition count") is different from the fix for slow processing.
+
+## Self-reported lag vs. real broker lag
+
+By default, the lag Khaos shows is self-reported: `Produced - Consumed` from its own in-process
+counters. It's always available and has zero permission requirements, but it resets with the run
+and can't account for anything outside Khaos touching the topic.
+
+Pass `--lag-poll <interval>` to also poll the actual Kafka brokers for committed-offset lag, the
+same number a real monitoring system would compute from consumer group offsets:
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run traffic/consumer-lag --lag-poll 5s" }]}
+/>
+
+With `--lag-poll` on, the TUI shows both figures side by side. If your cluster denies
+`DescribeGroups`/`OffsetFetch`/`ListOffsets` (common on some managed clusters), broker-side lag
+reports as `unknown` rather than failing the run.
+
+<ConsumerLag
+  produceRate="2,000–3,000 msg/s"
+  consumeRate="capped by consumer_delay_ms"
+  trend={["0", "4,200", "9,800", "16,300", "24,900"]}
+/>
+
+## What to actually test
+
+- **Alert thresholds.** Does your paging rule fire at a sane lag value, and not flap on the normal
+  lag blips of a healthy consumer catching up after a deploy?
+- **Backpressure handling.** If a consumer applies backpressure or sheds load under lag, does that
+  logic actually engage, and does it recover cleanly once producer rate or `consumer_delay_ms`
+  returns to normal?
+- **Dashboards.** Confirm a lag dashboard reflects broker-side truth, not just an application's own
+  optimistic counters, by comparing what it shows against `--lag-poll`'s figure during the same run.
+
+## Related
+
+- [Testing Kafka Consumers](/docs/guides/testing-kafka-consumers): failure and DLQ simulation.
+- [Rebalance Testing](/docs/guides/rebalance-testing): another way consumer throughput drops suddenly.
+- [Kafka Load Testing](/docs/guides/kafka-load-testing): tuning producer-side throughput.
+- [Consumer Lag scenario](/docs/scenarios/consumer-lag): the full bundled scenario file.

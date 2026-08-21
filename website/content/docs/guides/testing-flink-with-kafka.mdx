@@ -1,0 +1,69 @@
+---
+title: Testing Flink Applications with Kafka using Khaos
+description: Use Khaos to generate realistic Kafka input traffic and failure conditions for testing Apache Flink jobs that read from or write to Kafka.
+---
+
+An Apache Flink job with a `KafkaSource` is, from Kafka's side, just a consumer group. Khaos has no
+Flink-specific integration. It doesn't talk to the JobManager or inspect checkpoints, but it
+doesn't need to: generating realistic traffic and failure conditions on the Kafka topics a Flink
+job reads from is enough to exercise the job under conditions close to production.
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run --no-consumers --keep-cluster flink-input.yaml" }]}
+/>
+
+## The pattern
+
+1. Write a scenario whose `topics` match what your Flink job's `KafkaSource` subscribes to.
+2. Run with `--no-consumers`: Flink is the consumer here, not Khaos.
+3. `--keep-cluster` keeps the bundled local Kafka cluster running while you iterate on the job, or
+   point your job at an existing cluster and use [`khaos simulate`](/docs/reference/external-clusters)
+   instead.
+4. Run your Flink job against the same bootstrap servers and watch its output/checkpoints respond.
+
+```yaml
+name: flink-input
+topics:
+  - name: sensor-readings
+    partitions: 12
+    num_producers: 4
+    producer_rate: 10000
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 500
+      fields:
+        - name: sensor_id
+          type: string
+          cardinality: 500
+        - name: reading
+          type: float
+          min: -20.0
+          max: 120.0
+        - name: recorded_at
+          type: timestamp
+```
+
+## What this is good for
+
+- **Event-time windowing under realistic key cardinality and rate.** `key_cardinality` and
+  `producer_rate` together determine how much concurrent per-key state your job has to hold. Set
+  them close to your real traffic, not a toy value.
+- **Checkpointing and recovery under broker failure.** Combine with a
+  [broker failure scenario](/docs/guides/broker-failure-testing) to confirm your job's checkpoints
+  and Kafka source actually recover cleanly through a leader election, not just in a quiet cluster.
+- **Backpressure under sustained load.** A [load test](/docs/guides/kafka-load-testing) against the
+  input topic shows whether your job's parallelism is actually sized for the throughput you expect
+  in production.
+
+## What this doesn't cover
+
+Khaos produces the Kafka-facing input; it has no visibility into Flink's own state or checkpoint
+correctness, so job-level output assertions are still your job's own tests. Khaos's role is making
+sure those tests run against realistic, repeatable input and failure conditions instead of a
+handful of hand-written test records.
+
+## Related
+
+- [Testing Kafka Streams Applications](/docs/guides/testing-kafka-streams-applications): the same pattern for Kafka Streams.
+- [Kafka Traffic Generation](/docs/guides/kafka-traffic-generation): shaping realistic input traffic.
+- [Broker Failure Testing](/docs/guides/broker-failure-testing): testing recovery under a Kafka broker failure.

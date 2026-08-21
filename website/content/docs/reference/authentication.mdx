@@ -1,0 +1,77 @@
+---
+title: Authentication (SASL, SSL/TLS)
+description: Configure Khaos to authenticate against SASL- and TLS-protected Kafka clusters and Schema Registry, including Confluent Cloud.
+---
+
+Authentication only applies to [`khaos simulate`](/docs/reference/cli#khaos-simulate-scenario). The
+bundled local cluster used by `khaos run` is plaintext, unauthenticated.
+
+## Security protocol
+
+`--security-protocol` selects the transport: `PLAINTEXT` (default), `SSL`, `SASL_PLAINTEXT`, or
+`SASL_SSL`.
+
+## SASL
+
+<Terminal
+  lines={[
+    {
+      type: "command",
+      text: "khaos simulate traffic/high-throughput \\",
+    },
+    { type: "output", text: "  --bootstrap-servers broker1:9092,broker2:9092 \\" },
+    { type: "output", text: "  --security-protocol SASL_SSL \\" },
+    { type: "output", text: "  --sasl-mechanism SCRAM-SHA-512 \\" },
+    { type: "output", text: "  --sasl-username my-user \\" },
+    { type: "output", text: "  --sasl-password my-password" },
+  ]}
+/>
+
+Supported mechanisms: `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`. `--sasl-mechanism` requires both
+`--sasl-username` and `--sasl-password`.
+
+## TLS / mTLS
+
+| Flag | Purpose |
+| --- | --- |
+| `--ssl-ca-location` | CA certificate to verify the broker. Omit to use the system trust store. |
+| `--ssl-cert-location` + `--ssl-key-location` | Client certificate and key, for mutual TLS. Set both together. |
+| `--ssl-key-password` | **Not supported.** Encrypted private keys are rejected outright. |
+
+If your key is encrypted, decrypt it first:
+
+<Terminal
+  lines={[
+    {
+      type: "command",
+      text: "openssl pkcs8 -topk8 -nocrypt -in encrypted.key -out plain.key",
+    },
+  ]}
+/>
+
+Then point `--ssl-key-location` at `plain.key`.
+
+## Schema Registry authentication
+
+Configure the registry URL in the scenario file's `schema_registry.url`; pass credentials as flags
+so they never end up committed in a scenario file:
+
+| Flag | Purpose |
+| --- | --- |
+| `--schema-registry-username` / `--schema-registry-password` | Basic auth. |
+| `--schema-registry-token` | Bearer token, mutually exclusive with basic auth. |
+| `--schema-registry-ca-location` / `--schema-registry-cert-location` / `--schema-registry-key-location` | mTLS to the registry itself. |
+
+### Confluent Cloud gotcha
+
+Confluent Cloud issues **two separate sets of API keys**: one for the Kafka cluster
+(`--sasl-username`/`--sasl-password`) and a different one for Schema Registry
+(`--schema-registry-username`/`--schema-registry-password`). Using the Kafka key/secret pair for
+Schema Registry auth is the single most common way to get a confusing 401/403 here. Khaos detects
+a registry auth failure and names the likely-wrong flag in the error rather than just reporting
+"unauthorized."
+
+## Next
+
+- [External Kafka Clusters](/docs/reference/external-clusters): running scenarios against a cluster you already have.
+- [CLI Reference](/docs/reference/cli#khaos-simulate-scenario): the full `khaos simulate` flag list.
