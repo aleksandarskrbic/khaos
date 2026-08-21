@@ -1,0 +1,105 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/preset.css";
+@import "fumadocs-ui/css/lib/default-colors.css";
+
+@source "../node_modules/fumadocs-ui/dist/**/*.js";
+
+/*
+ * Khaos brand tokens: "Mono Terminal" direction.
+ * Khaos is a CLI, so the site is set entirely in monospace, sharp corners,
+ * one amber accent, and a warm (not neutral-gray) near-black / near-paper
+ * background pair. Everything derives from --color-fd-* since fumadocs-ui
+ * itself reads those tokens, so overriding them here re-themes docs and
+ * landing page components together. Radius tokens are zeroed globally
+ * (below) so fumadocs-ui's own chrome goes sharp-cornered too, since its
+ * classes are compiled through this same Tailwind build via the @source
+ * scan above.
+ */
+@theme {
+  --font-sans: var(--font-geist-mono);
+  --font-mono: var(--font-geist-mono);
+
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+
+  --color-khaos-accent: #a85800;
+  --color-khaos-accent-foreground: #f4f2e9;
+  --color-khaos-accent-dim: #e3cfa6;
+  --color-khaos-border-strong: #a9a48c;
+  --color-khaos-faint: #96937f;
+  --color-khaos-danger: #b3391a;
+  --color-khaos-danger-dim: #f1d3c4;
+
+  --color-fd-background: #f4f2e9;
+  --color-fd-foreground: #17170f;
+  --color-fd-muted: #eae7d9;
+  --color-fd-muted-foreground: #5b5a4d;
+  --color-fd-popover: #ece9dc;
+  --color-fd-popover-foreground: #17170f;
+  --color-fd-card: #ece9dc;
+  --color-fd-card-foreground: #17170f;
+  --color-fd-border: #cbc7b3;
+  --color-fd-primary: var(--color-khaos-accent);
+  --color-fd-primary-foreground: var(--color-khaos-accent-foreground);
+  --color-fd-secondary: #ece9dc;
+  --color-fd-secondary-foreground: #17170f;
+  --color-fd-accent: var(--color-khaos-accent-dim);
+  --color-fd-accent-foreground: var(--color-khaos-accent);
+  --color-fd-ring: var(--color-khaos-accent);
+}
+
+.dark {
+  --color-khaos-accent: #ffb300;
+  --color-khaos-accent-foreground: #0a0b09;
+  --color-khaos-accent-dim: #6b4d0e;
+  --color-khaos-border-strong: #47493b;
+  --color-khaos-faint: #4c4a3f;
+  --color-khaos-danger: #ff6b4a;
+  --color-khaos-danger-dim: #4a2c1e;
+
+  --color-fd-background: #0a0b09;
+  --color-fd-foreground: #d9d6c7;
+  --color-fd-muted: #0d0f0c;
+  --color-fd-muted-foreground: #83806e;
+  --color-fd-popover: #101210;
+  --color-fd-popover-foreground: #d9d6c7;
+  --color-fd-card: #101210;
+  --color-fd-card-foreground: #d9d6c7;
+  --color-fd-border: #2c2e26;
+  --color-fd-primary: var(--color-khaos-accent);
+  --color-fd-primary-foreground: var(--color-khaos-accent-foreground);
+  --color-fd-secondary: #101210;
+  --color-fd-secondary-foreground: #d9d6c7;
+  --color-fd-accent: var(--color-khaos-accent-dim);
+  --color-fd-accent-foreground: var(--color-khaos-accent);
+  --color-fd-ring: var(--color-khaos-accent);
+}
+
+body {
+  background: var(--color-fd-background);
+  color: var(--color-fd-foreground);
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Keep focus states visible everywhere: keyboard nav is a stated requirement. */
+:focus-visible {
+  outline: 2px solid var(--color-khaos-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
