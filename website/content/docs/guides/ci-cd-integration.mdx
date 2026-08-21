@@ -1,0 +1,70 @@
+---
+title: CI/CD Integration with Khaos
+description: Validate Kafka scenario files and run bounded Khaos load tests in CI using khaos validate, --duration, and exit codes.
+---
+
+Khaos's own CI runs `khaos validate` against every bundled scenario as a gate before merge. The
+same command and pattern works for scenario files you write yourself.
+
+## Validating scenario files in CI
+
+<Terminal
+  lines={[{ type: "command", text: "khaos validate" }]}
+/>
+
+`khaos validate` checks a scenario file's structure without running it, catching a typo'd field
+type or an out-of-range value before it fails partway through an actual run. With no arguments, it
+validates every scenario in the current set; add `--strict` to also reject unrecognized keys (a
+stronger check, useful for catching a config key that silently does nothing because of a typo):
+
+<Terminal
+  lines={[{ type: "command", text: "khaos validate --strict" }]}
+/>
+
+It exits `1` if any scenario has errors and `0` if there are only warnings (or nothing to report),
+so it plugs directly into a CI job's pass/fail:
+
+```yaml
+# .github/workflows/ci.yml
+- name: Validate Khaos scenarios
+  run: khaos validate --strict
+```
+
+See [Exit Codes & Output](/docs/reference/exit-codes) for the full exit code contract.
+
+## Running a bounded load test in CI
+
+For an actual traffic run (not just validation), bound it with `--duration` so the job can't hang,
+and disable the interactive TUI. CI runners aren't a TTY, so `--tui auto` already falls back to
+headless output automatically, but being explicit is clearer in a pipeline definition:
+
+<Terminal
+  lines={[
+    {
+      type: "command",
+      text: "khaos run traffic/high-throughput --duration 60s --tui off --log-json",
+    },
+  ]}
+/>
+
+`--log-json` gives you structured, parseable log lines instead of the human-formatted headless
+output, useful if a downstream step in the pipeline needs to inspect the run's results
+programmatically.
+
+## Reproducible runs
+
+Pass `--seed` to make a CI run's generated data identical across runs, useful when a test failure
+needs to be reproduced locally with the exact same generated messages:
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run traffic/high-throughput --seed 42 --duration 60s" }]}
+/>
+
+Without `--seed`, Khaos picks one at random and reports it in the run's output, so you can still
+recover it from a CI log after the fact.
+
+## Related
+
+- [CLI Reference](/docs/reference/cli#khaos-validate-scenario): the full `validate` and `run` flag list.
+- [Exit Codes & Output](/docs/reference/exit-codes): exit codes and stream discipline for scripting.
+- [Kafka Load Testing](/docs/guides/kafka-load-testing): what to actually test once it's wired into CI.

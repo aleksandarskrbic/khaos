@@ -1,0 +1,79 @@
+---
+title: Kafka Load Testing with Khaos
+description: Load test Apache Kafka with configurable producer throughput, batching, and acknowledgements using the open-source Khaos CLI.
+---
+
+Load testing Kafka means finding out how your cluster, your producers, and your consumers actually
+behave under sustained traffic, not just whether a handful of test messages round-trip
+correctly. Khaos runs configurable, repeatable load against a real Kafka cluster (its own bundled
+one, or one you already have) and shows you what happens.
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run traffic/high-throughput" }]}
+/>
+
+## What's actually being tested
+
+A Khaos load test exercises the full path: producers batching and sending records, brokers
+replicating and acknowledging them, and consumers in one or more groups reading them back. Because
+it's a real Kafka client (`franz-go`) against a real cluster, the numbers you get reflect actual
+network, disk, and replication behavior, not a simulation of Kafka's protocol.
+
+## The variables that matter
+
+**Throughput** is set per topic via `producer_rate` (messages/sec) and `num_producers`. Multiple
+producers on the same topic run concurrently, so total offered load is roughly
+`producer_rate × num_producers`, though the true ceiling is however fast the cluster can actually
+absorb it.
+
+**Message size** comes from `message_schema`: either a `min_size_bytes`/`max_size_bytes` range for
+raw payloads, or the natural size of a structured `fields` schema (see
+[Kafka Data Generation](/docs/guides/kafka-data-generation)). Larger messages shift the bottleneck
+from request rate toward network and disk throughput.
+
+**Partitions** (`partitions`) set the ceiling on producer/consumer parallelism: a topic can't be
+consumed by more than one consumer per partition per group, so under-partitioning caps how much a
+consumer group can scale regardless of how many consumers you add
+(`consumers_per_group`).
+
+**Acknowledgements** (`producer_config.acks`) trade durability for throughput: `"0"` doesn't wait
+for a broker response, `"1"` waits for the partition leader, `"all"` waits for the full in-sync
+replica set. Khaos only enables idempotent production at `acks: "all"`; below that, the in-flight
+request cap is raised instead, which is usually what you want for a pure throughput number. See
+[Configuration Reference](/docs/reference/configuration#producer) for exactly what each setting
+changes underneath.
+
+**Batching** (`batch_size`, `linger_ms`) and **compression** (`compression_type`) trade a little
+latency and CPU for fewer, larger requests over the wire. See the bundled
+[High Throughput scenario](/docs/scenarios/high-throughput) for a concrete tuned example.
+
+**Test duration and ramp-up.** `--duration` bounds how long a run lasts; Khaos doesn't currently
+have a built-in gradual ramp-up (traffic starts at the configured rate immediately), so if you need
+to observe behavior as load increases, run the same scenario multiple times at increasing
+`producer_rate` values, or a sequence of scenario files.
+
+## Reading the results
+
+The live TUI shows produced/consumed message counts, bytes, and rate per topic, updated
+continuously, plus a lag column if consumers fall behind (see
+[Consumer Lag Testing](/docs/guides/consumer-lag-testing)). For CI or scripted runs, use `--tui off`
+for structured JSON logs instead of the interactive dashboard. See
+[Exit Codes & Output](/docs/reference/exit-codes).
+
+## Common mistakes
+
+- **Under-partitioning for the consumer count.** Adding `consumers_per_group` beyond the partition
+  count doesn't add throughput: the extra consumers sit idle.
+- **Testing with `acks: "1"` when you actually care about durability under a broker failure.**
+  Combine a load test with a [broker failure scenario](/docs/scenarios/broker-failures) and
+  `acks: "all"` if that's what you're really trying to validate.
+- **Reading self-reported lag as if it were broker truth.** Khaos's own produced/consumed counters
+  are always available but reset with the run; pass `--lag-poll` for real broker-committed offset
+  lag when it matters.
+
+## Related
+
+- [Kafka Data Generation](/docs/guides/kafka-data-generation): shaping the messages you're loading with.
+- [Kafka Traffic Generation](/docs/guides/kafka-traffic-generation): key distributions and correlated traffic.
+- [Hot Partition Testing](/docs/guides/hot-partition-testing): what happens when load isn't evenly distributed.
+- [Configuration Reference](/docs/reference/configuration): every producer/consumer tuning knob.

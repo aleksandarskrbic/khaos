@@ -1,0 +1,72 @@
+---
+title: Core Concepts
+description: How Khaos scenarios, topics, message schemas, incidents, and flows fit together.
+---
+
+## Scenarios
+
+A scenario is a YAML file with a name, one or more `topics` (or `flows`), and an optional
+`incidents` timeline. It's the unit Khaos runs: `khaos run traffic/high-throughput` or
+`khaos run path/to/my-scenario.yaml`. See the [Scenario File Reference](/docs/reference/scenario-file)
+for the full schema.
+
+## Topics
+
+Each entry under `topics:` configures one Kafka topic end-to-end: partition count and replication
+factor, how many producers and consumer groups to run against it, the target produce rate, and the
+shape of the messages themselves. Khaos creates (and by default recreates) these topics on the
+cluster before the run starts.
+
+## Message schemas
+
+A topic's `message_schema` controls what gets generated:
+
+- **`fields`**: a structured schema (strings, numbers, booleans, UUIDs, timestamps, enums, nested
+  objects and arrays, and faker-backed fields like names and emails). See
+  [Kafka Data Generation](/docs/guides/kafka-data-generation).
+- **No `fields`**: a raw JSON payload sized to a byte range, useful when you only care about
+  throughput and don't need realistic structured content.
+- **`key_distribution`**: how partition keys are chosen: `uniform`, `round_robin`, `zipfian`
+  (skewed, the mechanism behind hot-partition scenarios), or `single_key` (every message on one
+  key, the most extreme hot-partition case).
+- **`data_format`**: `json`, `avro`, or `protobuf`, optionally backed by a Confluent-compatible
+  Schema Registry.
+
+## Incidents
+
+`incidents` is a timeline of things that happen *while* traffic is flowing: stopping and starting a
+broker, pausing or rebalancing a consumer group, slowing consumers down, or changing a producer's
+rate. Each incident fires once (`at_seconds`) or repeatedly (`every_seconds`), optionally scoped to
+a subset of producers or consumers via `target`. See [supported incident types](/docs/reference/scenario-file#incidents)
+and the scenario pages under [Scenarios](/docs/scenarios/consumer-lag).
+
+## Flows
+
+Most scenarios describe independent per-topic traffic. `flows` describe *correlated* traffic
+instead: a sequence of steps across one or more topics that share a correlation ID (an order
+placed, then paid, then shipped, each as a separate event on a separate topic). Every step in one
+flow instance carries the same key, so related events land on the same partition per topic.
+
+## Local cluster vs. external cluster
+
+- **`khaos run`** manages a bundled, local 3-broker Kafka cluster via Docker Compose (KRaft by
+  default, or ZooKeeper with `--mode zookeeper`), starting it and, unless you pass `--keep-cluster`,
+  stopping it around the scenario run.
+- **`khaos simulate`** runs the same scenarios against a cluster you already have, including
+  managed clusters that need SASL or TLS. See [Authentication](/docs/reference/authentication) and
+  [External Kafka Clusters](/docs/reference/external-clusters). Broker-failure incidents
+  (`stop_broker`/`start_broker`) are skipped as no-ops against an external cluster, since Khaos has
+  no way to stop someone else's broker.
+
+## The engine and the TUI
+
+Khaos's scenario engine doesn't know about terminals. It exposes one read method, `Snapshot()`,
+and whatever's watching (the live terminal dashboard, the headless structured-log loop
+(`--tui off`), or the final summary table) polls it on a tick. A crashed or stalled UI degrades to
+headless rather than killing the run.
+
+## Next
+
+- [Scenario File Reference](/docs/reference/scenario-file): the full YAML schema.
+- [Kafka Data Generation](/docs/guides/kafka-data-generation): message schemas in depth.
+- [CLI Reference](/docs/reference/cli): `run` vs. `simulate` and every flag.

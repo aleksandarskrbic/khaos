@@ -1,0 +1,16 @@
+{
+  "title": "Guides",
+  "pages": [
+    "kafka-load-testing",
+    "kafka-data-generation",
+    "kafka-traffic-generation",
+    "testing-kafka-consumers",
+    "consumer-lag-testing",
+    "hot-partition-testing",
+    "rebalance-testing",
+    "broker-failure-testing",
+    "testing-kafka-streams-applications",
+    "testing-flink-with-kafka",
+    "ci-cd-integration"
+  ]
+}

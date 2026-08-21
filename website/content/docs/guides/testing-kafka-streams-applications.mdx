@@ -1,0 +1,69 @@
+---
+title: Testing Kafka Streams Applications with Khaos
+description: Use Khaos to generate realistic input traffic and failure conditions for testing Kafka Streams applications end-to-end.
+---
+
+A Kafka Streams application is, from Kafka's point of view, a consumer (and often a producer) like
+any other. Khaos doesn't know anything about Kafka Streams specifically. It doesn't inspect your
+topology or your state stores, but that's exactly what makes it useful here: it generates
+realistic input traffic and failure conditions on the input topics your Streams app reads from, and
+you watch how the app itself behaves.
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run --no-consumers --keep-cluster streams-input.yaml" }]}
+/>
+
+## The pattern
+
+1. Point a Khaos scenario's topics at the same names your Streams application's `StreamsBuilder`
+   reads from.
+2. Run with `--no-consumers` so Khaos only produces: your Streams app is the consumer, not a
+   Khaos-managed one.
+3. Add `--keep-cluster` if you want the local cluster to stay up between runs while you iterate.
+4. Point your Streams app's `bootstrap.servers` at the same cluster (`khaos cluster-status` shows
+   the address) and watch its own metrics/output topics respond to the traffic.
+
+```yaml
+name: streams-input
+topics:
+  - name: clickstream
+    partitions: 12
+    num_producers: 3
+    producer_rate: 5000
+    message_schema:
+      key_distribution: uniform
+      fields:
+        - name: user_id
+          type: string
+          cardinality: 10000
+        - name: event_type
+          type: enum
+          values: [page_view, click, purchase]
+        - name: timestamp
+          type: timestamp
+```
+
+## What this is good for
+
+- **Windowed aggregations under realistic key cardinality.** `key_cardinality` controls how many
+  distinct keys (and therefore how many distinct windows/state store entries) your topology has to
+  track concurrently. Set it to something representative of production, not a handful of test
+  keys.
+- **Repartition and rebalance behavior.** Combine with a [rebalance scenario](/docs/guides/rebalance-testing)
+  to see how a Streams app's own internal consumer groups (including repartition topics) recover.
+- **Backpressure and state store growth under sustained load.** Run a [load test](/docs/guides/kafka-load-testing)
+  against your input topics for long enough to see whether RocksDB-backed state stores and
+  changelog topics behave as expected under real volume, not just a quick smoke test.
+
+## What this doesn't cover
+
+Khaos generates the Kafka-facing traffic; it has no visibility into your topology's internal state,
+so it can't assert on your Streams application's output correctness by itself. That's still your
+application's own tests and output-topic assertions. Khaos's role is producing realistic,
+repeatable input conditions to run those assertions against.
+
+## Related
+
+- [Kafka Traffic Generation](/docs/guides/kafka-traffic-generation): key distributions and realistic key cardinality.
+- [Kafka Load Testing](/docs/guides/kafka-load-testing): sustained load for state-store/backpressure testing.
+- [Testing Flink with Kafka](/docs/guides/testing-flink-with-kafka): the same pattern for Flink.

@@ -1,0 +1,53 @@
+---
+title: Hot Partitions
+description: The bundled traffic/hot-partition scenario, reproducing a skewed Kafka key distribution that overloads a single partition.
+---
+
+<KafkaPartitions
+  topic="user-events"
+  rate="key_distribution: zipfian"
+  partitions={[
+    { name: "partition-0", value: 15200, hot: true },
+    { name: "partition-1", value: 2100 },
+    { name: "partition-2", value: 1800 },
+    { name: "partition-3", value: 2400 },
+  ]}
+/>
+
+`traffic/hot-partition` demonstrates two distinct ways a key distribution creates a hot partition:
+
+```yaml
+topics:
+  - name: user-events
+    partitions: 12
+    consumers_per_group: 3
+    producer_rate: 1000
+    message_schema:
+      key_distribution: zipfian
+      key_cardinality: 100
+
+  - name: transactions
+    partitions: 12
+    consumers_per_group: 3
+    producer_rate: 500
+    message_schema:
+      key_distribution: single_key
+      key_cardinality: 1
+```
+
+- **`user-events`** uses `zipfian`: a small number of keys receive disproportionately more
+  traffic, the way a real "power user" or "popular product" key distribution behaves.
+- **`transactions`** uses `single_key`: every message shares one literal key, so every message
+  lands on the same partition. It's the most extreme case, useful for confirming your consumers
+  and dashboards actually surface a fully saturated single partition rather than averaging it away
+  across the topic.
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run traffic/hot-partition" }]}
+/>
+
+## Related
+
+- [Hot Partition Testing](/docs/guides/hot-partition-testing): the full guide.
+- [Data Skew / Partition Imbalance](/docs/scenarios/data-skew): a structural imbalance, not a key-distribution one.
+- [Scenario File Reference](/docs/reference/scenario-file#message-schema): `key_distribution` and `key_cardinality`.

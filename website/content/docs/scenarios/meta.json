@@ -1,0 +1,11 @@
+{
+  "title": "Scenarios",
+  "pages": [
+    "consumer-lag",
+    "hot-partitions",
+    "consumer-rebalances",
+    "broker-failures",
+    "high-throughput",
+    "data-skew"
+  ]
+}

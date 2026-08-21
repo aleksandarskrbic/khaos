@@ -1,0 +1,49 @@
+---
+title: High Throughput
+description: The bundled traffic/high-throughput scenario, a straightforward Kafka load test tuned for sustained throughput.
+---
+
+`traffic/high-throughput` runs two topics, each with 2 producers and 2 consumers, tuned for
+throughput rather than latency:
+
+```yaml
+topics:
+  - name: orders
+    partitions: 6
+    num_producers: 2
+    consumers_per_group: 2
+    producer_rate: 1000
+    consumer_delay_ms: 0
+    producer_config:
+      batch_size: 32768
+      linger_ms: 10
+      acks: "1"
+      compression_type: lz4
+
+  - name: events
+    partitions: 6
+    num_producers: 2
+    consumers_per_group: 2
+    producer_rate: 1000
+    consumer_delay_ms: 0
+    producer_config:
+      batch_size: 32768
+      linger_ms: 10
+      acks: "1"
+      compression_type: lz4
+```
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run traffic/high-throughput" }]}
+/>
+
+Compared to Khaos's defaults (`batch_size: 16384`, `linger_ms: 5`), this scenario doubles the batch
+size and doubles `linger_ms`: larger batches, fewer requests. `consumer_delay_ms: 0` means
+consumers process as fast as they can rather than simulating downstream work, so this scenario
+isolates producer/broker/consumer throughput from any artificial slowdown.
+
+## Related
+
+- [Kafka Load Testing](/docs/guides/kafka-load-testing): the full guide to tuning throughput.
+- [Configuration Reference](/docs/reference/configuration#producer): what `batch_size`, `linger_ms`, and `acks` actually trade off.
+- [Consumer Lag](/docs/scenarios/consumer-lag): what happens when throughput outpaces consumers.

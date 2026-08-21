@@ -1,0 +1,91 @@
+---
+title: Configuration Reference
+description: How Khaos's producer and consumer configuration keys map to real Kafka client behavior, and what each tradeoff actually does.
+---
+
+This page explains what `producer_config` and `consumer_config` actually do underneath. For the
+plain key/type/default table, see the [Scenario File Reference](/docs/reference/scenario-file#producer-config).
+
+## Producer
+
+```yaml
+producer_config:
+  batch_size: 32768
+  linger_ms: 10
+  acks: "1"
+  compression_type: lz4
+  duplicate_rate: 0.0
+```
+
+**`acks`** controls both durability and, indirectly, throughput. `acks: "0"` doesn't wait for a
+broker response at all. `acks: "1"` (the default) waits for the partition leader only.
+`acks: "all"` waits for the full in-sync replica set, and Khaos only enables idempotent production
+when `acks: "all"` is set. Below `all`, idempotency is off and the in-flight-requests-per-broker
+cap is raised to 5 (rather than the client default of 1), because capping in-flight requests at 1
+without idempotency collapses throughput roughly fivefold. If you're specifically load testing
+producer throughput, `acks: "1"` with the default in-flight cap is usually what you want;
+`acks: "all"` is what you want when you're testing what happens under a broker failure with
+[`stop_broker`](/docs/reference/scenario-file#incidents).
+
+**`batch_size`** caps how many bytes a single produce request can carry. Note this is a
+per-request cap here, not the per-partition accumulation budget it is in `librdkafka`-based
+clients, so the numbers don't translate directly if you're used to `librdkafka`'s
+`batch.size`. **`linger_ms`** is how long Khaos waits to fill a batch before sending it anyway.
+Raising it trades a little latency for larger batches and fewer requests, which is generally what
+you want for a [load test](/docs/guides/kafka-load-testing) and generally not what you want when
+reproducing latency-sensitive traffic.
+
+**`compression_type`** (`none`, `gzip`, `snappy`, `lz4`, `zstd`) trades producer/consumer CPU for
+network and disk. `lz4` (the default) is a reasonable default for most load tests; `none` is useful
+when you specifically want to measure uncompressed throughput or CPU headroom.
+
+**`duplicate_rate`** (0–1) resends an identical key+value immediately after the original with that
+probability. It's how Khaos reproduces duplicate-delivery conditions for testing consumer
+idempotency, not a network-level retry simulation. See the `testing/duplicate-messages.yaml`
+scenario.
+
+## Consumer
+
+```yaml
+consumer_config:
+  failure_rate: 0.05
+  commit_failure_rate: 0.0
+  on_failure: dlq
+  max_retries: 3
+```
+
+**`failure_rate`** is the probability a consumer fails to process a given message; combined with
+**`on_failure`**, that decides what happens next:
+
+- `skip` (default): drop it and move on.
+- `retry`: reprocess up to `max_retries` times before giving up.
+- `dlq`: publish it to `{topic}-dlq` with an envelope carrying the original topic/partition/offset
+  and the error, then move on. Khaos does not create the `-dlq` topic itself, so it must already
+  exist or your cluster needs `auto.create.topics.enable=true`.
+
+**`commit_failure_rate`** is independent of `failure_rate`. It simulates the offset commit itself
+failing after a message was otherwise processed successfully, which exercises a different code
+path in a consumer than a processing failure does (reprocessing on next poll vs. handling a caught
+processing exception).
+
+Setting either failure rate above zero switches that consumer to manual offset commits. With no
+failure simulation, Khaos uses auto-commit like a typical consumer application would.
+
+`consumer_delay_ms` (a topic-level key, not part of `consumer_config`) adds artificial per-message
+processing time. It's how [consumer lag](/docs/guides/consumer-lag-testing) gets reproduced
+without needing a consumer that's actually doing expensive work.
+
+## Fixed, non-configurable consumer group behavior
+
+A few consumer group settings are fixed rather than exposed per scenario, because the chaos
+scenarios that exercise rebalances depend on them: session timeout is 45s, rebalance timeout
+(`max.poll.interval.ms`) is 5 minutes, and group assignment uses eager `Range`/`RoundRobin`
+balancers rather than cooperative-sticky. Eager rebalancing is disruptive by design, which is what
+makes [rebalance testing](/docs/guides/rebalance-testing) meaningful. `auto.offset.reset` is always
+`latest`.
+
+## Next
+
+- [Scenario File Reference](/docs/reference/scenario-file): the full schema these keys live in.
+- [Kafka Load Testing](/docs/guides/kafka-load-testing): putting these together for a load test.
+- [Testing Kafka Consumers](/docs/guides/testing-kafka-consumers): failure/DLQ/retry in practice.

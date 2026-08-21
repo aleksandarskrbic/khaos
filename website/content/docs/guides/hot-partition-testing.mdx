@@ -1,0 +1,71 @@
+---
+title: Hot Partition Testing with Khaos
+description: Simulate a Kafka hot partition with skewed key distributions to test consumer throughput, alerting, and partitioning strategy with Khaos.
+---
+
+A hot partition happens when Kafka's key-to-partition mapping is technically correct but
+practically unbalanced: one key (or a small set of keys) gets so much more traffic than the rest
+that the single consumer reading that partition becomes the bottleneck for the whole topic, no
+matter how many other consumers sit idle on lightly-loaded partitions.
+
+<KafkaPartitions
+  topic="user-events"
+  rate="key_distribution: zipfian"
+  partitions={[
+    { name: "partition-0", value: 15200, hot: true },
+    { name: "partition-1", value: 2100 },
+    { name: "partition-2", value: 1800 },
+    { name: "partition-3", value: 2400 },
+  ]}
+/>
+
+## Reproducing it with `key_distribution`
+
+Khaos gives you two ways to force this on purpose instead of waiting for a real "popular product"
+or "power user" key to show up in production:
+
+```yaml
+message_schema:
+  key_distribution: zipfian
+  key_cardinality: 100
+```
+
+`zipfian` skews traffic across `key_cardinality` keys with a fixed exponent, a realistic
+power-law distribution and the kind you'd actually see from real user or entity IDs.
+
+```yaml
+message_schema:
+  key_distribution: single_key
+```
+
+`single_key` is the maximal case: every message uses the same literal key, so the entire topic's
+traffic lands on one partition. `key_cardinality` is ignored. Useful for confirming your consumer,
+your dashboard, and your alerting all correctly surface "one partition is fully saturated" rather
+than diluting it into a topic-wide average that looks fine.
+
+The bundled `traffic/hot-partition` scenario runs both at once, on separate topics, so you can
+compare the skewed case against the extreme case in one run:
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run traffic/hot-partition" }]}
+/>
+
+## What to look for
+
+- **Per-partition throughput and lag**, not just the topic-wide total: a healthy topic-wide
+  average can hide one saturated partition. Khaos's live dashboard and `--lag-poll` both report
+  broker-committed lag, which is real per-partition truth, not an average.
+- **Consumer parallelism that can't help.** Adding more consumers to the group doesn't fix a hot
+  partition: only one consumer in a group can ever read a given partition at a time, so the
+  bottleneck stays exactly where it was regardless of `consumers_per_group`.
+- **Whether your partitioning key choice is the actual problem.** If a scenario built around
+  `zipfian` reproduces the same pattern you're seeing in production, that's a strong signal to
+  reconsider the partitioning key itself (composite keys, salting a hot key) rather than trying to
+  scale consumers around it.
+
+## Related
+
+- [Kafka Traffic Generation](/docs/guides/kafka-traffic-generation): all four key distributions.
+- [Data Skew / Partition Imbalance](/docs/scenarios/data-skew): a structural imbalance, not a key-distribution one.
+- [Kafka Load Testing](/docs/guides/kafka-load-testing): partitioning and throughput together.
+- [Hot Partitions scenario](/docs/scenarios/hot-partitions): the full bundled scenario file.

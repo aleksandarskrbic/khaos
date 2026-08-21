@@ -1,0 +1,66 @@
+---
+title: Broker Failures
+description: The bundled chaos/broker-chaos and chaos/leadership-churn scenarios, stopping and restarting Kafka brokers on a schedule while traffic keeps flowing.
+---
+
+Two bundled scenarios cover broker failure: a repeated stop/start cycle, and a single
+leadership-churn event on a larger topic.
+
+## Repeated broker cycling
+
+`chaos/broker-chaos` stops and restarts the same broker three times, 60 seconds apart, using an
+[incident group](/docs/reference/scenario-file#incident-groups):
+
+```yaml
+incidents:
+  - group:
+      repeat: 3
+      interval_seconds: 60
+      incidents:
+        - type: stop_broker
+          at_seconds: 0
+          broker: kafka-1
+        - type: start_broker
+          at_seconds: 30
+          broker: kafka-1
+```
+
+## Single leadership churn event
+
+`chaos/leadership-churn` stops one broker at T+45s and restarts it at T+75s, against a larger
+12-partition topic, enough partitions that leadership actually has somewhere to move to:
+
+```yaml
+topics:
+  - name: critical-events
+    partitions: 12
+    producer_config:
+      acks: "all"
+
+incidents:
+  - type: stop_broker
+    at_seconds: 45
+    broker: kafka-2
+  - type: start_broker
+    at_seconds: 75
+    broker: kafka-2
+```
+
+<Terminal
+  lines={[{ type: "command", text: "khaos run chaos/leadership-churn" }]}
+/>
+
+Both scenarios use `acks: "all"`: with full in-sync-replica acknowledgement, you can watch
+producers actually stall or retry while the in-sync replica set shrinks, rather than sailing
+through on leader-only acks.
+
+`stop_broker`/`start_broker` only work against [`khaos run`](/docs/reference/cli#khaos-run-scenario)'s local
+cluster, where Khaos controls the Docker containers named `kafka-1`/`kafka-2`/`kafka-3`. Against an
+external cluster ([`khaos simulate`](/docs/reference/external-clusters)), these incidents are
+reported as skipped rather than applied.
+
+## Related
+
+- [Broker Failure Testing](/docs/guides/broker-failure-testing): the full guide.
+- [Consumer Rebalances](/docs/scenarios/consumer-rebalances): a different failure mode.
+- [Scenario File Reference](/docs/reference/scenario-file#incidents): all incident types.
