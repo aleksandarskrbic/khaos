@@ -196,7 +196,10 @@ func TestSimulateCancellation(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if err != nil && !strings.Contains(err.Error(), "context canceled") {
+		// Cancellation can land while the engine is still in topic setup, where it
+		// surfaces through the net dialer as "operation was canceled" rather than
+		// "context canceled". Both are the clean outcome this test wants.
+		if err != nil && !strings.Contains(err.Error(), "canceled") {
 			t.Fatalf("unexpected error on cancel: %v", err)
 		}
 	case <-time.After(30 * time.Second):
