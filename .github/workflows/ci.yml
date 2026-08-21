@@ -2,79 +2,80 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, go-rewrite]
   pull_request:
-    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync --group dev
-
-      - name: Run ruff linter
-        run: uv run ruff check src tests
-
-      - name: Run ruff formatter check
-        run: uv run ruff format --check src tests
-
   test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13"]
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-go@v5
         with:
-          version: "latest"
+          go-version: '1.26'
+          cache: true
 
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l cmd internal)
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt'd:"; echo "$unformatted"; exit 1
+          fi
 
-      - name: Install dependencies
-        run: uv sync --group dev
+      - name: vet
+        run: go vet ./...
 
-      - name: Run tests with coverage
-        run: uv run pytest -m "not integration" --cov=src/khaos --cov-report=xml --cov-report=term-missing
+      # Tests need no Docker: kfake provides an in-process broker speaking the real
+      # Kafka protocol, so the whole engine is exercised in CI.
+      - name: test
+        run: go test -race -timeout 15m ./...
 
-      - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.12'
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
+      # The static binary is the product; prove it builds the way it ships.
+      - name: build static binary
+        env:
+          CGO_ENABLED: '0'
+        run: go build -trimpath -ldflags "-s -w" -o /tmp/khaos ./cmd/khaos
 
-  typecheck:
+      - name: smoke test
+        run: |
+          /tmp/khaos --version
+          /tmp/khaos list
+          /tmp/khaos validate traffic/high-throughput
+
+  vulncheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-go@v5
         with:
-          version: "latest"
+          go-version: '1.26'
+      # See DECISIONS.md D8: hamba/avro is archived and has a reported unpatched CVE.
+      # This job is expected to flag it until that decision is settled, so it does not
+      # fail the build.
+      - name: govulncheck
+        continue-on-error: true
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync --group dev
-
-      - name: Run ty
-        run: uv run ty check src/khaos
+  cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      # Trivial only because the Kafka client is pure Go. With cgo this job would need a
+      # C toolchain per target.
+      - name: build all targets
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            GOOS=${target%/*} GOARCH=${target#*/} go build -o /dev/null ./cmd/khaos
+            echo "ok $target"
+          done

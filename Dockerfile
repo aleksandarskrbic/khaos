@@ -1,25 +1,25 @@
-FROM python:3.11-slim
+# khaos is a pure-Go static binary, so the runtime image needs nothing but the binary
+# itself. That is the whole payoff of choosing franz-go over the cgo-based
+# confluent-kafka-go: CGO_ENABLED=0 with no C toolchain, and a scratch final image.
 
-WORKDIR /app
+FROM golang:1.26-alpine AS build
+WORKDIR /src
 
-# Install system dependencies for confluent-kafka
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    librdkafka-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Dependencies first so the module layer caches independently of source edits.
+COPY go.mod go.sum ./
+RUN go mod download
 
-# Install uv for faster package installation
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build \
+      -trimpath \
+      -ldflags "-s -w -X main.version=${VERSION}" \
+      -o /khaos ./cmd/khaos
 
-# Copy project files
-COPY pyproject.toml uv.lock ./
-COPY src/ src/
-COPY scenarios/ scenarios/
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /khaos /khaos
 
-# Install dependencies and the package
-RUN uv sync --frozen --no-dev
-
-# Set entrypoint to khaos CLI
-ENTRYPOINT ["uv", "run", "khaos"]
-
-# Default command (show help)
-CMD ["--help"]
+# Scenarios and the compose files are embedded in the binary, so no assets are copied.
+# Mount your own scenario with -v and pass its path, or use a bundled name.
+USER nonroot:nonroot
+ENTRYPOINT ["/khaos"]

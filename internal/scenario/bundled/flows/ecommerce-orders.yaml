@@ -1,0 +1,81 @@
+name: ecommerce-orders
+description: "E-commerce order events with realistic fake data"
+
+topics:
+  - name: orders
+    partitions: 6
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 3
+    producer_rate: 100
+
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 1000
+      fields:
+        - name: order_id
+          type: uuid
+        - name: customer_name
+          type: faker
+          provider: name
+        - name: customer_email
+          type: faker
+          provider: email
+        - name: amount
+          type: float
+          min: 10.0
+          max: 2000.0
+        - name: currency
+          type: enum
+          values: [USD, EUR, GBP]
+        - name: status
+          type: enum
+          values: [pending, confirmed, shipped, delivered, cancelled]
+        - name: item_count
+          type: int
+          min: 1
+          max: 10
+        - name: created_at
+          type: timestamp
+        - name: shipping_address
+          type: object
+          fields:
+            - name: street
+              type: faker
+              provider: street_address
+            - name: city
+              type: faker
+              provider: city
+            - name: country
+              type: faker
+              provider: country
+            - name: zip_code
+              type: faker
+              provider: postcode
+        - name: items
+          type: array
+          min_items: 1
+          max_items: 5
+          items:
+            type: object
+            fields:
+              - name: product_id
+                type: uuid
+              - name: name
+                type: faker
+                provider: word
+              - name: quantity
+                type: int
+                min: 1
+                max: 5
+              - name: price
+                type: float
+                min: 5.0
+                max: 500.0
+
+    producer_config:
+      batch_size: 16384
+      linger_ms: 10
+      acks: "all"
+      compression_type: lz4

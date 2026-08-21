@@ -4,8 +4,8 @@
   <p><strong>Kafka data generator and load testing tool</strong> - generate fake messages, simulate producers/consumers, and run chaos engineering scenarios</p>
 
   [![CI](https://github.com/aleksandarskrbic/khaos/actions/workflows/ci.yml/badge.svg)](https://github.com/aleksandarskrbic/khaos/actions/workflows/ci.yml)
-  [![PyPI](https://img.shields.io/pypi/v/khaos-cli.svg)](https://pypi.org/project/khaos-cli/)
-  [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+  [![Go Reference](https://pkg.go.dev/badge/github.com/aleksandarskrbic/khaos.svg)](https://pkg.go.dev/github.com/aleksandarskrbic/khaos)
+  [![Go Report Card](https://goreportcard.com/badge/github.com/aleksandarskrbic/khaos)](https://goreportcard.com/report/github.com/aleksandarskrbic/khaos)
   [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 </div>
 
@@ -52,6 +52,7 @@
   - [Consumer Failure Simulation](#consumer-failure-simulation)
 - [Kafka Cluster Details](#kafka-cluster-details)
 - [Running with Docker](#running-with-docker)
+- [Architecture](#architecture)
 - [License](#license)
 
 ## Use Cases
@@ -78,42 +79,42 @@
 
 ## Requirements
 
-- Python 3.11+
-- Docker and Docker Compose (for local cluster)
+- Docker and Docker Compose — only for the bundled local cluster. Running against an
+  existing cluster with `khaos simulate` needs nothing but the binary.
+
+khaos is a single static binary with no runtime dependencies.
 
 ## Installation
 
-### Using Homebrew (macOS/Linux)
+### Homebrew (macOS/Linux)
 
 ```bash
-brew install khaos
+brew install aleksandarskrbic/tap/khaos
 ```
 
-### Using uv (recommended)
+### Download a release
+
+Prebuilt binaries for linux/darwin/windows on amd64 and arm64 are attached to every
+[release](https://github.com/aleksandarskrbic/khaos/releases). Download, extract, put it
+on your PATH.
+
+### go install
 
 ```bash
-uv tool install khaos-cli
-
-# Add to PATH (if not already):
-uv tool update-shell
-
-# Or manually:
-export PATH="$HOME/.local/bin:$PATH"
+go install github.com/aleksandarskrbic/khaos/cmd/khaos@latest
 ```
 
-### Using pipx
+### Docker
 
 ```bash
-pipx install khaos-cli
+docker run --rm ghcr.io/aleksandarskrbic/khaos:latest \
+  simulate traffic/high-throughput --bootstrap-servers kafka:9092
 ```
 
-### Using pip
+Scenarios and the compose files are embedded in the binary, so the image carries nothing
+else and runs as a non-root user on `distroless/static`.
 
-```bash
-pip install khaos-cli
-```
-
-### Verify installation
+### Verify
 
 ```bash
 khaos --version
@@ -125,31 +126,26 @@ khaos --help
 ```bash
 git clone https://github.com/aleksandarskrbic/khaos.git
 cd khaos
-
-# Option 1: Use without installing globally (recommended for development)
-uv sync
-uv run khaos --help
-
-# Option 2: Install as global command
-uv tool install -e .
-export PATH="$HOME/.local/bin:$PATH"  # if not already in PATH
-khaos --help
+go build -o khaos ./cmd/khaos
+./khaos --help
 ```
 
-### Development Setup
+### Development
 
 ```bash
-# Clone and install dependencies
 git clone https://github.com/aleksandarskrbic/khaos.git
 cd khaos
-uv sync
 
-# Install pre-commit hooks
-uv run pre-commit install
-
-# Run all checks before committing (lint, format, test, typecheck)
+# gofmt, vet, tests and a static build
 ./scripts/check.sh
+
+# add -r for the race detector
+./scripts/check.sh -r
 ```
+
+Tests need no Docker: they run against
+[kfake](https://pkg.go.dev/github.com/twmb/franz-go/pkg/kfake), an in-process broker that
+speaks the real Kafka protocol, so the whole engine is exercised in CI.
 
 ## Quick Start
 
@@ -167,12 +163,19 @@ khaos run traffic/high-throughput
 Enable tab completion for commands, options, and scenarios:
 
 ```bash
-# Install completion (bash, zsh, fish, powershell)
-khaos --install-completion
+# zsh
+khaos completion zsh > "${fpath[1]}/_khaos"
 
-# Restart shell or reload config
-source ~/.zshrc  # or ~/.bashrc
+# bash
+khaos completion bash > /usr/local/etc/bash_completion.d/khaos
+
+# fish
+khaos completion fish > ~/.config/fish/completions/khaos.fish
+
+# then restart your shell
 ```
+
+Run `khaos completion --help` for powershell and per-shell details.
 
 Then use Tab to autocomplete:
 ```bash
@@ -196,6 +199,13 @@ khaos run --<TAB>      # → shows available options
 | `khaos validate` | Validate scenario YAML definitions |
 | `khaos run` | Run scenarios on local Docker cluster |
 | `khaos simulate` | Run scenarios on external Kafka cluster |
+| `khaos completion` | Emit a shell completion script |
+
+`khaos --version` (`-v`) prints the version; `khaos --help` (`-h`) works on every command.
+
+**Exit codes:** `0` success, `1` the command ran and failed (unreachable broker, invalid
+scenario, unknown scenario name), `2` the command was invoked wrongly (unknown flag,
+unknown command, no arguments at all).
 
 ### `run` vs `simulate`
 
@@ -246,6 +256,9 @@ khaos cluster-up
 # Start with ZooKeeper mode
 khaos cluster-up --mode zookeeper
 khaos cluster-up -m zookeeper
+
+# Also start Schema Registry (needed by the Avro/Protobuf scenarios)
+khaos cluster-up --schema-registry
 ```
 
 **Options:**
@@ -253,11 +266,15 @@ khaos cluster-up -m zookeeper
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--mode` | `-m` | `kraft` | Cluster mode: `kraft` or `zookeeper` |
+| `--schema-registry` | - | `false` | Also start Schema Registry on port 8081 |
 
 This starts:
 - 3 Kafka brokers (kafka-1, kafka-2, kafka-3)
 - ZooKeeper (only in zookeeper mode)
 - Kafka UI at http://localhost:8080
+- Schema Registry at http://localhost:8081 (only with `--schema-registry`)
+
+`cluster-up` is idempotent: running it against a cluster that is already up is a no-op.
 
 ---
 
@@ -266,29 +283,39 @@ This starts:
 Stop the Kafka cluster.
 
 ```bash
-# Stop cluster (keep data)
 khaos cluster-down
-
-# Stop cluster and remove all data volumes
-khaos cluster-down --volumes
 khaos cluster-down -v
 ```
 
 **Options:**
 
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--volumes` | `-v` | Remove data volumes |
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--volumes` | `-v` | `false` | Remove data volumes — **always on**, see below |
+| `--mode` | `-m` | `kraft` | Cluster mode: `kraft` or `zookeeper` |
+
+> **Data volumes are always removed.** `cluster-down` is a clean teardown: the next
+> `cluster-up` starts from an empty cluster. `--volumes`/`-v` is accepted so the Python
+> invocation keeps working, but it does not change anything — omitting it prints a
+> reminder rather than keeping the data. Schema Registry is torn down too whenever its
+> container is running, regardless of which mode the cluster was started in.
 
 ---
 
 ### `khaos cluster-status`
 
-Show the status of Kafka containers.
+Show the status of Kafka containers. Prints one row per compose service with its state and
+published port; if nothing is running it says so on stderr and exits `0`.
 
 ```bash
 khaos cluster-status
 ```
+
+**Options:**
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--mode` | `-m` | `kraft` | Cluster mode: `kraft` or `zookeeper` |
 
 ---
 
@@ -304,16 +331,24 @@ khaos list
 
 ### `khaos validate`
 
-Validate scenario YAML files for errors.
+Validate scenario YAML files for errors. Every problem in a file is reported at once, with
+a line number, rather than stopping at the first. Errors exit `1`; warnings alone exit `0`.
 
 ```bash
-# Validate all scenarios
+# Validate every bundled scenario
 khaos validate
 
-# Validate specific scenario(s)
+# Validate specific scenario(s), by bundled name or by path
 khaos validate traffic/high-throughput
 khaos validate traffic/consumer-lag traffic/hot-partition
+khaos validate ./my-scenario.yaml
 ```
+
+**Options:**
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--strict` | - | `false` | Also reject keys no khaos version has ever read (catches typos in field names) |
 
 ---
 
@@ -331,11 +366,26 @@ khaos run SCENARIO [SCENARIO...] [OPTIONS]
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--duration` | `-d` | `0` | Duration in seconds (0 = run until Ctrl+C) |
-| `--keep-cluster` | `-k` | `false` | Keep Kafka cluster running after scenario ends |
-| `--bootstrap-servers` | `-b` | `127.0.0.1:9092,...` | Kafka bootstrap servers |
+| `--duration` | `-d` | `0` | Duration in seconds, or a Go duration like `90s`/`10m` (0 = run until Ctrl+C) |
+| `--keep-cluster` | `-k` | `false` | Keep Kafka cluster running after scenario ends (honoured even when the scenario fails) |
+| `--bootstrap-servers` | `-b` | the local cluster's own | Override where traffic is sent; the local cluster is still started and stopped |
 | `--mode` | `-m` | `kraft` | Cluster mode: `kraft` or `zookeeper` |
 | `--no-consumers` | - | `false` | Disable built-in consumers (producer-only mode) |
+| `--skip-topic-creation` | - | `false` | Do not delete and recreate topics; missing ones are still created |
+| `--recreate-topics` | - | `true` | Delete and recreate topics before running, discarding their data (destructive) |
+| `--schema-registry-url` | - | - | Schema Registry URL (overrides the scenario's own `schema_registry:`) |
+| `--schema-registry-username` | - | - | Schema Registry basic-auth user — on Confluent Cloud, the **Schema Registry** API key |
+| `--schema-registry-password` | - | - | Schema Registry basic-auth password — on Confluent Cloud, the **Schema Registry** API secret |
+| `--schema-registry-token` | - | - | Schema Registry bearer token, instead of basic auth (mutually exclusive with the two above) |
+| `--schema-registry-ca-location` | - | - | Path to a CA certificate for the Schema Registry (requires an `https://` URL) |
+| `--schema-registry-cert-location` | - | - | Path to a client certificate for the Schema Registry (mTLS) |
+| `--schema-registry-key-location` | - | - | Path to the client private key for the Schema Registry (mTLS) |
+| `--seed` | - | `0` | Seed for generated data; 0 picks one and reports it |
+| `--lag-poll` | - | `0` | Poll the brokers for **real** consumer-group lag at this interval, e.g. `5s` (0 = off; the LAG column stays khaos's own produced−consumed count) |
+| `--tui` | - | `auto` | Terminal UI: `auto`, `on` or `off` |
+| `--log-json` | - | `false` | Emit structured JSON logs (for containers) |
+| `--log-level` | - | `info` | `debug`, `info`, `warn` or `error` |
+| `--metrics-addr` | - | - | Serve `/healthz` and `/metrics`, e.g. `:9090` |
 
 **Examples:**
 
@@ -376,6 +426,43 @@ khaos run traffic/high-throughput -m zookeeper
 khaos run traffic/high-throughput --no-consumers -k
 ```
 
+#### Real consumer-group lag (`--lag-poll`)
+
+By default the `LAG` column is **khaos's own arithmetic**: messages it produced minus
+messages its own consumers read. That is what the Python version reported, and it is what
+you still get if you change nothing. It is a self-report, not consumer lag — it is wrong
+the moment anything else produces to or consumes from the topic, it resets when khaos
+restarts, and it says nothing about whether the group is actually committing.
+
+`--lag-poll` turns on a slow background poller that asks the brokers the real question —
+committed offset versus log end offset, per consumer group — and shows the answer beside
+the self-report rather than instead of it:
+
+```bash
+khaos run traffic/consumer-lag --lag-poll 5s
+```
+
+```
+TOPIC                            PRODUCED     CONSUMED  LAG(SELF)  LAG(BROKER)
+orders                               1000          990         10          800
+  ├─ order-processors                                990                    800
+  └─ order-auditors                                  500                unknown
+payments                               50           50          0      unknown
+```
+
+- Both columns are shown so you can see them disagree. `LAG(SELF)` near zero with a large
+  `LAG(BROKER)` means khaos read the records but the group has not committed them (khaos
+  auto-commits every 5s); the reverse means something outside khaos is consuming.
+- `unknown` means *not measured*, never zero. Polling off, the group has not joined yet,
+  the poll timed out, or the cluster denies `DESCRIBE` on consumer groups — which
+  Confluent Cloud and Aiven frequently do. **A lag failure never fails the run**: the cell
+  reads `unknown`, the reason is logged once, and traffic carries on untouched.
+- The poller runs on its own timer, entirely off the produce/consume path. Each poll is
+  bounded by a timeout derived from the interval (1–10s), and a reading is dropped rather
+  than shown stale.
+- Sensible intervals are seconds, not milliseconds: each poll is a `DescribeGroups` +
+  `OffsetFetch` + `ListOffsets` round trip per group.
+
 ---
 
 ### `khaos simulate`
@@ -396,7 +483,7 @@ khaos simulate SCENARIO [SCENARIO...] [OPTIONS]
 | Option | Short | Required | Default | Description |
 |--------|-------|----------|---------|-------------|
 | `--bootstrap-servers` | `-b` | Yes | - | Kafka bootstrap servers |
-| `--duration` | `-d` | No | `0` | Duration in seconds (0 = run until Ctrl+C) |
+| `--duration` | `-d` | No | `0` | Duration in seconds, or a Go duration like `90s`/`10m` (0 = run until Ctrl+C) |
 | `--security-protocol` | - | No | `PLAINTEXT` | `PLAINTEXT`, `SSL`, `SASL_PLAINTEXT`, `SASL_SSL` |
 | `--sasl-mechanism` | - | No | - | `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512` |
 | `--sasl-username` | - | No | - | SASL username |
@@ -404,10 +491,23 @@ khaos simulate SCENARIO [SCENARIO...] [OPTIONS]
 | `--ssl-ca-location` | - | No | - | Path to CA certificate file |
 | `--ssl-cert-location` | - | No | - | Path to client certificate (mTLS) |
 | `--ssl-key-location` | - | No | - | Path to client private key (mTLS) |
-| `--ssl-key-password` | - | No | - | Password for encrypted private key |
-| `--skip-topic-creation` | - | No | `false` | Skip topic creation (topics already exist) |
+| `--ssl-key-password` | - | No | - | **Unsupported** — Go cannot read PKCS#8-encrypted keys. Passing it fails immediately with instructions; decrypt first: `openssl pkcs8 -nocrypt` |
+| `--skip-topic-creation` | - | No | `false` | Do not delete and recreate topics; missing ones are still created |
+| `--recreate-topics` | - | No | `true` | Delete and recreate topics before running, discarding their data (**destructive** — pass `--recreate-topics=false` against a cluster you care about) |
 | `--no-consumers` | - | No | `false` | Disable built-in consumers (producer-only mode) |
-| `--schema-registry-url` | - | No | - | Schema Registry URL for Avro/Protobuf schemas |
+| `--schema-registry-url` | - | No | - | Schema Registry URL; overrides the scenario's own `schema_registry:` |
+| `--schema-registry-username` | - | No | - | Schema Registry basic-auth user — on Confluent Cloud, the **Schema Registry** API key |
+| `--schema-registry-password` | - | No | - | Schema Registry basic-auth password — on Confluent Cloud, the **Schema Registry** API secret |
+| `--schema-registry-token` | - | No | - | Schema Registry bearer token, instead of basic auth (mutually exclusive with the two above) |
+| `--schema-registry-ca-location` | - | No | - | Path to a CA certificate for the Schema Registry (requires an `https://` URL) |
+| `--schema-registry-cert-location` | - | No | - | Path to a client certificate for the Schema Registry (mTLS) |
+| `--schema-registry-key-location` | - | No | - | Path to the client private key for the Schema Registry (mTLS) |
+| `--seed` | - | No | `0` | Seed for generated data; 0 picks one and reports it |
+| `--lag-poll` | - | No | `0` | Poll the brokers for **real** consumer-group lag at this interval, e.g. `5s` (0 = off; the LAG column stays khaos's own produced−consumed count). Needs `DESCRIBE` on the consumer groups |
+| `--tui` | - | No | `auto` | Terminal UI: `auto`, `on` or `off` |
+| `--log-json` | - | No | `false` | Emit structured JSON logs (for containers) |
+| `--log-level` | - | No | `info` | `debug`, `info`, `warn` or `error` |
+| `--metrics-addr` | - | No | - | Serve `/healthz` and `/metrics`, e.g. `:9090` |
 
 **Examples:**
 
@@ -481,16 +581,76 @@ khaos simulate traffic/high-throughput \
     --ssl-ca-location /path/to/ca.pem \
     --ssl-cert-location /path/to/client.pem \
     --ssl-key-location /path/to/client.key
-
-# With encrypted private key
-khaos simulate traffic/high-throughput \
-    --bootstrap-servers kafka.example.com:9093 \
-    --security-protocol SSL \
-    --ssl-ca-location /path/to/ca.pem \
-    --ssl-cert-location /path/to/client.pem \
-    --ssl-key-location /path/to/client.key \
-    --ssl-key-password keypassword
 ```
+
+If your private key is encrypted, decrypt it once up front — `--ssl-key-password` is
+rejected rather than silently ignored:
+
+```bash
+openssl pkcs8 -in client-encrypted.key -out client.key -nocrypt
+```
+
+#### Connecting to a secured Schema Registry
+
+Avro and Protobuf scenarios need a Schema Registry, and on a managed platform that
+registry has its **own** credentials, separate from the broker's. The Schema Registry
+flags are therefore independent of the `--sasl-*` and `--ssl-*` flags above: set both
+sets.
+
+> **The single most common mistake:** on Confluent Cloud the Schema Registry API key and
+> secret are **not** the Kafka cluster API key and secret. They are created on a different
+> page (Environment → Schema Registry → API keys), they look identical, and pasting the
+> Kafka pair gets you a `401`. khaos says so explicitly when the registry rejects a
+> request, and names the flag to check.
+
+Confluent Cloud, basic auth:
+
+```bash
+khaos simulate serialization/avro-example \
+    --bootstrap-servers pkc-xxxxx.eu-central-1.aws.confluent.cloud:9092 \
+    --security-protocol SASL_SSL \
+    --sasl-mechanism PLAIN \
+    --sasl-username "$KAFKA_API_KEY" \
+    --sasl-password "$KAFKA_API_SECRET" \
+    --schema-registry-url https://psrc-xxxxx.eu-central-1.aws.confluent.cloud \
+    --schema-registry-username "$SR_API_KEY" \
+    --schema-registry-password "$SR_API_SECRET"
+```
+
+A bearer token instead of basic auth (OAuth/OIDC gateways, Karapace behind an
+authenticating proxy). Passing a token *and* a username/password is rejected at startup
+rather than one being silently preferred:
+
+```bash
+khaos simulate serialization/avro-example \
+    --bootstrap-servers kafka.example.com:9092 \
+    --schema-registry-url https://schema-registry.example.com:8081 \
+    --schema-registry-token "$SR_TOKEN"
+```
+
+A registry behind a private CA, or one requiring a client certificate:
+
+```bash
+khaos simulate serialization/avro-example \
+    --bootstrap-servers kafka.example.com:9092 \
+    --schema-registry-url https://schema-registry.internal:8081 \
+    --schema-registry-ca-location /path/to/ca.pem \
+    --schema-registry-cert-location /path/to/client.pem \
+    --schema-registry-key-location /path/to/client.key
+```
+
+Notes:
+
+- The credentials are checked at startup: khaos calls the registry once before the
+  scenario begins, so a wrong key fails in a second instead of on the first message.
+- TLS files require an `https://` registry URL. A schemeless or `http://` URL connects in
+  the clear and the CA would be silently ignored, so khaos rejects the combination.
+- `--schema-registry-cert-location` and `--schema-registry-key-location` must be given
+  together, as must `--schema-registry-username` and `--schema-registry-password`.
+- Encrypted private keys are not supported here either; decrypt with the `openssl pkcs8`
+  command above.
+- Credentials on a command line end up in your shell history and in `ps`. Prefer
+  environment variables, as in the examples.
 
 ---
 
@@ -786,6 +946,9 @@ khaos simulate my-scenario \
     --bootstrap-servers kafka.example.com:9092 \
     --schema-registry-url https://schema-registry.example.com:8081
 ```
+
+If the registry requires credentials, see
+[Connecting to a secured Schema Registry](#connecting-to-a-secured-schema-registry).
 
 #### Protobuf
 
@@ -1215,11 +1378,17 @@ The Docker Compose setup creates:
 
 ## Running with Docker
 
-Run khaos as a Docker container to generate data against your external Kafka cluster without installing Python.
+Run khaos as a container against an external Kafka cluster. The image is
+`distroless/static` with just the binary in it -- scenarios and compose files are
+embedded, so nothing else is copied in, and it runs as a non-root user.
 
-### Build the Image
+### Pull or build
 
 ```bash
+# Published on every release
+docker pull ghcr.io/aleksandarskrbic/khaos:latest
+
+# Or build locally
 docker build -t khaos .
 ```
 
@@ -1259,6 +1428,13 @@ docker run --rm -v $(pwd)/certs:/certs \
 docker run --rm khaos simulate serialization/avro-example \
     --bootstrap-servers kafka.example.com:9092 \
     --schema-registry-url https://schema-registry.example.com:8081
+
+# With a secured Schema Registry (its credentials are separate from the broker's)
+docker run --rm khaos simulate serialization/avro-example \
+    --bootstrap-servers kafka.example.com:9092 \
+    --schema-registry-url https://psrc-xxxxx.eu-central-1.aws.confluent.cloud \
+    --schema-registry-username "$SR_API_KEY" \
+    --schema-registry-password "$SR_API_SECRET"
 ```
 
 ### Docker Compose Example
@@ -1271,13 +1447,45 @@ services:
       simulate traffic/high-throughput
       --bootstrap-servers kafka:9092
       --duration 300
+      --tui off
+      --log-json
     depends_on:
       - kafka
 ```
 
+`--tui` already resolves to `off` when stdout is not a terminal, which it is not under
+`docker run` without `-t`, so the flag is belt and braces. `--log-json` is the one worth
+adding: it turns the periodic progress line into structured JSON your log pipeline can
+parse. Add `--metrics-addr :9090` if you want `/healthz` and `/metrics` for a readiness
+probe.
+
 **Note:** Docker mode only supports `simulate` command (external clusters). The `run` command requires Docker-in-Docker which is not supported.
 
 ---
+
+## Architecture
+
+khaos is a single Go binary. The scenario engine is completely independent of any user
+interface: it exposes one read method, `Snapshot()`, and the terminal UI, the headless log
+loop and any future consumer all poll it. Nothing in the engine knows about terminals, so
+a headless run in a container behaves identically to an interactive one and a wedged UI
+cannot stall a scenario.
+
+```
+cmd/khaos/              CLI, flag wiring, TTY decision, signal handling
+internal/scenario/      domain model, YAML decode, validation, incidents
+internal/generate/      field/key/payload generators, correlated flows
+internal/codec/         JSON | Avro | Protobuf, with or without Schema Registry
+internal/kafka/         franz-go clients, SASL/TLS, admin operations
+internal/engine/        producers, consumers, scheduler, counters, Snapshot
+internal/localcluster/  Docker Compose control (compose files are embedded)
+internal/tui/           Bubble Tea UI -- imports the engine, never the reverse
+internal/telemetry/     structured logging, /healthz and /metrics
+```
+
+Kafka access is [franz-go](https://github.com/twmb/franz-go), which is pure Go. That is
+what makes `CGO_ENABLED=0`, cross-compilation to six targets, `go install` and a
+`distroless/static` image all work without a C toolchain.
 
 ## Keywords
 

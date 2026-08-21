@@ -1,0 +1,28 @@
+name: protobuf-no-registry
+description: Protobuf serialization without Schema Registry
+
+topics:
+  - name: events
+    partitions: 6
+    replication_factor: 3
+    num_producers: 2
+    producer_rate: 500
+    message_schema:
+      data_format: protobuf
+      key_distribution: uniform
+      key_cardinality: 100
+      fields:
+        - name: event_id
+          type: uuid
+        - name: event_type
+          type: enum
+          values:
+            - CLICK
+            - VIEW
+            - PURCHASE
+        - name: user_id
+          type: int
+          min: 1
+          max: 10000
+        - name: timestamp
+          type: timestamp

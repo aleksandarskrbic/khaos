@@ -1,18 +1,9 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
+# Build output
+/khaos
 dist/
-wheels/
-*.egg-info
-
-# Virtual environments
-.venv
 
 .idea
 .DS_Store
 
 # Coverage
-.coverage
-coverage.xml
-htmlcov/
+coverage.out

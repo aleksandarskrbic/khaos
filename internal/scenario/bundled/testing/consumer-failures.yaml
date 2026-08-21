@@ -1,0 +1,87 @@
+name: consumer-failures
+description: "Simulate consumer failures with Dead Letter Queue"
+
+topics:
+  - name: orders
+    partitions: 6
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 3
+    producer_rate: 200
+
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 100
+      fields:
+        - name: order_id
+          type: uuid
+        - name: customer_id
+          type: string
+          cardinality: 500
+        - name: amount
+          type: float
+          min: 10.0
+          max: 1000.0
+        - name: items
+          type: array
+          min_items: 1
+          max_items: 5
+          items:
+            type: object
+            fields:
+              - name: product_id
+                type: uuid
+              - name: quantity
+                type: int
+                min: 1
+                max: 10
+              - name: price
+                type: float
+                min: 5.0
+                max: 500.0
+
+    producer_config:
+      acks: "all"
+      compression_type: lz4
+
+    consumer_config:
+      failure_rate: 0.10          # 10% of messages fail processing
+      commit_failure_rate: 0.05   # 5% of commits fail
+      on_failure: dlq             # Send failed messages to orders-dlq topic
+
+  - name: payments
+    partitions: 6
+    replication_factor: 3
+    num_producers: 1
+    num_consumer_groups: 1
+    consumers_per_group: 2
+    producer_rate: 150
+
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 100
+      fields:
+        - name: payment_id
+          type: uuid
+        - name: order_id
+          type: uuid
+        - name: amount
+          type: float
+          min: 10.0
+          max: 5000.0
+        - name: status
+          type: enum
+          values: [pending, authorized, captured, failed, refunded]
+        - name: processor
+          type: enum
+          values: [stripe, paypal, square, adyen]
+
+    producer_config:
+      acks: "all"
+      compression_type: lz4
+
+    consumer_config:
+      failure_rate: 0.15          # 15% failure rate - payments are "flaky"
+      commit_failure_rate: 0.02
+      on_failure: dlq             # Send to payments-dlq

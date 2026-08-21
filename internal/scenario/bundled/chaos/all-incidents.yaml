@@ -1,0 +1,57 @@
+name: all-incidents
+description: "Test scenario covering all incident types"
+
+topics:
+  - name: test-events
+    partitions: 6
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 2
+    consumers_per_group: 2
+    producer_rate: 100
+    consumer_delay_ms: 10
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 20
+      min_size_bytes: 100
+      max_size_bytes: 200
+
+incidents:
+  # 1. Change producer rate (spike traffic)
+  - type: change_producer_rate
+    at_seconds: 10
+    rate: 500
+
+  # 2. Increase consumer delay (simulate slow processing)
+  - type: increase_consumer_delay
+    at_seconds: 20
+    delay_ms: 200
+
+  # 3. Pause consumers for 15 seconds
+  - type: pause_consumer
+    at_seconds: 30
+    duration_seconds: 15
+
+  # 4. Trigger consumer rebalance
+  - type: rebalance_consumer
+    at_seconds: 50
+
+  # 5. Stop a broker
+  - type: stop_broker
+    at_seconds: 60
+    broker: kafka-2
+
+  # 6. Start the broker back
+  - type: start_broker
+    at_seconds: 75
+    broker: kafka-2
+
+  # 7. Reduce producer rate back to normal
+  - type: change_producer_rate
+    at_seconds: 85
+    rate: 100
+
+  # 8. Reset consumer delay
+  - type: increase_consumer_delay
+    at_seconds: 90
+    delay_ms: 10

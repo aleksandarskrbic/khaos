@@ -1,0 +1,27 @@
+name: rebalance-storm
+description: "Rebalance storm incident (consumer join/leave every 20s)"
+
+topics:
+  - name: events
+    partitions: 6
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 3
+    producer_rate: 500
+    consumer_delay_ms: 5
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 50
+      min_size_bytes: 200
+      max_size_bytes: 500
+    producer_config:
+      batch_size: 16384
+      linger_ms: 5
+      acks: "1"
+      compression_type: lz4
+
+incidents:
+  - type: rebalance_consumer
+    every_seconds: 20
+    initial_delay_seconds: 15

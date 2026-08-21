@@ -1,0 +1,19 @@
+name: registry-provider
+description: Generate data from existing Schema Registry schemas (run avro-example or protobuf-example first to register schemas)
+
+schema_registry:
+  url: http://localhost:8081
+
+topics:
+  - name: orders
+    partitions: 6
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 2
+    producer_rate: 100
+    schema_provider: registry
+    subject_name: orders-value
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 100
