@@ -1,0 +1,30 @@
+name: leadership-churn
+description: "Leadership churn incident (broker stop/restart at T+45s)"
+
+topics:
+  - name: critical-events
+    partitions: 12
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 3
+    producer_rate: 500
+    consumer_delay_ms: 5
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 50
+      min_size_bytes: 200
+      max_size_bytes: 500
+    producer_config:
+      batch_size: 16384
+      linger_ms: 5
+      acks: "all"
+      compression_type: lz4
+
+incidents:
+  - type: stop_broker
+    at_seconds: 45
+    broker: kafka-2
+  - type: start_broker
+    at_seconds: 75
+    broker: kafka-2

@@ -1,0 +1,34 @@
+name: broker-chaos
+description: "Repeated broker stop/start cycles (3 times, 60s interval)"
+
+topics:
+  - name: events
+    partitions: 6
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 2
+    producer_rate: 500
+    consumer_delay_ms: 5
+    message_schema:
+      key_distribution: uniform
+      key_cardinality: 50
+      min_size_bytes: 200
+      max_size_bytes: 500
+    producer_config:
+      batch_size: 16384
+      linger_ms: 5
+      acks: "all"
+      compression_type: lz4
+
+incidents:
+  - group:
+      repeat: 3
+      interval_seconds: 60
+      incidents:
+        - type: stop_broker
+          at_seconds: 0
+          broker: kafka-1
+        - type: start_broker
+          at_seconds: 30
+          broker: kafka-1

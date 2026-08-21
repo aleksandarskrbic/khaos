@@ -1,0 +1,41 @@
+name: hot-partition
+description: "Hot partition scenario (skewed key distribution)"
+
+topics:
+  - name: user-events
+    partitions: 12
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 3
+    producer_rate: 1000
+    consumer_delay_ms: 5
+    message_schema:
+      key_distribution: zipfian
+      key_cardinality: 100
+      min_size_bytes: 200
+      max_size_bytes: 500
+    producer_config:
+      batch_size: 16384
+      linger_ms: 5
+      acks: "1"
+      compression_type: lz4
+
+  - name: transactions
+    partitions: 12
+    replication_factor: 3
+    num_producers: 2
+    num_consumer_groups: 1
+    consumers_per_group: 3
+    producer_rate: 500
+    consumer_delay_ms: 10
+    message_schema:
+      key_distribution: single_key
+      key_cardinality: 1
+      min_size_bytes: 500
+      max_size_bytes: 1000
+    producer_config:
+      batch_size: 16384
+      linger_ms: 5
+      acks: "all"
+      compression_type: lz4

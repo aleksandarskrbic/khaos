@@ -1,0 +1,91 @@
+version: 2
+
+project_name: khaos
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: khaos
+    main: ./cmd/khaos
+    binary: khaos
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+# Scenarios and compose files are embedded in the binary, so the image needs nothing else.
+dockers:
+  - image_templates:
+      - 'ghcr.io/aleksandarskrbic/khaos:{{ .Version }}-amd64'
+      - 'ghcr.io/aleksandarskrbic/khaos:latest-amd64'
+    dockerfile: Dockerfile
+    use: buildx
+    goarch: amd64
+    build_flag_templates:
+      - --platform=linux/amd64
+      - --build-arg=VERSION={{ .Version }}
+  - image_templates:
+      - 'ghcr.io/aleksandarskrbic/khaos:{{ .Version }}-arm64'
+      - 'ghcr.io/aleksandarskrbic/khaos:latest-arm64'
+    dockerfile: Dockerfile
+    use: buildx
+    goarch: arm64
+    build_flag_templates:
+      - --platform=linux/arm64
+      - --build-arg=VERSION={{ .Version }}
+
+docker_manifests:
+  - name_template: 'ghcr.io/aleksandarskrbic/khaos:{{ .Version }}'
+    image_templates:
+      - 'ghcr.io/aleksandarskrbic/khaos:{{ .Version }}-amd64'
+      - 'ghcr.io/aleksandarskrbic/khaos:{{ .Version }}-arm64'
+  - name_template: 'ghcr.io/aleksandarskrbic/khaos:latest'
+    image_templates:
+      - 'ghcr.io/aleksandarskrbic/khaos:latest-amd64'
+      - 'ghcr.io/aleksandarskrbic/khaos:latest-arm64'
+
+# NO `brews:` BLOCK ON PURPOSE.
+#
+# khaos is already in homebrew-core as `khaos` (Formula/k/khaos.rb), so `brew install
+# khaos` works today with no tap. Publishing a competing formula to a personal tap would
+# give users two different `khaos` packages and is strictly worse.
+#
+# The catch: that formula is a PYTHON formula. It builds a virtualenv from the PyPI sdist
+# and depends on python@3.14, librdkafka, libyaml, certifi and cryptography, with a
+# resource block per transitive dependency. Homebrew keeps it current by watching PyPI, so
+# the moment khaos stops publishing there it freezes at 0.7.1 and eventually gets
+# deprecated.
+#
+# Keeping `brew install khaos` alive therefore needs a PR to homebrew-core replacing that
+# formula with a Go one -- which is far smaller, since a static binary needs no runtime
+# dependencies at all. See RUNBOOK.md, "Homebrew".
