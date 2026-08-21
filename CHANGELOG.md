@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-08-21
+
+### Changed
+- **Complete rewrite in Go.** khaos is now a single static binary with all scenarios and
+  compose files embedded — no Python, no virtualenv, no librdkafka. The CLI surface
+  (commands, flags, shorthands, scenario YAML format) is unchanged.
+- **Redesigned live TUI**: bordered, responsive dashboard with per-topic message rates,
+  bytes and throughput sparkline, a progress bar against `-d`, colour-coded lag, nested
+  consumer-group rows, an events pane, and a summary table at the end of every run.
+- Cluster readiness is now verified with a real Kafka protocol probe instead of a TCP
+  dial, fixing failed first runs while brokers were still booting.
+
+### Added
+- `--lag-poll` — real consumer-group lag from the brokers, shown alongside the
+  self-reported figure.
+- `--tui auto|on|off`, `--log-json`, `--log-level`, `--metrics-addr` (Prometheus
+  `/metrics` + `/healthz`), `--seed` for reproducible data.
+- Schema Registry authentication: basic auth, bearer token and mTLS
+  (`--schema-registry-*` flags) for Confluent Cloud, Aiven and other secured registries.
+- `-d/--duration` accepts Go durations (`90s`, `10m`) as well as bare seconds.
+- Multi-arch Docker images at `ghcr.io/aleksandarskrbic/khaos`.
+
+### Removed
+- PyPI distribution. Install a release binary, `go install`, or use the Docker image.
+
 ## [0.7.1] - 2026-01-05
 
 ### Fixed
