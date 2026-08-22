@@ -7,8 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/table"
 	"github.com/aleksandarskrbic/khaos/internal/scenario"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -100,23 +98,7 @@ func newListCmd() *cobra.Command {
 				return categoryRank(categories[i]) < categoryRank(categories[j])
 			})
 
-			t := table.New().
-				Border(lipgloss.RoundedBorder()).
-				BorderStyle(styBorder).
-				BorderRow(false).
-				BorderColumn(false).
-				Width(tableWidth()).
-				Wrap(true).
-				// Cells carry no padding of their own, so without this the scenario name
-				// and its description butt straight up against each other.
-				StyleFunc(func(row, col int) lipgloss.Style {
-					pad := lipgloss.NewStyle().PaddingLeft(1).PaddingRight(2)
-					if row == table.HeaderRow {
-						return pad.Inherit(styHeader)
-					}
-					return pad
-				}).
-				Headers("SCENARIO", "DESCRIPTION")
+			t := newListTable("SCENARIO", "DESCRIPTION")
 
 			for i, cat := range categories {
 				if i > 0 {

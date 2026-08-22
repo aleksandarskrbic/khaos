@@ -111,5 +111,6 @@ func newRootCmd() *cobra.Command {
 		newClusterDownCmd(),
 		newClusterStatusCmd(),
 	)
+	setHelpStyle(root)
 	return root
 }
