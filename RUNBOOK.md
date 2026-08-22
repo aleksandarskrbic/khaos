@@ -536,33 +536,3 @@ without touching GitHub, and without pushing images.
 Bump the **major** version. `v1.0.0` is right: the CLI contract is preserved but the
 distribution, the partition placement of any given key, and the faker provider names all
 change. Anyone pinning `0.7.x` should not be dragged along silently.
-
----
-
-# 4. Homebrew
-
-`khaos` is in homebrew-core (`Formula/k/khaos.rb`, https://formulae.brew.sh/formula/khaos),
-built from Go source (`depends_on "go" => :build`, no Python/PyPI/librdkafka). `brew install
-khaos` gives the real build. Livecheck follows GitHub release tags, so BrewTestBot
-auto-bumps it on every future release with no action needed here.
-
-One standing invariant: the formula's test block asserts
-`shell_output("#{bin}/khaos list")` contains `"Available Scenarios"`.
-`cmd/khaos/list_contract_test.go` pins that string for exactly this reason — change it and
-the homebrew-core formula's own test breaks on the next release.
-
-No `brews:` block is needed in `.goreleaser.yaml` for this — see the comment there for why.
-
----
-
-# 5. What is left
-
-- The **PyPI package** (`khaos-cli`) stops being published. Consider a final `0.7.2` whose
-  description says the project moved to Go, so PyPI users are not stranded.
-- **`assets/demo.gif`** still shows the old Rich UI. `scripts/demo.tape` needs no edits —
-  every command in it still works — but the GIF should be re-recorded:
-  ```bash
-  cd scripts && vhs demo.tape && mv demo.gif ../assets/demo.gif
-  ```
-  Needs Docker up, since the tape runs `khaos run` and `cluster-status`.
-- **`DECISIONS.md`** — thirteen open questions, each with the exact file and line to change.
