@@ -8,10 +8,7 @@ This folder helps you test the Schema Registry integration manually.
 
 ```bash
 # From project root
-uv run khaos cluster-up
-
-# Start Schema Registry
-docker-compose -f docker/docker-compose.schema-registry.kraft.yml up -d
+./khaos cluster-up --schema-registry
 
 # Verify Schema Registry is running
 curl http://localhost:8081/subjects
@@ -41,7 +38,7 @@ curl http://localhost:8081/subjects/orders-value/versions/latest | jq
 
 ```bash
 # Use the built-in registry-provider scenario
-uv run khaos run serialization/registry-provider --duration 30
+./khaos run serialization/registry-provider --duration 30
 ```
 
 ## Files
@@ -64,6 +61,5 @@ uv run khaos run serialization/registry-provider --duration 30
 ## Cleanup
 
 ```bash
-docker-compose -f docker/docker-compose.schema-registry.kraft.yml down
-uv run khaos cluster-down
+./khaos cluster-down
 ```
