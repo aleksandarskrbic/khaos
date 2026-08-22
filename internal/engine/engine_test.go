@@ -346,6 +346,107 @@ func TestEventRingIsBounded(t *testing.T) {
 	}
 }
 
+// f64Ptr is the *float64 equivalent of intPtr, for Field.Min/Max.
+func f64Ptr(v float64) *float64 { return &v }
+
+// impossibleCardinalityField asks for more distinct values than its value space can
+// supply: an int in [0,5] has 6 possible values, but cardinality demands 100. Without
+// generate.BoundFillAttempts wired into the engine's generator construction, filling
+// this field's distinct-value cache loops forever with no error and no output -- see D17
+// in DECISIONS.md.
+func impossibleCardinalityField() scenario.Field {
+	return scenario.Field{
+		Name:        "n",
+		Type:        scenario.FieldInt,
+		Min:         f64Ptr(0),
+		Max:         f64Ptr(5),
+		Cardinality: intPtr(100),
+	}
+}
+
+// runWithDeadline calls fn in a goroutine and fails the test if it does not return
+// within d, so a regression that reintroduces the impossible-cardinality hang fails the
+// test suite fast instead of hanging CI forever.
+func runWithDeadline(t *testing.T, d time.Duration, fn func() error) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- fn() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(d):
+		t.Fatalf("did not return within %s: an impossible cardinality is hanging construction again", d)
+		return nil
+	}
+}
+
+// TestBuildTopicRejectsImpossibleCardinality guards D17: a topic whose field schema
+// asks for an unreachable cardinality must fail engine construction with a diagnosable
+// error, not hang.
+func TestBuildTopicRejectsImpossibleCardinality(t *testing.T) {
+	addrs := newFakeCluster(t)
+
+	tp := jsonTopic("impossible-cardinality")
+	tp.MessageSchema.Fields = []scenario.Field{impossibleCardinalityField()}
+
+	sc := &scenario.Scenario{
+		Name:   "impossible",
+		Topics: []scenario.Topic{tp},
+	}
+
+	err := runWithDeadline(t, 5*time.Second, func() error {
+		_, err := New(context.Background(), Config{
+			Kafka:     kafka.Config{BootstrapServers: addrs},
+			Scenarios: []*scenario.Scenario{sc},
+			Seed:      1,
+		})
+		return err
+	})
+	if err == nil {
+		t.Fatal("New succeeded with an impossible field cardinality")
+	}
+	if !strings.Contains(err.Error(), "n") || !strings.Contains(err.Error(), "cardinality") {
+		t.Errorf("error does not diagnose the offending field: %v", err)
+	}
+}
+
+// TestBuildFlowRejectsImpossibleCardinality is TestBuildTopicRejectsImpossibleCardinality
+// for the flow-step path (internal/engine/flow.go's buildFlow), which builds its own
+// generator independently of buildTopic's.
+func TestBuildFlowRejectsImpossibleCardinality(t *testing.T) {
+	addrs := newFakeCluster(t)
+
+	sc := &scenario.Scenario{
+		Name: "impossible-flow",
+		// Declared explicitly (rather than left for setupTopics to invent from
+		// flowTopicReplicationFactor) so this test doesn't need a 3-broker fake cluster.
+		Topics: []scenario.Topic{jsonTopic("impossible-flow-topic")},
+		Flows: []scenario.Flow{{
+			Name: "f",
+			Rate: 1,
+			Steps: []scenario.FlowStep{{
+				Topic:  "impossible-flow-topic",
+				Fields: []scenario.Field{impossibleCardinalityField()},
+			}},
+		}},
+	}
+
+	err := runWithDeadline(t, 5*time.Second, func() error {
+		_, err := New(context.Background(), Config{
+			Kafka:     kafka.Config{BootstrapServers: addrs},
+			Scenarios: []*scenario.Scenario{sc},
+			Seed:      1,
+		})
+		return err
+	})
+	if err == nil {
+		t.Fatal("New succeeded with an impossible field cardinality in a flow step")
+	}
+	if !strings.Contains(err.Error(), "n") || !strings.Contains(err.Error(), "cardinality") {
+		t.Errorf("error does not diagnose the offending field: %v", err)
+	}
+}
+
 // valueFuncForTest builds the payload generator without a codec, for the fieldless path.
 func valueFuncForTest(t scenario.Topic, rnd *rand.Rand) (func() ([]byte, error), error) {
 	raw := generate.NewRawJSONGen(t.MessageSchema, rnd)

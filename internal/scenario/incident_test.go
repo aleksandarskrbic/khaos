@@ -124,8 +124,7 @@ func TestRebalanceConsumerCommands(t *testing.T) {
 			GroupID:           "payments-group-1",
 			Topics:            []string{"orders"},
 			ProcessingDelayMS: 25,
-			// No Conf: the replacement is rebuilt from only group_id and
-			// processing_delay_ms.
+			Conf:              c.Conf,
 		},
 		EmitEvent{Message: ">>> Consumer c1 rejoined group", Level: EventWarn},
 	}
@@ -134,10 +133,11 @@ func TestRebalanceConsumerCommands(t *testing.T) {
 	}
 }
 
-// Pins that a replacement consumer is rebuilt from only group_id and
-// processing_delay_ms, discarding failure-simulation config and reverting to model
-// defaults.
-func TestRebalanceConsumerDropsFailureConfig(t *testing.T) {
+// Pins that a replacement consumer carries the victim's failure-simulation config
+// (failure_rate, commit_failure_rate, on_failure, max_retries) into the CreateConsumer
+// it's rebuilt from, instead of silently reverting to model defaults partway through a
+// rebalance storm -- see DECISIONS.md D16.
+func TestRebalanceConsumerCarriesFailureConfig(t *testing.T) {
 	c := consumer("c1", "orders", "g1")
 	c.Conf = ConsumerConf{
 		FailureRate:       0.25,
@@ -150,8 +150,8 @@ func TestRebalanceConsumerDropsFailureConfig(t *testing.T) {
 
 	for _, cmd := range got {
 		if cc, ok := cmd.(CreateConsumer); ok {
-			if !reflect.DeepEqual(cc.Conf, ConsumerConf{}) {
-				t.Errorf("replacement carried failure config %#v; recreation must drop it", cc.Conf)
+			if !reflect.DeepEqual(cc.Conf, c.Conf) {
+				t.Errorf("replacement Conf = %#v, want the victim's %#v", cc.Conf, c.Conf)
 			}
 			return
 		}
