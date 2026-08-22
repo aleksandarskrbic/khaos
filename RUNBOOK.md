@@ -539,41 +539,19 @@ change. Anyone pinning `0.7.x` should not be dragged along silently.
 
 ---
 
-# 4. Homebrew — DONE
+# 4. Homebrew
 
-`brew install khaos` now installs the Go rewrite. The PR replacing the Python virtualenv
-formula (`Formula/k/khaos.rb` in `homebrew-core`) with a Go build merged; the formula
-(https://formulae.brew.sh/formula/khaos) is Go-based as of stable `0.8.0`, with a single
-`depends_on "go" => :build` and no Python, librdkafka, or pinned PyPI resource blocks left.
+`khaos` is in homebrew-core (`Formula/k/khaos.rb`, https://formulae.brew.sh/formula/khaos),
+built from Go source (`depends_on "go" => :build`, no Python/PyPI/librdkafka). `brew install
+khaos` gives the real build. Livecheck follows GitHub release tags, so BrewTestBot
+auto-bumps it on every future release with no action needed here.
 
-Livecheck now follows GitHub release tags instead of the PyPI URL, so BrewTestBot keeps
-auto-bumping the formula on every future release exactly as it did before — with no
-pinned dependency resources left to go stale, so the periodic "bump python resources"
-churn is gone too.
+One standing invariant: the formula's test block asserts
+`shell_output("#{bin}/khaos list")` contains `"Available Scenarios"`.
+`cmd/khaos/list_contract_test.go` pins that string for exactly this reason — change it and
+the homebrew-core formula's own test breaks on the next release.
 
-## Standing invariant: the formula's test block
-
-The formula's test block asserts:
-
-```ruby
-assert_match "Available Scenarios", shell_output("#{bin}/khaos list")
-```
-
-`khaos list` must keep printing that heading with the category grouping intact, or the
-homebrew-core formula's own test starts failing on the next release. `cmd/khaos/list_contract_test.go`
-pins this string for exactly that reason — it is not obvious from the code alone that a
-Homebrew formula depends on it.
-
-## Why there is no `brews:` block in .goreleaser.yaml
-
-GoReleaser can publish a formula to a personal tap (`aleksandarskrbic/homebrew-tap`), and
-an earlier version of this config did exactly that. Two problems: **that tap does not
-exist** (the release would have failed), and it would create a *second* `khaos` formula
-competing with the homebrew-core one. Being in homebrew-core is strictly better. The block
-is removed and the reasoning recorded in the file.
-
-If you ever do want a tap — for pre-releases, say — create the `homebrew-tap` repo first,
-then add the block back with a personal access token in `HOMEBREW_TAP_TOKEN`.
+No `brews:` block is needed in `.goreleaser.yaml` for this — see the comment there for why.
 
 ---
 

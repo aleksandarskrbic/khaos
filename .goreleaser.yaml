@@ -74,16 +74,7 @@ docker_manifests:
 
 # NO `brews:` BLOCK ON PURPOSE.
 #
-# khaos is already in homebrew-core as `khaos` (Formula/k/khaos.rb), so `brew install
-# khaos` works today with no tap. Publishing a competing formula to a personal tap would
-# give users two different `khaos` packages and is strictly worse.
-#
-# The catch: that formula is a PYTHON formula. It builds a virtualenv from the PyPI sdist
-# and depends on python@3.14, librdkafka, libyaml, certifi and cryptography, with a
-# resource block per transitive dependency. Homebrew keeps it current by watching PyPI, so
-# the moment khaos stops publishing there it freezes at 0.7.1 and eventually gets
-# deprecated.
-#
-# Keeping `brew install khaos` alive therefore needs a PR to homebrew-core replacing that
-# formula with a Go one -- which is far smaller, since a static binary needs no runtime
-# dependencies at all. See RUNBOOK.md, "Homebrew".
+# khaos is already in homebrew-core as `khaos` (Formula/k/khaos.rb), built from Go source
+# (`depends_on "go" => :build`, no Python/PyPI/librdkafka), so `brew install khaos` works
+# today with no tap. Publishing a competing formula to a personal tap would give users two
+# different `khaos` packages and is strictly worse. See RUNBOOK.md, "Homebrew".
