@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hamba/avro/v2"
 	"github.com/twmb/franz-go/pkg/sr"
 
 	"github.com/aleksandarskrbic/khaos/internal/scenario"
@@ -89,15 +88,11 @@ func newAvroCodec(ctx context.Context, t scenario.Topic, fields []scenario.Field
 		return nil, err
 	}
 
-	parsed, err := parseAvro(text)
+	c, err := newAvroCodecFromSchema(text, fr)
 	if err != nil {
-		return nil, fmt.Errorf("codec: parse avro schema for topic %q: %w", t.Name, err)
+		return nil, fmt.Errorf("codec: avro schema for topic %q: %w", t.Name, err)
 	}
-	record, ok := parsed.(*avro.RecordSchema)
-	if !ok {
-		return nil, fmt.Errorf("codec: avro schema for topic %q is %s, want a record", t.Name, parsed.Type())
-	}
-	return &avroCodec{schema: parsed, record: record, frame: fr}, nil
+	return c, nil
 }
 
 // newProtoCodec compiles the schema and resolves any registry id, then returns

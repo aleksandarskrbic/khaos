@@ -332,9 +332,9 @@ func (e *Engine) buildTopic(ctx context.Context, scenarioName string, t scenario
 	// One codec per topic, shared by every producer on it. Unlike the generators, a
 	// codec.Codec is safe to share: New resolves the schema text, the parsed descriptor
 	// and the registry id once, and each Encode only reads them (jsonCodec is a stateless
-	// value, avroCodec holds an immutable *avro.RecordSchema, protoCodec builds a fresh
-	// dynamicpb message per call). Building one per producer would instead mean one
-	// registry registration per producer.
+	// value, avroCodec holds an immutable *goavro.Codec plus its schema tree, protoCodec
+	// builds a fresh dynamicpb message per call). Building one per producer would instead
+	// mean one registry registration per producer.
 	cdc, err := codec.New(ctx, t, reg)
 	if err != nil {
 		return fmt.Errorf("codec: %w", err)
