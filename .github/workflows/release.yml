@@ -36,5 +36,6 @@ jobs:
         env:
           # GITHUB_TOKEN is provided automatically by Actions. No other secret is needed:
           # binaries and checksums go to this repo's Releases, and the container image goes
-          # to ghcr.io using the same token. Homebrew is handled separately -- see RUNBOOK.md.
+          # to ghcr.io using the same token. Homebrew is handled separately -- khaos is
+          # already in homebrew-core, see .goreleaser.yaml.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

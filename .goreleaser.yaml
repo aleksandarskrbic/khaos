@@ -77,4 +77,4 @@ docker_manifests:
 # khaos is already in homebrew-core as `khaos` (Formula/k/khaos.rb), built from Go source
 # (`depends_on "go" => :build`, no Python/PyPI/librdkafka), so `brew install khaos` works
 # today with no tap. Publishing a competing formula to a personal tap would give users two
-# different `khaos` packages and is strictly worse. See RUNBOOK.md, "Homebrew".
+# different `khaos` packages and is strictly worse.

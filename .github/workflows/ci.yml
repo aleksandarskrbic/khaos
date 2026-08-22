@@ -53,9 +53,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-      # See DECISIONS.md D8: hamba/avro is archived and has a reported unpatched CVE.
-      # This job is expected to flag it until that decision is settled, so it does not
-      # fail the build.
+      # Reports vulnerabilities in required modules even when the code path that would
+      # call them is unreachable, so it does not fail the build on its own.
       - name: govulncheck
         continue-on-error: true
         run: |

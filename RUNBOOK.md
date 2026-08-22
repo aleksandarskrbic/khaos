@@ -361,7 +361,7 @@ server {
 }
 EOF
 
-docker run -d --rm --name sr-auth --network docker_kafka-net -p 8082:8082 \
+docker run -d --rm --name sr-auth --network khaos_kafka-net -p 8082:8082 \
   -v /tmp/khaos-sr.conf:/etc/nginx/conf.d/default.conf:ro \
   -v /tmp/khaos-sr.htpasswd:/etc/nginx/htpasswd:ro \
   nginx:alpine
@@ -455,10 +455,9 @@ docker ps            # no kafka-* containers
 docker volume ls     # no khaos_* volumes either
 ```
 
-**Expect:** a `note: cluster-down always removes data volumes` line on stderr, then
-`cluster stopped`. Schema Registry goes down with it if step 8 started it. `--volumes`/`-v`
-is accepted for compatibility with the Python CLI but changes nothing — the volumes go
-either way.
+**Expect:** `Kafka cluster stopped`. Schema Registry goes down with it if step 8 started it.
+Data volumes are kept by default; pass `--volumes`/`-v` to remove them too — though none of
+the bundled compose files declare a volume, so `docker volume ls` shows nothing either way.
 
 ## Step 12 — the container image
 
