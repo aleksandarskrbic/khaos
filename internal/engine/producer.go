@@ -3,11 +3,12 @@ package engine
 import (
 	"context"
 	"errors"
-	"math"
 	"math/rand/v2"
 	"sync/atomic"
 
 	"github.com/aleksandarskrbic/khaos/internal/scenario"
+	"github.com/aleksandarskrbic/khaos/internal/telemetry"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"golang.org/x/time/rate"
 )
@@ -39,13 +40,16 @@ type Producer struct {
 	topicC *counters
 	events *eventRing
 
+	// Prometheus counters resolved once at construction (WithLabelValues per message
+	// would mean a map lookup under lock on every send). Nil when Config.Metrics is nil,
+	// checked before every use.
+	promGenerated  prometheus.Counter
+	promBytes      prometheus.Counter
+	promProduceErr prometheus.Counter
+
 	// inflight tracks records handed to the client but not yet acknowledged, so
 	// shutdown can report whether the flush actually drained.
 	inflight atomic.Int64
-
-	// configuredRate holds the most recent rate requested by an incident, as float64
-	// bits. Stored but not applied unless LiveProducerRateChanges is set.
-	configuredRate atomic.Uint64
 }
 
 type producerOpts struct {
@@ -59,10 +63,11 @@ type producerOpts struct {
 	rnd       *rand.Rand
 	topicC    *counters
 	events    *eventRing
+	metrics   *telemetry.Metrics
 }
 
 func newProducer(o producerOpts) *Producer {
-	return &Producer{
+	p := &Producer{
 		ID:        o.id,
 		Topic:     o.topic,
 		client:    o.client,
@@ -75,6 +80,12 @@ func newProducer(o producerOpts) *Producer {
 		topicC:    o.topicC,
 		events:    o.events,
 	}
+	if o.metrics != nil {
+		p.promGenerated = o.metrics.GeneratedMessages.WithLabelValues(o.topic)
+		p.promBytes = o.metrics.GeneratedBytes.WithLabelValues(o.topic)
+		p.promProduceErr = o.metrics.ProduceErrors.WithLabelValues(o.topic)
+	}
+	return p
 }
 
 // newLimiter builds a rate limiter for a target messages-per-second.
@@ -90,31 +101,16 @@ func newLimiter(perSecond float64) *rate.Limiter {
 	return rate.NewLimiter(rate.Limit(perSecond), 1)
 }
 
-// SetRate records a new target rate.
-//
-// It does NOT retune the running producer by default: the configured value is stored so
-// it is visible, but the limiter itself is untouched.
-//
-// Set LiveProducerRateChanges to make the change_producer_rate incident actually retune
-// the running producer.
+// SetRate retunes the running producer to a new target rate, live. Relies on the
+// per-producer limiter above so a targeted rate change retunes only the targeted
+// producer, not every producer on its topic.
 func (p *Producer) SetRate(perSecond float64) {
-	p.configuredRate.Store(math.Float64bits(perSecond))
-	if !LiveProducerRateChanges {
-		return
-	}
 	if perSecond <= 0 {
 		p.limiter.SetLimit(rate.Inf)
 		return
 	}
 	p.limiter.SetLimit(rate.Limit(perSecond))
 }
-
-// LiveProducerRateChanges makes change_producer_rate take effect on a running producer.
-//
-// false leaves the incident a no-op; true is the intent of the three shipped scenarios
-// that use it. Turning this on relies on the per-producer rate state above so a targeted
-// rate change retunes only the targeted producer, not every producer on its topic.
-var LiveProducerRateChanges = false
 
 // Rate reports the current target rate, with +Inf meaning unlimited.
 func (p *Producer) Rate() float64 { return float64(p.limiter.Limit()) }
@@ -134,6 +130,9 @@ func (p *Producer) Run(ctx context.Context) error {
 		if err != nil {
 			p.stats.produceErr.Add(1)
 			p.topicC.produceErr.Add(1)
+			if p.promProduceErr != nil {
+				p.promProduceErr.Inc()
+			}
 			return err
 		}
 		var key []byte
@@ -179,12 +178,19 @@ func (p *Producer) produce(ctx context.Context, key, value []byte) {
 			}
 			p.stats.produceErr.Add(1)
 			p.topicC.produceErr.Add(1)
+			if p.promProduceErr != nil {
+				p.promProduceErr.Inc()
+			}
 			return
 		}
 		p.stats.sent.Add(1)
 		p.stats.bytes.Add(size)
 		p.topicC.sent.Add(1)
 		p.topicC.bytes.Add(size)
+		if p.promGenerated != nil {
+			p.promGenerated.Inc()
+			p.promBytes.Add(float64(size))
+		}
 	})
 }
 

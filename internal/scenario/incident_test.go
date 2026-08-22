@@ -117,7 +117,7 @@ func TestRebalanceConsumerCommands(t *testing.T) {
 
 	want := []Command{
 		EmitEvent{Message: ">>> REBALANCE #5: Closing consumer c1", Level: EventAlert},
-		IncrementRebalanceCount{},
+		IncrementRebalanceCount{GroupID: "payments-group-1"},
 		StopConsumer{ID: "c1"},
 		Delay{Seconds: 3},
 		CreateConsumer{
@@ -236,10 +236,12 @@ func TestSelectConsumers(t *testing.T) {
 		{"by group", ConsumerTarget{Group: "g1"}, []ID{"c0", "c2"}},
 		{"topic and group compose", ConsumerTarget{Topic: "payments", Group: "g2"}, []ID{"c3"}},
 		{"no match", ConsumerTarget{Topic: "nonexistent"}, []ID{}},
-		// indices is accepted but IGNORED: the incident widens to every candidate
-		// instead of the ones named.
-		{"indices ignored", ConsumerTarget{Indices: []int{0, 2}}, []ID{"c0", "c1", "c2", "c3"}},
-		{"indices ignored alongside topic", ConsumerTarget{Topic: "payments", Indices: []int{2}}, []ID{"c2", "c3"}},
+		// Indices index into ctx.Consumers (registration order), not the topic/group-
+		// filtered subset -- so it composes with topic/group as another AND'd predicate.
+		{"by indices", ConsumerTarget{Indices: []int{0, 2}}, []ID{"c0", "c2"}},
+		{"indices compose with topic", ConsumerTarget{Topic: "payments", Indices: []int{2}}, []ID{"c2"}},
+		{"indices excluding the topic match", ConsumerTarget{Topic: "payments", Indices: []int{0}}, []ID{}},
+		{"out-of-range index matches nothing", ConsumerTarget{Indices: []int{99}}, []ID{}},
 	}
 
 	for _, tt := range tests {
@@ -301,5 +303,10 @@ func TestSelectProducers(t *testing.T) {
 	one := selectProducers(testCtx(nil, all, 0), ProducerTarget{Count: &n})
 	if len(one) != 1 {
 		t.Errorf("got %d producers, want 1", len(one))
+	}
+
+	byIndices := selectProducers(testCtx(nil, all, 0), ProducerTarget{Indices: []int{0, 2}})
+	if len(byIndices) != 2 || byIndices[0].ID != "p0" || byIndices[1].ID != "p2" {
+		t.Errorf("got %v, want [p0 p2]", byIndices)
 	}
 }
