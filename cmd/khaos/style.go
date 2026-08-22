@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 	"github.com/aleksandarskrbic/khaos/internal/theme"
 	"golang.org/x/term"
 )
@@ -46,4 +47,24 @@ func style(s lipgloss.Style) lipgloss.Style {
 		return lipgloss.NewStyle()
 	}
 	return s
+}
+
+// newListTable is the shared bordered two-column table look for `khaos list` and
+// `khaos help`.
+func newListTable(headers ...string) *table.Table {
+	return table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(styBorder).
+		BorderRow(false).
+		BorderColumn(false).
+		Width(tableWidth()).
+		Wrap(true).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			pad := lipgloss.NewStyle().PaddingLeft(1).PaddingRight(2)
+			if row == table.HeaderRow {
+				return pad.Inherit(styHeader)
+			}
+			return pad
+		}).
+		Headers(headers...)
 }
