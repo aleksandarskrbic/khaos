@@ -1,0 +1,37 @@
+name: Website CI
+
+on:
+  pull_request:
+    paths:
+      - "website/**"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: website
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SITE_URL: https://getkhaos.dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run build
+
+      # Catches breakage specific to the Cloudflare Worker build, not just the plain Next.js build.
+      - name: build Cloudflare Worker bundle
+        run: npx opennextjs-cloudflare build

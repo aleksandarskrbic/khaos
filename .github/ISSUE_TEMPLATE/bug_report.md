@@ -19,8 +19,7 @@ What you expected to happen.
 
 **Environment**
 - OS: [e.g. macOS 14, Ubuntu 22.04]
-- Python: [e.g. 3.12]
-- khaos version: [e.g. 0.1.0]
+- khaos version: [output of `khaos --version`]
 
 **Additional context**
 Any other context, logs, or screenshots.

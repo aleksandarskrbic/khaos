@@ -1,0 +1,39 @@
+name: Deploy Website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: website
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SITE_URL: https://getkhaos.dev
+      # Not ambiguous for this account (single Cloudflare account on the token), so this
+      # is a plain env var rather than a secret.
+      CLOUDFLARE_ACCOUNT_ID: 75e65e168a9fd5e42ab6534a244147a7
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - run: npm ci
+
+      - name: Deploy to Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm run deploy
