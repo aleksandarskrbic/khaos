@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install the Khaos CLI via go install, a prebuilt release binary, Docker, or from source.
+description: Install the Khaos CLI via Homebrew, go install, a prebuilt release binary, Docker, or from source.
 ---
 
 Khaos ships as a single static binary with no runtime dependencies. Docker is only required if you
@@ -52,9 +52,13 @@ managed local cluster.
 
 ## Homebrew
 
-`khaos` exists in homebrew-core, but as of this writing that formula still builds the earlier
-Python implementation, not the Go rewrite described in these docs: the Go build isn't published to
-Homebrew yet. Until it is, use `go install`, a release binary, or Docker instead of `brew install`.
+<Terminal
+  lines={[
+    { type: "command", text: "brew install khaos" },
+  ]}
+/>
+
+`khaos` is in homebrew-core, built directly from Go source with no runtime dependencies.
 
 ## Verify
 
