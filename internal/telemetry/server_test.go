@@ -224,8 +224,11 @@ func TestUnknownPathIs404(t *testing.T) {
 	}
 }
 
-// A nil registry means "no metrics", not a nil-pointer dereference on the first scrape:
-// cmd/khaos passes nil today (cmd/khaos/run.go), so this is the shipped configuration.
+// A nil registry means "no metrics", not a nil-pointer dereference on the first scrape.
+// cmd/khaos only builds a registry when --metrics-addr is set (cmd/khaos/run.go), and
+// NewServer itself is called unconditionally elsewhere behind that same flag, so this
+// path is reachable only in isolation here -- worth pinning regardless, since "no
+// registry" is a legitimate way to embed Server outside the CLI.
 func TestNilRegistryServesHealthzButNotMetrics(t *testing.T) {
 	base, _ := startServer(t, NewServer("127.0.0.1:0", nil, nil))
 

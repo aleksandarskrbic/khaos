@@ -135,11 +135,12 @@ optional `initial_delay_seconds` applied before that schedule starts.
 | `pause_consumer` | `duration_seconds` | Pauses matched consumers, then resumes them. They stay in the consumer group. |
 | `rebalance_consumer` | - | Closes one matched consumer (a real group departure) and replaces it, which triggers a genuine rebalance. The replacement reverts to default `failure_rate`/`on_failure`/etc., not the original config. |
 | `increase_consumer_delay` | `delay_ms` | Sets a new artificial per-message processing delay on matched consumers, live. |
-| `change_producer_rate` | `rate` | Records a new target rate on matched producers. |
+| `change_producer_rate` | `rate` | Retunes matched producers to a new target rate, live. |
 
 Optional `target:` narrows which producers/consumers an incident applies to: `topic`, `group` (or
-`group_id`), and one of `percentage` (1–100) or `count`. An `indices` list is accepted by
-validation but not currently consulted when selecting targets. It does not narrow the selection.
+`group_id`), and one of `percentage` (1–100), `count`, or `indices`. `indices` selects by position
+in registration order (the order topics and their producers/consumers are declared in), and
+composes with `topic`/`group` as an additional filter rather than replacing them.
 
 ## Incident groups
 

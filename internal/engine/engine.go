@@ -13,6 +13,7 @@ import (
 	"github.com/aleksandarskrbic/khaos/internal/generate"
 	"github.com/aleksandarskrbic/khaos/internal/kafka"
 	"github.com/aleksandarskrbic/khaos/internal/scenario"
+	"github.com/aleksandarskrbic/khaos/internal/telemetry"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -78,6 +79,12 @@ type Config struct {
 	LagPoll time.Duration
 
 	Logger *slog.Logger
+
+	// Metrics is where per-message Prometheus counters are recorded, keyed by topic and
+	// group as telemetry.Metrics defines. Nil disables it entirely -- every call site
+	// checks before touching it, so an engine built without --metrics-addr pays nothing
+	// beyond the nil check.
+	Metrics *telemetry.Metrics
 }
 
 // Engine owns a run: every producer, consumer, the incident scheduler, and the counters
@@ -192,6 +199,7 @@ func New(ctx context.Context, cfg Config) (*Engine, error) {
 		brokers: brokers,
 		create:  e.recreateConsumer,
 		rnd:     rand.New(rand.NewPCG(seed, seed>>1)),
+		metrics: cfg.Metrics,
 	}
 
 	admin, err := kafka.NewAdmin(cfg.Kafka)
@@ -363,6 +371,7 @@ func (e *Engine) buildTopic(ctx context.Context, scenarioName string, t scenario
 			rnd:       rnd,
 			topicC:    stats,
 			events:    e.events,
+			metrics:   e.cfg.Metrics,
 		}))
 	}
 
@@ -438,6 +447,7 @@ func (e *Engine) addConsumer(groupID, topic string, topics []string, delayMS int
 		topicC:  stats,
 		events:  e.events,
 		dlq:     dlq,
+		metrics: e.cfg.Metrics,
 	})
 	e.reg.addConsumer(c)
 	return c, nil

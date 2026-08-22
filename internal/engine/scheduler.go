@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aleksandarskrbic/khaos/internal/scenario"
+	"github.com/aleksandarskrbic/khaos/internal/telemetry"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -53,6 +54,7 @@ type scheduler struct {
 	brokers BrokerController
 	create  consumerFactory
 	rnd     *rand.Rand
+	metrics *telemetry.Metrics
 
 	rebalances atomic.Int64
 
@@ -234,6 +236,9 @@ func (s *scheduler) applyOne(ctx context.Context, cmd scenario.Command) error {
 
 	case scenario.IncrementRebalanceCount:
 		s.rebalances.Add(1)
+		if s.metrics != nil && c.GroupID != "" {
+			s.metrics.Rebalances.WithLabelValues(c.GroupID).Inc()
+		}
 
 	case scenario.SetConsumerDelay:
 		if con, ok := s.reg.consumer(c.ID); ok {

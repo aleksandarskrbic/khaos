@@ -31,19 +31,18 @@ type Schedule struct {
 
 // ConsumerTarget selects which consumers an incident acts on.
 //
-// Filters compose: topic, then group, then a random subset by count or percentage. An
-// empty target matches everything.
+// Filters compose: topic, then group, then indices, then a random subset by count or
+// percentage. An empty target matches everything.
 type ConsumerTarget struct {
 	Topic      string `yaml:"topic"`
 	Group      string `yaml:"group"`
 	Percentage *int   `yaml:"percentage"`
 	Count      *int   `yaml:"count"`
 
-	// Indices is accepted but IGNORED: the validator checks this key, yet no code path
-	// reads it, so an incident carrying `indices` widens to every consumer rather than
-	// the ones named. scenarios/chaos/targeted-incidents.yaml:45 relies on this and
-	// therefore does not do what its comment says. Honouring it would be a behaviour
-	// change; to turn it on, add an Indices filter to selectConsumers.
+	// Indices selects candidates by their position in ctx.Consumers -- registration
+	// order across the whole run, not position within an already topic/group-filtered
+	// subset. It composes with Topic/Group as another AND'd predicate. Mutually
+	// exclusive with Percentage/Count at the YAML level (validate.go enforces this).
 	Indices []int `yaml:"indices"`
 }
 
@@ -53,7 +52,7 @@ type ProducerTarget struct {
 	Topic      string `yaml:"topic"`
 	Percentage *int   `yaml:"percentage"`
 	Count      *int   `yaml:"count"`
-	Indices    []int  `yaml:"indices"` // accepted and ignored, see ConsumerTarget.Indices
+	Indices    []int  `yaml:"indices"` // see ConsumerTarget.Indices
 }
 
 // ID is a stable opaque handle for one producer or consumer.
@@ -135,8 +134,8 @@ type SetProducerRate struct {
 	Rate float64
 }
 
-// IncrementRebalanceCount bumps the scenario's rebalance counter.
-type IncrementRebalanceCount struct{}
+// IncrementRebalanceCount bumps the scenario's rebalance counter for GroupID.
+type IncrementRebalanceCount struct{ GroupID string }
 
 // StopConsumers pauses consumers without tearing them down. Pause is its own
 // primitive, distinct from shutdown, and resuming unblocks the existing goroutine
@@ -204,15 +203,20 @@ type IncidentGroup struct {
 // Target selection
 // ---------------------------------------------------------------------------
 
-// selectConsumers applies target filters in order: topic, then group, then a random
-// subset by count or percentage. With no narrowing at all, every consumer matches.
+// selectConsumers applies target filters in order: topic, then group, then indices,
+// then a random subset by count or percentage. With no narrowing at all, every consumer
+// matches.
 func selectConsumers(ctx *Context, t ConsumerTarget) []ConsumerRef {
+	indices := indexSet(t.Indices)
 	candidates := make([]ConsumerRef, 0, len(ctx.Consumers))
-	for _, c := range ctx.Consumers {
+	for i, c := range ctx.Consumers {
 		if t.Topic != "" && c.Topic != t.Topic {
 			continue
 		}
 		if t.Group != "" && c.GroupID != t.Group {
+			continue
+		}
+		if indices != nil && !indices[i] {
 			continue
 		}
 		candidates = append(candidates, c)
@@ -220,17 +224,35 @@ func selectConsumers(ctx *Context, t ConsumerTarget) []ConsumerRef {
 	return narrow(ctx, candidates, t.Count, t.Percentage)
 }
 
-// selectProducers applies the same topic and count/percentage narrowing as
+// selectProducers applies the same topic, indices and count/percentage narrowing as
 // selectConsumers, minus the group filter producers don't have.
 func selectProducers(ctx *Context, t ProducerTarget) []ProducerRef {
+	indices := indexSet(t.Indices)
 	candidates := make([]ProducerRef, 0, len(ctx.Producers))
-	for _, p := range ctx.Producers {
+	for i, p := range ctx.Producers {
 		if t.Topic != "" && p.Topic != t.Topic {
+			continue
+		}
+		if indices != nil && !indices[i] {
 			continue
 		}
 		candidates = append(candidates, p)
 	}
 	return narrow(ctx, candidates, t.Count, t.Percentage)
+}
+
+// indexSet turns Indices into a membership set keyed by position in ctx.Consumers /
+// ctx.Producers (registration order), or nil when Indices is empty so the caller can
+// skip the filter entirely rather than matching nothing.
+func indexSet(indices []int) map[int]bool {
+	if len(indices) == 0 {
+		return nil
+	}
+	set := make(map[int]bool, len(indices))
+	for _, i := range indices {
+		set[i] = true
+	}
+	return set
 }
 
 // narrow applies the count/percentage subset rules.
@@ -363,7 +385,7 @@ func (i RebalanceConsumer) Commands(ctx *Context) []Command {
 			Message: fmt.Sprintf(">>> REBALANCE #%d: Closing consumer %s", ctx.RebalanceCount+1, victim.ID),
 			Level:   EventAlert,
 		},
-		IncrementRebalanceCount{},
+		IncrementRebalanceCount{GroupID: victim.GroupID},
 		StopConsumer{ID: victim.ID},
 		Delay{Seconds: 3},
 		CreateConsumer{
@@ -403,9 +425,7 @@ func (i IncreaseConsumerDelay) Commands(ctx *Context) []Command {
 	return cmds
 }
 
-// ChangeProducerRate retunes matching producers -- but by default the engine only
-// records the new target: a running producer keeps its old rate unless
-// engine.LiveProducerRateChanges is enabled.
+// ChangeProducerRate retunes matching producers to a new target rate, live.
 type ChangeProducerRate struct {
 	Rate     float64
 	Target   ProducerTarget

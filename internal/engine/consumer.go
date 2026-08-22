@@ -13,6 +13,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/aleksandarskrbic/khaos/internal/scenario"
+	"github.com/aleksandarskrbic/khaos/internal/telemetry"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -88,6 +90,11 @@ type Consumer struct {
 
 	// dlq is lazily created, and only when on_failure is "dlq".
 	dlq *dlqProducer
+
+	// Prometheus counters resolved once at construction, topic+group labelled. Nil when
+	// Config.Metrics is nil, checked before every use.
+	promConsumed   prometheus.Counter
+	promConsumeErr prometheus.Counter
 }
 
 type consumerOpts struct {
@@ -102,6 +109,7 @@ type consumerOpts struct {
 	topicC  *counters
 	events  *eventRing
 	dlq     *dlqProducer
+	metrics *telemetry.Metrics
 }
 
 func newConsumer(o consumerOpts) *Consumer {
@@ -119,6 +127,10 @@ func newConsumer(o consumerOpts) *Consumer {
 		dlq:     o.dlq,
 	}
 	c.delayMS.Store(int64(o.delayMS))
+	if o.metrics != nil {
+		c.promConsumed = o.metrics.ConsumedMessages.WithLabelValues(o.topic, o.groupID)
+		c.promConsumeErr = o.metrics.ConsumeErrors.WithLabelValues(o.topic, o.groupID)
+	}
 	return c
 }
 
@@ -162,6 +174,9 @@ func (c *Consumer) Run(ctx context.Context) error {
 			}
 			c.stats.consumeErr.Add(1)
 			c.topicC.consumeErr.Add(1)
+			if c.promConsumeErr != nil {
+				c.promConsumeErr.Inc()
+			}
 		})
 
 		fetches.EachRecord(func(rec *kgo.Record) {
@@ -183,6 +198,9 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) {
 	if !c.Conf.FailureSimulationEnabled() {
 		c.stats.consumed.Add(1)
 		c.topicC.consumed.Add(1)
+		if c.promConsumed != nil {
+			c.promConsumed.Inc()
+		}
 		return
 	}
 
@@ -219,6 +237,9 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) {
 
 	c.stats.consumed.Add(1)
 	c.topicC.consumed.Add(1)
+	if c.promConsumed != nil {
+		c.promConsumed.Inc()
+	}
 	c.maybeCommit(ctx, rec)
 }
 
@@ -247,6 +268,9 @@ func (c *Consumer) sendDLQ(ctx context.Context, rec *kgo.Record) {
 	if err := c.dlq.send(ctx, rec, "simulated processing failure"); err != nil {
 		c.stats.consumeErr.Add(1)
 		c.topicC.consumeErr.Add(1)
+		if c.promConsumeErr != nil {
+			c.promConsumeErr.Inc()
+		}
 		return
 	}
 	c.stats.dlq.Add(1)

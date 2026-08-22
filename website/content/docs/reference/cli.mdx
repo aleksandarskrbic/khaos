@@ -40,7 +40,7 @@ it isn't already running.
 | `--tui` | | `auto` | `auto`, `on`, or `off`. `auto` shows the live dashboard only on a real TTY (not in CI or with `TERM=dumb`). |
 | `--log-json` | | `false` | Emit structured JSON logs instead of text. |
 | `--log-level` | | `info` | `debug`, `info`, `warn`, `error`. |
-| `--metrics-addr` | | - | Serve `/healthz` on this address, e.g. `:9090`. |
+| `--metrics-addr` | | - | Serve `/healthz` and `/metrics` (Prometheus exposition format) on this address, e.g. `:9090`. |
 
 At least one scenario argument is required (`khaos list` to see the bundled ones).
 

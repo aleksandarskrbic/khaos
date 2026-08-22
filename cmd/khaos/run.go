@@ -18,6 +18,7 @@ import (
 	"github.com/aleksandarskrbic/khaos/internal/scenario"
 	"github.com/aleksandarskrbic/khaos/internal/telemetry"
 	"github.com/aleksandarskrbic/khaos/internal/tui"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -359,6 +360,15 @@ func execute(ctx context.Context, stdout, stderr io.Writer, names []string, kcfg
 		brokers = cluster
 	}
 
+	// A registry is only built when --metrics-addr is set: an idle Metrics struct nobody
+	// scrapes just adds a WithLabelValues call to every hot-path increment for nothing.
+	var metricsReg *prometheus.Registry
+	var metrics *telemetry.Metrics
+	if f.metricsAddr != "" {
+		metricsReg = prometheus.NewRegistry()
+		metrics = telemetry.NewMetrics(metricsReg)
+	}
+
 	ecfg := engine.Config{
 		Kafka:             kcfg,
 		Scenarios:         scenarios,
@@ -371,6 +381,7 @@ func execute(ctx context.Context, stdout, stderr io.Writer, names []string, kcfg
 		Registry:          f.registry(),
 		LagPoll:           f.lagPoll,
 		Logger:            logger,
+		Metrics:           metrics,
 	}
 
 	eng, err := engine.New(ctx, ecfg)
@@ -423,7 +434,7 @@ func execute(ctx context.Context, stdout, stderr io.Writer, names []string, kcfg
 
 	var srvDone chan struct{}
 	if f.metricsAddr != "" {
-		srv := telemetry.NewServer(f.metricsAddr, nil, eng.Healthy)
+		srv := telemetry.NewServer(f.metricsAddr, metricsReg, eng.Healthy)
 		srvDone = make(chan struct{})
 		go func() {
 			defer close(srvDone)
