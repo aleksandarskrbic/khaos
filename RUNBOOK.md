@@ -17,7 +17,7 @@ the Kafka client is pure Go.
 ## Build
 
 ```bash
-cd ~/PycharmProjects/khaos
+cd ~/GoProjects/khaos
 go build -o khaos ./cmd/khaos
 ./khaos --version
 ```
