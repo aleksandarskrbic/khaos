@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-08-22
+
+### Added
+- Project website at [getkhaos.dev](https://getkhaos.dev): landing page, getting-started
+  guide, scenario walkthroughs, and CLI/configuration reference docs, with search,
+  sitemap/robots/OG images and `llms.txt`, auto-deployed to Cloudflare Workers on every
+  merge to `main`.
+
+### Fixed
+- Replaced the archived `hamba/avro` dependency (unpatched CVE) with `linkedin/goavro/v2`.
+- The `--metrics-addr` Prometheus endpoint now serves real metrics instead of a stub;
+  `target.indices` is honored and producer rates retune live during a run.
+- Consumer failure configuration now survives a rebalance, and the field-value cardinality
+  fill loop is bounded.
+
+### Changed
+- Homebrew: khaos is now in homebrew-core (`brew install khaos`); docs updated to point
+  there instead of a personal tap.
+- Docs cleanup: `CONTRIBUTING.md` and `RUNBOOK.md` updated for the Go rewrite, stale
+  Python-era commands and dangling cross-references removed.
+
 ## [0.8.0] - 2026-08-21
 
 ### Changed

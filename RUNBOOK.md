@@ -529,9 +529,3 @@ The tag push triggers the workflow. Watch it under Actions.
 
 `--snapshot --clean` is the safe rehearsal: it does the whole build without needing a tag,
 without touching GitHub, and without pushing images.
-
-## First release after the rewrite
-
-Bump the **major** version. `v1.0.0` is right: the CLI contract is preserved but the
-distribution, the partition placement of any given key, and the faker provider names all
-change. Anyone pinning `0.7.x` should not be dragged along silently.
