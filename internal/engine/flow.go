@@ -192,7 +192,7 @@ func (f *flowRunner) emit(ctx context.Context, msgs []generate.FlowMessage) {
 
 // buildFlow constructs the runner for one flow.
 func (e *Engine) buildFlow(f scenario.Flow) error {
-	gen, err := generate.NewFlowGen(f, e.rngFor("flow", f.Name, 0))
+	gen, err := generate.NewFlowGen(f, e.rngFor("flow", f.Name, 0), generate.BoundFillAttempts(cardinalityFillAttempts))
 	if err != nil {
 		return fmt.Errorf("flow generator: %w", err)
 	}

@@ -1,41 +1,56 @@
 package codec
 
-import (
-	"time"
-
-	"github.com/hamba/avro/v2"
-)
-
-// coerceAvro walks a value alongside its writer schema and converts Go types
-// into the exact types hamba's encoder accepts.
+// coerceAvro walks a value alongside its writer schema (recovered from the
+// schema text as an avroSchemaNode tree, see parseAvroSchemaNode) and wraps
+// every union branch into goavro's native representation before
+// BinaryFromNative sees it.
 //
-// hamba rejects int64 for "int", float64 for "float" and string for "bytes"
-// outright. Generated khaos schemas only ever use long, double, string and
-// boolean so they are unaffected, but a registry-supplied schema routinely
-// uses the narrow types, and the generator has no idea which Avro type its
-// int field will land in.
+// Unlike hamba, goavro never auto-wraps or auto-unwraps unions: a union value
+// must be handed to BinaryFromNative as literal nil for the null branch, or as
+// map[string]interface{}{"branchName": value} for exactly one non-null
+// branch, where branchName is the branch's own Avro type name -- a primitive
+// type's name ("string", "long", ...), "array", "map", or a named type's full
+// name ("ns.Record"/"ns.Enum"/"ns.Fixed"). Passing a bare unwrapped value for
+// a non-null union branch is a hard encode error, so every nullable/union
+// field khaos generates or converts from a registry schema must be wrapped
+// here first.
 //
-// Anything unrecognised is passed through untouched so that hamba reports the
-// real type error rather than this function masking it.
-func coerceAvro(s avro.Schema, v any) any {
-	switch s := s.(type) {
-	case *avro.RefSchema:
-		return coerceAvro(s.Schema(), v)
-
-	case *avro.UnionSchema:
+// khaos's own generated schemas (avroTypeOf) never emit a union at all --
+// every field is required -- so this is a no-op walk for them. It only does
+// real work against a schema fetched from Schema Registry and used verbatim
+// (see resolveSchema in codec.go), which can be an arbitrary union.
+//
+// Per the verified goavro v2.15.0 behavior, no numeric/byte coercion is
+// needed here: unlike hamba, goavro accepts any Go numeric kind for
+// int/long/float/double and either string or []byte for string/bytes,
+// coercing internally. The one primitive it does not coerce is boolean (exact
+// Go bool only), but khaos's own generator already produces bool for a
+// boolean field, so there is nothing to convert there either.
+func coerceAvro(s avroSchemaNode, v any) any {
+	if len(s.union) > 0 {
 		if v == nil {
 			return nil
 		}
-		// The generator only ever produces the non-null branch, which is also
-		// the branch the registry converter derived the field type from.
-		for _, t := range s.Types() {
-			if t.Type() != avro.Null {
-				return coerceAvro(t, v)
+		for _, branch := range s.union {
+			if branch.typeName == "null" {
+				continue
 			}
+			if !avroValueFitsBranch(*branch, v) {
+				continue
+			}
+			key := branch.typeName
+			if branch.fullName != "" {
+				key = branch.fullName
+			}
+			return map[string]any{key: coerceAvro(*branch, v)}
 		}
+		// No branch's Go type family matched: let goavro report the real type
+		// mismatch rather than masking it here.
 		return v
+	}
 
-	case *avro.RecordSchema:
+	switch s.typeName {
+	case "record":
 		m, ok := v.(map[string]any)
 		if !ok {
 			return v
@@ -44,62 +59,78 @@ func coerceAvro(s avro.Schema, v any) any {
 		for k, e := range m {
 			out[k] = e
 		}
-		for _, f := range s.Fields() {
-			if e, ok := out[f.Name()]; ok {
-				out[f.Name()] = coerceAvro(f.Type(), e)
+		for _, f := range s.fields {
+			if e, ok := out[f.name]; ok {
+				out[f.name] = coerceAvro(*f.typ, e)
 			}
 		}
 		return out
 
-	case *avro.ArraySchema:
+	case "array":
 		items, ok := v.([]any)
-		if !ok {
+		if !ok || s.items == nil {
 			return v
 		}
 		out := make([]any, len(items))
 		for i, e := range items {
-			out[i] = coerceAvro(s.Items(), e)
+			out[i] = coerceAvro(*s.items, e)
 		}
 		return out
 
-	case *avro.MapSchema:
+	case "map":
 		m, ok := v.(map[string]any)
-		if !ok {
+		if !ok || s.values == nil {
 			return v
 		}
 		out := make(map[string]any, len(m))
 		for k, e := range m {
-			out[k] = coerceAvro(s.Values(), e)
+			out[k] = coerceAvro(*s.values, e)
 		}
 		return out
 	}
 
-	switch s.Type() {
-	case avro.Int:
-		if i, ok := toInt64(v); ok {
-			return int(i)
-		}
-	case avro.Long:
-		// A timestamp-millis long takes either epoch millis (what khaos
-		// generates) or a time.Time; leave time.Time for hamba to handle.
-		if _, ok := v.(time.Time); ok {
-			return v
-		}
-		if i, ok := toInt64(v); ok {
-			return i
-		}
-	case avro.Float:
-		if f, ok := toFloat64(v); ok {
-			return float32(f)
-		}
-	case avro.Double:
-		if f, ok := toFloat64(v); ok {
-			return f
-		}
-	case avro.Bytes:
-		if s, ok := v.(string); ok {
-			return []byte(s)
-		}
-	}
 	return v
+}
+
+// avroValueFitsBranch reports whether v's Go type family is a plausible match
+// for branch, used to pick a union branch by structural shape. khaos's own
+// generator only ever emits the non-null branch of a field's declared type
+// (see avroTypeOf), so this only has real work to do -- and ambiguity to
+// resolve -- against a registry-fetched schema whose union has more than one
+// non-null branch.
+func avroValueFitsBranch(branch avroSchemaNode, v any) bool {
+	switch branch.typeName {
+	case "record", "map":
+		_, ok := v.(map[string]any)
+		return ok
+	case "array":
+		_, ok := v.([]any)
+		return ok
+	case "string", "enum":
+		_, ok := v.(string)
+		return ok
+	case "bytes", "fixed":
+		switch v.(type) {
+		case string, []byte:
+			return true
+		default:
+			return false
+		}
+	case "boolean":
+		_, ok := v.(bool)
+		return ok
+	case "int", "long", "float", "double",
+		"long.timestamp-millis", "long.timestamp-micros",
+		"int.time-millis", "long.time-micros", "int.date":
+		switch v.(type) {
+		case int, int8, int16, int32, int64,
+			uint, uint8, uint16, uint32, uint64,
+			float32, float64:
+			return true
+		default:
+			return false
+		}
+	default:
+		return true
+	}
 }

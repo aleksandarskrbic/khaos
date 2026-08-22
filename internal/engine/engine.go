@@ -32,6 +32,13 @@ const (
 	// eventCapacity bounds the in-memory event ring. This process is expected to run for
 	// weeks, so unbounded history is a slow leak.
 	eventCapacity = 256
+
+	// cardinalityFillAttempts bounds each field's distinct-value fill loop (see
+	// generate.BoundFillAttempts). Without it, a scenario asking for more distinct
+	// values than its value space can supply -- `type: int, min: 0, max: 5,
+	// cardinality: 100` -- hangs the whole run with no error and no output instead of
+	// failing construction with a diagnosable message.
+	cardinalityFillAttempts = 4096
 )
 
 // Config is everything the engine needs to run.
@@ -332,9 +339,9 @@ func (e *Engine) buildTopic(ctx context.Context, scenarioName string, t scenario
 	// One codec per topic, shared by every producer on it. Unlike the generators, a
 	// codec.Codec is safe to share: New resolves the schema text, the parsed descriptor
 	// and the registry id once, and each Encode only reads them (jsonCodec is a stateless
-	// value, avroCodec holds an immutable *avro.RecordSchema, protoCodec builds a fresh
-	// dynamicpb message per call). Building one per producer would instead mean one
-	// registry registration per producer.
+	// value, avroCodec holds an immutable *goavro.Codec plus its schema tree, protoCodec
+	// builds a fresh dynamicpb message per call). Building one per producer would instead
+	// mean one registry registration per producer.
 	cdc, err := codec.New(ctx, t, reg)
 	if err != nil {
 		return fmt.Errorf("codec: %w", err)
@@ -459,10 +466,10 @@ func (e *Engine) addConsumer(groupID, topic string, topics []string, delayMS int
 // stale-index divergence between the registry and any by-* index cannot occur.
 //
 // The conf passed in is whatever RebalanceConsumer put in the CreateConsumer command,
-// which is the ZERO ConsumerConf: a rebuilt consumer carries only group_id and
-// processing_delay_ms, so it loses failure_rate, commit_failure_rate, on_failure and
-// max_retries (see scenario.ConsumerRef.Conf). consumerSpecs is consulted only to find
-// which topic the group belongs to.
+// which is the victim's own ConsumerConf (see scenario.ConsumerRef.Conf) -- the
+// replacement keeps failure_rate, commit_failure_rate, on_failure and max_retries rather
+// than reverting to model defaults. consumerSpecs is consulted only to find which topic
+// the group belongs to.
 func (e *Engine) recreateConsumer(ctx context.Context, groupID string, topics []string, delayMS int, conf scenario.ConsumerConf) error {
 	e.specMu.Lock()
 	spec, ok := e.consumerSpecs[groupID]
@@ -521,7 +528,7 @@ func (e *Engine) rngFor(kind, name string, index int) *rand.Rand {
 // with size padding and the codec is bypassed entirely.
 func valueFunc(t scenario.Topic, cdc codec.Codec, rnd *rand.Rand) (func() ([]byte, error), error) {
 	if len(t.MessageSchema.Fields) > 0 {
-		gen, err := generate.NewDocGen(t.MessageSchema.Fields, rnd)
+		gen, err := generate.NewDocGen(t.MessageSchema.Fields, rnd, generate.BoundFillAttempts(cardinalityFillAttempts))
 		if err != nil {
 			return nil, fmt.Errorf("document generator: %w", err)
 		}

@@ -72,11 +72,10 @@ type ConsumerRef struct {
 	GroupID string
 	Topics  []string
 
-	// Conf is the consumer's configuration. It is deliberately NOT carried into the
-	// CreateConsumer command: the replacement is rebuilt from only group_id and
-	// processing_delay_ms, so a consumer recreated by rebalance_consumer loses
-	// failure_rate, commit_failure_rate, on_failure and max_retries and reverts to
-	// model defaults.
+	// Conf is the consumer's configuration. RebalanceConsumer carries it into the
+	// CreateConsumer command it emits, so a consumer recreated by rebalance_consumer
+	// keeps its failure_rate, commit_failure_rate, on_failure and max_retries instead of
+	// silently reverting to model defaults partway through a rebalance storm.
 	Conf              ConsumerConf
 	ProcessingDelayMS int
 }
@@ -392,8 +391,7 @@ func (i RebalanceConsumer) Commands(ctx *Context) []Command {
 			GroupID:           victim.GroupID,
 			Topics:            victim.Topics,
 			ProcessingDelayMS: victim.ProcessingDelayMS,
-			// Conf deliberately omitted -- see ConsumerRef.Conf. The replacement gets
-			// model defaults.
+			Conf:              victim.Conf,
 		},
 		EmitEvent{Message: fmt.Sprintf(">>> Consumer %s rejoined group", victim.ID), Level: EventWarn},
 	}

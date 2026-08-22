@@ -4,8 +4,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/hamba/avro/v2"
-
 	"github.com/aleksandarskrbic/khaos/internal/scenario"
 )
 
@@ -153,11 +151,10 @@ func TestAvroRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AvroSchemaText: %v", err)
 	}
-	schema, err := parseAvro(text)
+	c, err := newAvroCodecFromSchema(text, nil)
 	if err != nil {
-		t.Fatalf("Parse: %v", err)
+		t.Fatalf("newAvroCodecFromSchema: %v", err)
 	}
-	c := &avroCodec{schema: schema, record: schema.(*avro.RecordSchema)}
 
 	meta := NewDoc()
 	meta.Set("region", "eu")
@@ -202,11 +199,12 @@ func TestAvroRoundTrip(t *testing.T) {
 
 // TestAvroParseDoesNotShareNamesBetweenSchemas pins the isolation in parseAvro.
 //
-// avro.Parse publishes every named type it sees into the package-global
-// avro.DefaultSchemaCache and seeds the next parse from it, so a schema that
-// references a type it does not define could bind to a name another topic
-// happened to register first. Building "defines" before "references" is exactly
-// the order that makes the leak visible: the second schema must still fail.
+// goavro.NewCodec gives every call its own private name-resolution scope, with
+// no package-level cache a later parse could seed from, so a schema that
+// references a type it does not define must fail rather than silently binding
+// to a name another topic happened to define first. Building "defines" before
+// "references" is exactly the order that would make a leak (if there were one)
+// visible: the second schema must still fail.
 func TestAvroParseDoesNotShareNamesBetweenSchemas(t *testing.T) {
 	const defines = `{"type":"record","name":"Holder","namespace":"leak",` +
 		`"fields":[{"name":"inner","type":{"type":"record","name":"Shared",` +
@@ -240,11 +238,10 @@ func TestAvroTimestampNormalisation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AvroSchemaText: %v", err)
 	}
-	schema, err := parseAvro(text)
+	c, err := newAvroCodecFromSchema(text, nil)
 	if err != nil {
-		t.Fatalf("Parse: %v", err)
+		t.Fatalf("newAvroCodecFromSchema: %v", err)
 	}
-	c := &avroCodec{schema: schema, record: schema.(*avro.RecordSchema)}
 
 	in := NewDoc()
 	in.Set("ts", int64(1700000000123))
@@ -259,5 +256,58 @@ func TestAvroTimestampNormalisation(t *testing.T) {
 	got, _ := out.Get("ts")
 	if got != int64(1700000000123) {
 		t.Errorf("ts = %#v, want int64(1700000000123)", got)
+	}
+}
+
+// TestAvroNullableLogicalTypeRoundTrip covers a schema shape khaos's own
+// generator never produces (avroTypeOf always emits a required field) but a
+// schema fetched from Schema Registry commonly does -- a nullable/optional
+// field of a logical type goavro pre-compiles under a compound symbol-table
+// key ("long.timestamp-millis", "long.timestamp-micros", "int.time-millis",
+// "long.time-micros", "int.date"), per goavro v2.15.0's codec.go and
+// union.go. The union branch wrap key (encode) and match key (decode) must
+// be that compound name, not the bare base type ("long"/"int"), or encode
+// hard-fails and decode silently hands back an un-normalised time.Time /
+// time.Duration instead of the epoch-millis int64 khaos promises.
+func TestAvroNullableLogicalTypeRoundTrip(t *testing.T) {
+	text := `{"type":"record","name":"R","namespace":"khaos.generated","fields":[` +
+		`{"name":"ts","type":["null",{"type":"long","logicalType":"timestamp-millis"}],"default":null}]}`
+
+	c, err := newAvroCodecFromSchema(text, nil)
+	if err != nil {
+		t.Fatalf("newAvroCodecFromSchema: %v", err)
+	}
+
+	in := NewDoc()
+	in.Set("ts", int64(1700000000123))
+	b, err := c.Encode(in)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	out, err := c.Decode(b)
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	got, ok := out.Get("ts")
+	if !ok {
+		t.Fatalf("ts missing from decoded Doc")
+	}
+	if i64, ok := got.(int64); !ok || i64 != 1700000000123 {
+		t.Errorf("ts = %#v (%T), want int64(1700000000123)", got, got)
+	}
+
+	// The null branch must still round-trip too.
+	inNull := NewDoc()
+	inNull.Set("ts", nil)
+	bNull, err := c.Encode(inNull)
+	if err != nil {
+		t.Fatalf("Encode(nil): %v", err)
+	}
+	outNull, err := c.Decode(bNull)
+	if err != nil {
+		t.Fatalf("Decode(nil): %v", err)
+	}
+	if gotNull, _ := outNull.Get("ts"); gotNull != nil {
+		t.Errorf("ts = %#v, want nil", gotNull)
 	}
 }
