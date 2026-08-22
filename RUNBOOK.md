@@ -520,12 +520,19 @@ goreleaser check                     # validate the config
 goreleaser release --snapshot --clean
 ls dist/                             # inspect the artifacts
 
-# 3. Tag and push
-git tag -a v1.0.0 -m "v1.0.0: Go rewrite"
-git push origin v1.0.0
+# 3. Draft the CHANGELOG.md entry, then commit, tag and push
+./scripts/release.sh 0.10.0
 ```
-
-The tag push triggers the workflow. Watch it under Actions.
 
 `--snapshot --clean` is the safe rehearsal: it does the whole build without needing a tag,
 without touching GitHub, and without pushing images.
+
+`scripts/release.sh <version>` buckets `feat:`/`fix:`/`perf:`/`refactor:`/`docs:` commits
+since the last tag into a Keep a Changelog-style entry (skipping `chore:`/`ci:`/`test:`/
+`build:`/`style:` and merge commits), shows you the draft, and on confirmation commits it,
+pushes `main`, tags `vX.Y.Z`, and pushes the tag — which triggers the release workflow.
+Pass `--yes` to skip the confirmation prompt. It refuses to run off `main`, with a dirty
+tree, or if the tag already exists. The draft is mechanical, not narrative — read it before
+confirming and hand-edit `CHANGELOG.md` afterward if a bullet needs better wording.
+
+The tag push triggers the release workflow above. Watch it under Actions.
