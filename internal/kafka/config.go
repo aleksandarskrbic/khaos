@@ -22,6 +22,8 @@ type Config struct {
 	// BootstrapServers is the seed broker list.
 	BootstrapServers []string
 
+	// Security is the protocol, SASL credentials and TLS material used to reach the
+	// brokers. The zero value is plaintext with no authentication.
 	Security Security
 
 	// External marks a cluster khaos does not own -- one reached via

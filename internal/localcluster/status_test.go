@@ -181,6 +181,9 @@ func TestBootstrapServersAvoidsJMXPort(t *testing.T) {
 	}
 }
 
+// A `compose ps` failure that is not docker itself being unusable -- here a project with no
+// configuration file -- comes back as an empty service list rather than an error, so `khaos
+// cluster status` does not fail on a machine whose only problem is that nothing is running.
 func TestStatusTolerantOfUnstartedProject(t *testing.T) {
 	f := newFakeRunner()
 	f.fail["ps"] = true

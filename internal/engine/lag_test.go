@@ -91,7 +91,6 @@ func pollerFor(t *testing.T, e *Engine, src lagSource) *lagPoller {
 	}
 }
 
-// countEvents reports how many events in the ring contain substr.
 func countEvents(e *Engine, substr string) int {
 	n := 0
 	for _, ev := range e.events.snapshot() {
@@ -102,6 +101,10 @@ func countEvents(e *Engine, substr string) int {
 	return n
 }
 
+// TestLagPollTimeoutIsBounded pins both ends of the clamp. The interval is the user's
+// knob and the timeout is derived from it, so an unclamped derivation turns --lag-poll
+// 100ms into a deadline every real cluster misses, and --lag-poll 1h into a request that
+// can hang for an hour.
 func TestLagPollTimeoutIsBounded(t *testing.T) {
 	tests := []struct {
 		name     string

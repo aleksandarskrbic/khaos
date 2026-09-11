@@ -97,7 +97,8 @@ func (g *RawJSONGen) Next() []byte {
 	if g.includeSequence {
 		fmt.Fprintf(&b, `,"sequence":%d`, seq)
 	}
-	// Closing brace is not written yet; "data" may still be appended.
+	// The +1 is the closing brace, still unwritten because "data" may yet be appended:
+	// `current` measures the finished document, not the buffer so far.
 	current := b.Len() + 1
 
 	if current < target {
@@ -114,8 +115,9 @@ func (g *RawJSONGen) Next() []byte {
 	return []byte(b.String())
 }
 
-// Sequence returns the number of payloads generated so far, for tests and
-// metrics.
+// Sequence returns the number of payloads generated so far. It is the same
+// counter that fills the "id" and "sequence" fields, so it also names the last
+// message produced: "msg-{Sequence()}".
 func (g *RawJSONGen) Sequence() int64 { return g.sequence }
 
 // maxGrowHint caps the buffer reservation for one message.

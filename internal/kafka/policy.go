@@ -42,7 +42,7 @@ var Balancers = []kgo.GroupBalancer{kgo.RangeBalancer(), kgo.RoundRobinBalancer(
 // topics that merely share a name.
 //
 //   - true (current): every run starts from empty topics, which is what makes lag numbers
-//     readable from the first message. Opt out per run with --no-recreate-topics.
+//     readable from the first message. Opt out per run with --recreate-topics=false.
 //   - false: EnsureTopics only creates what is missing and leaves existing data alone --
 //     safer against shared clusters.
 var RecreateTopicsByDefault = true

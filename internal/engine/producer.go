@@ -36,6 +36,9 @@ type Producer struct {
 	dupRate float64
 	rnd     *rand.Rand
 
+	// stats is this producer's own tally, topicC the shared per-topic one. Only topicC
+	// reaches Snapshot -- nothing reads a single producer's counters today, and no
+	// per-producer row is rendered anywhere.
 	stats  *counters
 	topicC *counters
 	events *eventRing

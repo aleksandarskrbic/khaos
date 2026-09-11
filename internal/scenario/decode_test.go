@@ -186,6 +186,9 @@ topics:
 	}
 }
 
+// TestDecodeFlowDefaults pins the flow defaults and, with them, the nil-vs-empty
+// distinction on a step's consumers block: `consumers: {}` decodes to the defaults,
+// while an absent block stays nil.
 func TestDecodeFlowDefaults(t *testing.T) {
 	sc := decodeOK(t, `
 name: s
@@ -365,6 +368,9 @@ incidents:
 	}
 }
 
+// TestDecodeIncidentTargets pins that each selector reaches the right target type and
+// that an absent `target:` decodes to the zero value, which every incident reads as
+// "match everything".
 func TestDecodeIncidentTargets(t *testing.T) {
 	sc := decodeOK(t, `
 name: s
@@ -529,6 +535,8 @@ topics:
 	}
 }
 
+// TestDecodeReturnsNilScenarioOnError pins the half of Decode's contract that callers
+// rely on to skip a nil check: errors and a scenario never come back together.
 func TestDecodeReturnsNilScenarioOnError(t *testing.T) {
 	sc, diags := Decode([]byte("topics: []\n"))
 	if !diags.HasErrors() {
@@ -539,6 +547,8 @@ func TestDecodeReturnsNilScenarioOnError(t *testing.T) {
 	}
 }
 
+// TestDecodeReturnsScenarioWithWarnings pins the other half: a warning is advisory and
+// must not suppress the scenario.
 func TestDecodeReturnsScenarioWithWarnings(t *testing.T) {
 	sc, diags := Decode([]byte("name: s\ntopics:\n  - name: orders\n    partitions: 500\n"))
 	if diags.HasErrors() {
@@ -586,6 +596,9 @@ topics:
 	}
 }
 
+// TestDiagnosticsHelpers pins the rendering contract: errors before warnings whatever
+// order they were found in, no "line N:" prefix when a finding has no node, and Err()
+// nil unless something was reported at error severity.
 func TestDiagnosticsHelpers(t *testing.T) {
 	diags := Diagnostics{
 		{Path: "a", Message: "first", Severity: SeverityError, Line: 3},

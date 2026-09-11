@@ -258,6 +258,8 @@ func TestPausedMarkerDoesNotBreakColumnAlignment(t *testing.T) {
 	}
 }
 
+// The events block is a tail, not a head: when there are more events than lines, the ones
+// dropped are the oldest. During an incident the line being waited for is the newest one.
 func TestRecentEventsKeepsTheNewest(t *testing.T) {
 	events := make([]engine.Event, 20)
 	for i := range events {
@@ -297,6 +299,8 @@ func TestRecentEventsKeepsTheNewest(t *testing.T) {
 	}
 }
 
+// Every level gets its own colour. Alerts are the load-bearing row: the events block is
+// where an incident announces itself, and an alert rendered dim is one the eye skips.
 func TestEventLevelsAreColoured(t *testing.T) {
 	tests := []struct {
 		level scenario.EventLevel
@@ -318,6 +322,9 @@ func TestEventLevelsAreColoured(t *testing.T) {
 	}
 }
 
+// truncate's contract is a cell budget, not a rune budget: whatever goes in, what comes out
+// is valid UTF-8 and occupies at most n terminal cells. Every column width in the tables is
+// sized against that promise, so a single overshoot shears the row it happens on.
 func TestTruncate(t *testing.T) {
 	tests := []struct {
 		name string
@@ -405,6 +412,10 @@ func TestHeaderReportsRunState(t *testing.T) {
 	}
 }
 
+// A run with no flows pays nothing for the flow table -- no header, no frame, no lines out
+// of the height budget. A run with flows also gets the saturation marker, which says the
+// configured concurrency bound, not the configured rate, is what is holding the flow back
+// (see DefaultFlowConcurrency in internal/engine/flow.go).
 func TestFlowTableRendersOnlyWhenThereAreFlows(t *testing.T) {
 	without := plain(viewOf(t, engine.Snapshot{Topics: []engine.TopicStat{{Topic: "orders"}}}))
 	if strings.Contains(without, "INFLIGHT") {
@@ -419,6 +430,8 @@ func TestFlowTableRendersOnlyWhenThereAreFlows(t *testing.T) {
 	}
 }
 
+// The totals line names errors and rebalances only when there are some. A permanent
+// "0 errors" trains the eye to skip the exact spot where a real count would appear.
 func TestTotalsLineReportsErrorsAndRebalances(t *testing.T) {
 	out := plain(viewOf(t, sampleSnapshot()))
 	for _, want := range []string{"TOTAL", "12,845", "12,498", "4 errors", "2 rebalances"} {

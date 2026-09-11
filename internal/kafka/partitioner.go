@@ -48,6 +48,12 @@ func (p *consistentRandomTopicPartitioner) RequiresConsistency(r *kgo.Record) bo
 	return len(r.Key) > 0
 }
 
+// Partition returns the index, among n partitions, that r belongs on.
+//
+// The n <= 0 guard is defensive. kgo fails a record before partitioning when no partition
+// is usable, so it never calls this with a non-positive n, but both branches below panic
+// on zero -- IntN and the modulo alike -- and a panic on the produce path would take the
+// whole run down with it.
 func (p *consistentRandomTopicPartitioner) Partition(r *kgo.Record, n int) int {
 	if n <= 0 {
 		return 0

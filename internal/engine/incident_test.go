@@ -13,7 +13,9 @@ import (
 
 func intPtr(v int) *int { return &v }
 
-// consumerIDSet is the set of ids currently registered.
+// consumerIDSet snapshots which consumers are registered, so a before/after comparison
+// can tell a replacement apart from a survivor. An id is never reused, which is what
+// makes the comparison meaningful.
 func consumerIDSet(e *Engine) map[scenario.ID]bool {
 	out := make(map[scenario.ID]bool)
 	for _, c := range e.reg.allConsumers() {

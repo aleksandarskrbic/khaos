@@ -69,6 +69,12 @@ func (g *pauseGate) wait(ctx context.Context) error {
 }
 
 // Consumer polls one topic as part of a consumer group, optionally simulating failures.
+//
+// Whether it commits at all depends on failure simulation. With it off, the client
+// auto-commits every 5s and this type never calls CommitRecords. With it on,
+// kafka.NewConsumer disables auto-commit and committing becomes maybeCommit's job, which
+// is what lets a simulated failure withhold an offset and have the broker redeliver it
+// on the next rebalance.
 type Consumer struct {
 	ID      scenario.ID
 	Topic   string
@@ -142,10 +148,10 @@ func (c *Consumer) SetDelay(ms int) { c.delayMS.Store(int64(ms)) }
 // Pause stops consuming without tearing the consumer down.
 func (c *Consumer) Pause() { c.gate.pause() }
 
-// Resume unblocks a paused consumer; the original goroutine simply continues.
+// Resume unblocks a paused consumer. The original goroutine carries on from where it
+// parked; no new goroutine is started.
 func (c *Consumer) Resume() { c.gate.resume() }
 
-// Paused reports whether this consumer is currently parked.
 func (c *Consumer) Paused() bool { return c.gate.paused() }
 
 // Run consumes until ctx is cancelled.
@@ -205,8 +211,8 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) {
 	}
 
 	// Failure simulation: roll for failure, dispatch on on_failure, and only commit on
-	// success. The commit itself is subject to an independent commit_failure_rate that
-	// "fails" simply by not committing.
+	// success. The commit is then subject to an independent commit_failure_rate whose
+	// "failure" is declining to commit rather than an error from the broker.
 	attempts := 0
 	for {
 		if c.rnd.Float64() >= c.Conf.FailureRate {
@@ -261,6 +267,11 @@ func (c *Consumer) maybeCommit(ctx context.Context, rec *kgo.Record) {
 	}
 }
 
+// sendDLQ routes a failed record to the dead-letter topic.
+//
+// A DLQ write that itself fails counts as a consume error rather than a DLQ delivery,
+// which is what surfaces the usual cause: on a cluster with auto-creation off, nothing
+// created "{topic}-dlq". See dlqProducer.
 func (c *Consumer) sendDLQ(ctx context.Context, rec *kgo.Record) {
 	if c.dlq == nil {
 		return

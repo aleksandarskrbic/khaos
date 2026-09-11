@@ -15,6 +15,12 @@ func setHelpStyle(root *cobra.Command) {
 	root.SetUsageFunc(styledUsage)
 }
 
+// styledHelp replaces cobra's help template: the command path as a title, then Long (or
+// Short when a command has no Long), then the usage block.
+//
+// It writes to c.OutOrStdout() rather than to os.Stdout, which is what lets the root
+// command send a bare `khaos` invocation's help to stderr instead -- it swaps that writer
+// before calling Help.
 func styledHelp(c *cobra.Command, _ []string) {
 	w := c.OutOrStdout()
 	fmt.Fprintln(w, styTitle.Render(c.CommandPath()))
@@ -34,6 +40,9 @@ func styledHelp(c *cobra.Command, _ []string) {
 	}
 }
 
+// styledUsage backs cobra's Usage()/UsageString() and writes to stderr. The root sets
+// SilenceUsage, so a bad invocation prints the error alone; the same block reached
+// deliberately through --help goes to stdout, via styledHelp.
 func styledUsage(c *cobra.Command) error {
 	fmt.Fprint(c.OutOrStderr(), styledUsageString(c))
 	return nil
@@ -111,6 +120,8 @@ func colorizeFlagNames(usages string) string {
 	})
 }
 
+// rpad mirrors the unexported helper of the same name in cobra's default usage template,
+// so the additional-help-topics block lines up the way cobra would have rendered it.
 func rpad(s string, padding int) string {
 	return fmt.Sprintf(fmt.Sprintf("%%-%ds", padding), s)
 }

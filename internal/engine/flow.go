@@ -103,7 +103,7 @@ func (f *flowRunner) Run(ctx context.Context) error {
 		}
 
 		// Acquire before issuing, when bounded. Unbounded (the default) skips this
-		// entirely and instances simply accumulate.
+		// entirely and instances accumulate.
 		if f.concurrency != nil {
 			select {
 			case f.concurrency <- struct{}{}:
@@ -190,7 +190,10 @@ func (f *flowRunner) emit(ctx context.Context, msgs []generate.FlowMessage) {
 	f.stats.completed.Add(1)
 }
 
-// buildFlow constructs the runner for one flow.
+// buildFlow registers one flow: its generator, its own producer client, and its counters.
+//
+// Flows get a client of their own rather than borrowing a topic's, because a flow's steps
+// span several topics and none of those topics need have a `topics:` entry at all.
 func (e *Engine) buildFlow(f scenario.Flow) error {
 	gen, err := generate.NewFlowGen(f, e.rngFor("flow", f.Name, 0), generate.BoundFillAttempts(cardinalityFillAttempts))
 	if err != nil {

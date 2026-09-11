@@ -75,6 +75,9 @@ func TestBundledCopyMatchesRepo(t *testing.T) {
 	}
 }
 
+// TestDiscover pins the naming rule -- a scenario's name is its path under the root
+// without the extension -- and the two skips that keep discovery quiet: .yml files and
+// files that do not parse or carry no `name:`.
 func TestDiscover(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "traffic", "high-throughput.yaml"), "name: high-throughput\ntopics: [{name: a}]\n")
@@ -114,6 +117,10 @@ func TestDiscoverMissingRootIsEmpty(t *testing.T) {
 	}
 }
 
+// TestDiscoverEarlierRootWins pins that a duplicate name goes to the earlier root and
+// that later roots still contribute the names the earlier one does not have. Every
+// caller in the CLI passes no roots at all today; this is the contract multi-root
+// lookup would rest on.
 func TestDiscoverEarlierRootWins(t *testing.T) {
 	first, second := t.TempDir(), t.TempDir()
 	write(t, filepath.Join(first, "a.yaml"), "name: from-first\ntopics: [{name: a}]\n")
@@ -180,6 +187,9 @@ func TestDiscoverPrefersOnDiskDir(t *testing.T) {
 	}
 }
 
+// TestResolve pins all three input forms Resolve accepts -- an explicit file path, an
+// extensionless path, and a bundled scenario name -- plus the wording of each failure,
+// which is what a user sees when they mistype a scenario name.
 func TestResolve(t *testing.T) {
 	root := tempDir(t)
 	write(t, filepath.Join(root, "traffic", "high-throughput.yaml"), "name: high-throughput\ntopics: [{name: a}]\n")

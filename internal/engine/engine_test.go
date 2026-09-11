@@ -29,9 +29,10 @@ func TestMain(m *testing.M) {
 	)
 }
 
-// newFakeCluster starts an in-process Kafka speaking the real protocol: millisecond
-// startup, no Docker, real wire protocol, making the engine's whole pipeline testable in
-// CI.
+// newFakeCluster starts an in-process broker that speaks the real Kafka wire protocol. It
+// boots in milliseconds and needs no Docker, which is what lets the engine's whole
+// pipeline -- produce, consume, commit, rebalance -- be exercised on every `go test` run
+// rather than only where a cluster happens to be available.
 func newFakeCluster(t *testing.T) []string {
 	t.Helper()
 	c, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.AllowAutoTopicCreation())
@@ -346,7 +347,6 @@ func TestEventRingIsBounded(t *testing.T) {
 	}
 }
 
-// f64Ptr is the *float64 equivalent of intPtr, for Field.Min/Max.
 func f64Ptr(v float64) *float64 { return &v }
 
 // impossibleCardinalityField asks for more distinct values than its value space can

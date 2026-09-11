@@ -104,9 +104,10 @@ func writeProtoMessage(b *strings.Builder, name string, fields []scenario.Field,
 // protoArrayItemType resolves the element type of a repeated field, declaring
 // a nested message for arrays of objects.
 //
-// Note the fallthrough: an array whose items are an enum, or an array with no
-// items at all, becomes `repeated string` -- only "object" gets special-cased,
-// everything else falls back to string.
+// Only "object" is special-cased. An array whose items are an enum, and an
+// array with no items at all, both become `repeated string`; that degradation
+// is baked into the registered schema text, so widening it later changes the
+// .proto every existing scenario generates.
 func protoArrayItemType(nested *strings.Builder, f scenario.Field, depth int) (string, error) {
 	if f.Items == nil {
 		return "string", nil

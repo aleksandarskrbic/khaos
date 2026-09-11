@@ -50,8 +50,8 @@ func runCLI(t *testing.T, ctx context.Context, args ...string) (string, error) {
 // these tests assert that the whole pipeline runs and tears down cleanly, not that any
 // particular throughput is reached. Every incident in the shipped chaos scenarios is
 // scheduled well past this (T+15s at the earliest), so a longer run would not cover more
-// of them either -- only the schedule-and-shutdown path, which TestIncidentSchedule covers
-// directly.
+// of them either. TestIncidentFiresEndToEnd below covers an incident actually firing,
+// using a scenario written for the purpose instead.
 const runDuration = "2s"
 
 // TestSimulateAgainstFakeCluster runs several shipped scenarios end to end through the

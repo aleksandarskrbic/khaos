@@ -12,6 +12,9 @@ import (
 )
 
 // Readiness budgets for the broker and Schema Registry poll loops.
+//
+// `docker compose up -d` returns once the containers are created, not once they serve, so
+// the entire broker startup falls inside kafkaReadyTimeout rather than inside the up call.
 const (
 	kafkaReadyTimeout = 120 * time.Second
 	kafkaPollInterval = 3 * time.Second
@@ -41,6 +44,10 @@ func poll(ctx context.Context, timeout, interval time.Duration, what string, pro
 		if ctx.Err() != nil {
 			return fmt.Errorf("waiting for %s: %w", what, ctx.Err())
 		}
+		// Give up once the next tick would land past the deadline, instead of sleeping
+		// out a full interval only to fail anyway. So poll can return up to one interval
+		// short of the stated budget, which is the right side to err on: the extra wait
+		// would be spent on a cluster the previous probe already found unready.
 		if !time.Now().Add(interval).Before(deadline) {
 			return fmt.Errorf("%s %w (waited %s, last error: %v); try: docker compose -p %s logs",
 				what, ErrNotReady, timeout, lastErr, ProjectName)

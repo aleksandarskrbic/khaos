@@ -104,6 +104,9 @@ func sampleSnapshot() engine.Snapshot {
 	}
 }
 
+// keyPress builds the key message bubbletea/v2 would deliver for a key name. v2 carries a
+// rune code plus modifier bits rather than a string, so the named keys are spelled out by
+// hand; Update matches on msg.String(), which is what these have to reproduce faithfully.
 func keyPress(s string) tea.KeyPressMsg {
 	switch s {
 	case "ctrl+c":
@@ -135,6 +138,9 @@ func TestSourceIsTheEntireEngineContract(t *testing.T) {
 	var _ Source = (*engine.Engine)(nil)
 }
 
+// Init starts the clock and pulls nothing. The ticker being the only thing that calls
+// Snapshot is what makes one pull equal one sample, which is the assumption every rate in
+// rates.go is derived under.
 func TestInitStartsTheTickerWithoutPulling(t *testing.T) {
 	src := newStubSource(sampleSnapshot())
 	m := New(src, func() {})
@@ -147,6 +153,8 @@ func TestInitStartsTheTickerWithoutPulling(t *testing.T) {
 	}
 }
 
+// One pull per tick, and the frame shows that pull rather than the one before it. A
+// dashboard that repaints stale numbers during an incident is worse than one that stops.
 func TestTickPullsAFreshSnapshotAndRendersIt(t *testing.T) {
 	first := sampleSnapshot()
 	second := sampleSnapshot()
@@ -180,6 +188,10 @@ func TestTickPullsAFreshSnapshotAndRendersIt(t *testing.T) {
 	}
 }
 
+// q, ctrl-c and esc quit; nothing else does, not even shift+Q. Quitting goes through the
+// cancel func, not tea.Quit alone: the engine stops because its context was cancelled, and
+// a key that only tore down the UI would leave producers writing to a broker behind a dead
+// screen.
 func TestQuitKeysCancelTheRun(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -279,6 +291,9 @@ func TestUpdateIsPure(t *testing.T) {
 	}
 }
 
+// The ordinary end of every run: the context is cancelled under a live program and Run
+// reports that as success. Bubble Tea surfaces it as a kill, so without isCleanExit every
+// completed run would end by printing an error.
 func TestRunReturnsNilWhenTheContextIsCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -345,6 +360,10 @@ func killed(cause error) error {
 	return fmt.Errorf("%w: %w", tea.ErrProgramKilled, cause)
 }
 
+// The classification that decides whether cmd/khaos prints to stderr after a run. The rows
+// that earn the table are the panics: ErrProgramPanic arrives wrapped in exactly the same
+// ErrProgramKilled as a cancellation, and swallowing a crash alongside them would hide the
+// one failure an operator has to know about.
 func TestIsCleanExit(t *testing.T) {
 	tests := []struct {
 		name string

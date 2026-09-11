@@ -1,6 +1,16 @@
 // Package codec turns generated message documents into Kafka record bytes and
-// back, for the four wire shapes khaos supports: JSON, Avro (inline schema or
-// Schema Registry) and Protobuf (inline schema or Schema Registry).
+// back, in the three formats khaos speaks: JSON, Avro and Protobuf. Avro and
+// Protobuf each come two ways -- a schema khaos generates from the scenario's
+// field list, or one fetched verbatim from a Schema Registry subject -- and
+// both carry the Confluent wire header once a registry is configured. JSON is
+// always bare UTF-8 with no schema and no header.
+//
+// [New] is the entry point: it resolves all of that once per topic and returns
+// the single [Codec] that topic uses for the whole run. internal/engine builds
+// one Codec per topic, converts each document internal/generate produced into a
+// [Doc], and hands that same Codec to every producer on the topic -- which is
+// why a Codec has to be immutable once constructed. [Registry] is the Schema
+// Registry client the fetch-and-register paths go through.
 //
 // Every string that reaches the wire -- generated Avro schema JSON, generated
 // .proto source, mangled type names, the Confluent header layout -- must stay
@@ -27,7 +37,6 @@ type Doc struct {
 	vals map[string]any
 }
 
-// NewDoc returns an empty Doc.
 func NewDoc() *Doc {
 	return &Doc{vals: make(map[string]any)}
 }
@@ -55,7 +64,6 @@ func (d *Doc) Keys() []string {
 	return out
 }
 
-// Len returns the number of keys.
 func (d *Doc) Len() int { return len(d.keys) }
 
 // MarshalJSON writes the document as a JSON object with keys in insertion

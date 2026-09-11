@@ -121,10 +121,6 @@ type rawScenario struct {
 	SchemaRegistry *SchemaRegistry `yaml:"schema_registry"`
 }
 
-// ---------------------------------------------------------------------------
-// Defaults
-// ---------------------------------------------------------------------------
-//
 // Every type below needs an UnmarshalYAML because Go's zero value and khaos's default
 // value disagree: an omitted `partitions:` must become 12, not 0. The `type raw T` alias
 // makes this safe -- raw has no methods, so node.Decode fills the pre-seeded struct
@@ -220,10 +216,6 @@ func (c *Correlation) UnmarshalYAML(node *yaml.Node) error {
 	*c = Correlation(d)
 	return nil
 }
-
-// ---------------------------------------------------------------------------
-// Incidents
-// ---------------------------------------------------------------------------
 
 // rawIncident is the YAML shape of one incident.
 //

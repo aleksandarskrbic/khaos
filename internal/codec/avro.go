@@ -16,8 +16,8 @@ const avroNamespace = "khaos.generated"
 
 // avroPrimitive maps khaos field types to their Avro type name.
 //
-// Note that "int" maps to Avro "long" and "float" to Avro "double". That is not
-// a mistake to be corrected: khaos has always written 64-bit values, and
+// "int" maps to Avro "long" and "float" to Avro "double", which is not a
+// mistake waiting to be corrected: khaos has always written 64-bit values, and
 // narrowing them now would break every consumer holding an older reader schema.
 var avroPrimitive = map[string]string{
 	scenario.FieldString:  "string",
@@ -254,6 +254,8 @@ func avroDecodedValue(s avroSchemaNode, v any) any {
 		if !ok || len(wrapped) != 1 {
 			return v
 		}
+		// wrapped has exactly one entry, checked above; ranging is how to reach
+		// it. Every path inside returns, so this loop never takes a second turn.
 		for branchName, branchVal := range wrapped {
 			for _, branch := range s.union {
 				if branchMatchesName(*branch, branchName) {

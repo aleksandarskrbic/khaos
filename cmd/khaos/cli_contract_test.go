@@ -13,8 +13,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// The CLI surface is a compatibility contract: these flags and shorthands are what the
-// README documents, so scripts in the wild depend on them.
+// The CLI surface is a compatibility contract: the flags, shorthands, defaults, exit
+// codes and stream discipline pinned in this file are what the README documents, so
+// scripts in the wild depend on every one of them.
+
+// --duration takes either a bare count of seconds or a Go duration string, so a user who
+// reaches for `-d 60` and one who reaches for `-d 90s` both get what they meant, and a
+// value that is neither is rejected rather than quietly read as zero.
 func TestDurationAcceptsSecondsAndDurations(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -151,7 +156,8 @@ func TestCommandSetPreserved(t *testing.T) {
 	}
 }
 
-// A LIST of scenarios runs together in one invocation.
+// Several scenarios named in one invocation are merged into a single run rather than the
+// first one winning: their topics, incidents and flows all have to end up in one engine.
 func TestMultipleScenariosRunTogether(t *testing.T) {
 	t.Parallel()
 	brokers := fakeBrokers(t)

@@ -52,12 +52,14 @@ func printDiagnostics(w io.Writer, name string, diags scenario.Diagnostics) {
 	}
 }
 
-// categoryInfo is the display name and blurb for each scenario directory.
-//
-// The ORDER matters: categories sort by their position in categoryOrder and fall back to
-// a title-cased directory name for anything unlisted.
+// categoryOrder fixes the order of the headings in `khaos list`. A directory that is not
+// named here sorts last, under a title-cased version of its own name, so dropping a new
+// scenario directory into scenarios/ still lists it. list_contract_test.go pins both
+// halves of that.
 var categoryOrder = []string{"traffic", "chaos", "flows", "serialization"}
 
+// categoryInfo is the heading and the one-line blurb for each known scenario directory:
+// {heading, blurb}.
 var categoryInfo = map[string][2]string{
 	"traffic":       {"Traffic Patterns", "Basic traffic generation scenarios"},
 	"chaos":         {"Chaos Engineering", "Fault injection and incident scenarios"},
@@ -80,7 +82,6 @@ func newListCmd() *cobra.Command {
 				return nil
 			}
 
-			// Group by leading directory.
 			byCategory := make(map[string][]string)
 			for name := range found {
 				category, _, ok := strings.Cut(name, "/")
@@ -135,6 +136,9 @@ func newListCmd() *cobra.Command {
 // tableWidth caps output at the terminal width so a long description wraps instead of
 // blowing the table past the edge of the window. 100 is the fallback when stdout is not a
 // terminal, which keeps piped output stable rather than dependent on the environment.
+//
+// colorEnabled doubles as the is-a-terminal test, so NO_COLOR and TERM=dumb pin the
+// width at 100 as well.
 func tableWidth() int {
 	if !colorEnabled {
 		return 100
@@ -175,7 +179,6 @@ func newValidateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "validate [scenario...]",
 		Short: "Validate scenario files",
-		// With no arguments every bundled scenario is checked.
 		Long: "Validate scenarios without running them.\n\n" +
 			"A scenario may be a bundled name (e.g. traffic/high-throughput) or a path to a\n" +
 			"YAML file. With no arguments every bundled scenario is checked.\n\n" +

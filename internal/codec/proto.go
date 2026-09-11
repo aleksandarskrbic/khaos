@@ -98,9 +98,10 @@ func (c *protoCodec) Decode(b []byte) (*Doc, error) {
 		return nil, fmt.Errorf("codec: decode protobuf: %w", err)
 	}
 
-	// UseProtoNames keeps field names as declared in the schema; note its
-	// consequences: 64-bit integers come back as decimal strings and bytes as
-	// base64.
+	// UseProtoNames keeps field names as declared in the schema instead of
+	// lowerCamelCasing them. Routing through protojson at all costs two points
+	// of fidelity that the round-trip tests pin rather than hide: 64-bit
+	// integers come back as decimal strings and bytes as base64.
 	raw, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(msg)
 	if err != nil {
 		return nil, fmt.Errorf("codec: protobuf to json: %w", err)

@@ -1,5 +1,15 @@
 // Package scenario holds the khaos scenario domain model together with the YAML
-// decoding and validation that produces it.
+// decoding, validation and file lookup that produce it. Everything downstream -- the
+// engine, the generators, the CLI -- consumes the types declared here and never parses
+// YAML itself.
+//
+// Load is the usual entry point: it reads a file and returns a *Scenario plus
+// Diagnostics. Decode does the same for bytes already in hand, in two passes -- the
+// validator walks the raw yaml.Node tree and collects every finding (validate.go),
+// then the typed decode runs only if nothing came back at error severity (decode.go).
+// Discover and Resolve turn a scenario name such as "chaos/broker-chaos" into a path,
+// falling back to the corpus embedded in the binary when no scenarios/ directory
+// exists (loader.go).
 //
 // Every default value used when a key is omitted from a scenario file is collected in
 // one place below, so there is exactly one answer per field.
@@ -292,7 +302,13 @@ func (f Flow) Topics() []string {
 	return out
 }
 
-// FlowStep is one step of a flow.
+// FlowStep is one message of a flow instance: an event produced to Topic, DelayMS after
+// the step before it.
+//
+// Every step's document leads with correlation_id and event_type, injected by the
+// generator, and Fields supplies the rest. A step with no Fields is legal and produces
+// those two keys alone -- unlike a topic, a flow step has no size bounds and no
+// synthetic padding.
 type FlowStep struct {
 	Topic     string        `yaml:"topic"`
 	EventType string        `yaml:"event_type"`
@@ -301,7 +317,13 @@ type FlowStep struct {
 	Consumers *StepConsumer `yaml:"consumers"`
 }
 
-// StepConsumer configures the consumers spawned for one flow step.
+// StepConsumer is a step's `consumers:` block: Groups consumer groups of PerGroup
+// consumers each, each consumer simulating DelayMS of processing per message.
+//
+// Decoded and validated, but no engine code reads it today -- a flow step spawns no
+// consumers of its own, whatever this block says. FlowStep.Consumers stays a pointer so
+// "no block" and "an empty block filled with defaults" remain distinguishable for
+// whoever wires it up.
 type StepConsumer struct {
 	Groups   int `yaml:"groups"`
 	PerGroup int `yaml:"per_group"`

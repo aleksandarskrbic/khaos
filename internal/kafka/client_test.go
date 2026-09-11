@@ -121,6 +121,8 @@ func TestNewProducerRejectsBadValues(t *testing.T) {
 	}
 }
 
+// TestCompressionCodecs pins the accepted compression_type spellings, including the
+// "uncompressed" alias and the empty string a hand-built ProducerConf leaves behind.
 func TestCompressionCodecs(t *testing.T) {
 	t.Parallel()
 	_, cfg := newFakeCluster(t)
@@ -296,6 +298,8 @@ func TestNewConsumerRebalanceHooks(t *testing.T) {
 	}
 }
 
+// TestNewDLQProducer pins the -dlq suffix and that the acks=all client builds with
+// franz-go's idempotency left on, so a dead-letter record is not itself lost.
 func TestNewDLQProducer(t *testing.T) {
 	t.Parallel()
 	_, cfg := newFakeCluster(t, kfake.SeedTopics(1, DLQTopic("orders")))

@@ -88,7 +88,7 @@ func Discover(roots ...string) (map[string]string, error) {
 	found := make(map[string]string)
 	for _, root := range roots {
 		if info, err := os.Stat(root); err != nil || !info.IsDir() {
-			continue // a missing root simply yields nothing
+			continue // a missing root contributes nothing, it is not an error
 		}
 		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {

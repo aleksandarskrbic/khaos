@@ -105,6 +105,9 @@ func TestNewWithoutRegistryEmitsBareBytes(t *testing.T) {
 	}
 }
 
+// schema_provider: registry with no registry configured has to fail while the topic is
+// being built. Falling back to JSON instead would produce records no consumer of that
+// subject can read, and nothing would say so.
 func TestNewRegistryProviderWithoutRegistry(t *testing.T) {
 	topic := topicWith("orders", formatAvro, nil)
 	topic.SchemaProvider = "registry"

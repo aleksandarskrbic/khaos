@@ -61,7 +61,7 @@ type scheduler struct {
 	// applyMu serialises mutations so two concurrently-firing incidents cannot interleave
 	// halfway through a command sequence.
 	//
-	// Note it is NOT held across a Delay command. Command sequences embed blocking delays
+	// It is NOT held across a Delay command. Command sequences embed blocking delays
 	// -- PauseConsumers emits [StopConsumers, Delay(duration), ResumeConsumers] -- so
 	// holding the lock across one would stall every other due incident for the length of
 	// this one's delay and change scenario timing. Each incident is scheduled
@@ -150,6 +150,10 @@ func (s *scheduler) runIncident(ctx context.Context, inc scenario.Incident) erro
 }
 
 // runGroup repeats a set of incidents on an interval.
+//
+// Within a group the incidents run SEQUENTIALLY on this one goroutine, unlike top-level
+// incidents, which each get their own. That is the point of a group: its members are a
+// story told in order, and each one's schedule runs from the previous one finishing.
 func (s *scheduler) runGroup(ctx context.Context, grp scenario.IncidentGroup) error {
 	repeat := grp.Repeat
 	if repeat <= 0 {
@@ -226,6 +230,12 @@ func (s *scheduler) apply(ctx context.Context, cmds []scenario.Command) error {
 	return nil
 }
 
+// applyOne applies one command under the mutation lock.
+//
+// The two commands whose duration is set by the scenario rather than by the work itself
+// -- Delay and StopConsumer -- are intercepted by apply and never arrive here, so the
+// lock is never held for a scripted wait. The rest are either pure registry mutations or
+// a single call out to the broker controller.
 func (s *scheduler) applyOne(ctx context.Context, cmd scenario.Command) error {
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()

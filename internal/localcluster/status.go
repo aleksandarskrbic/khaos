@@ -25,6 +25,11 @@ const (
 	kafkaUIServiceName = "kafka-ui"
 )
 
+// kafkaClientPorts holds the container-side ports the brokers put their EXTERNAL listener
+// on (assets/docker-compose.kraft.yml:15,47,79). selectPublishedPort matches it against a
+// publisher's TargetPort, never its PublishedPort: the host side of a mapping can be
+// remapped freely in the compose file, so only the container side identifies which
+// listener a publisher belongs to.
 var kafkaClientPorts = map[int]bool{9092: true, 9093: true, 9094: true}
 
 // composePublisher is the subset of compose's ps JSON publisher object we need.
@@ -35,6 +40,8 @@ type composePublisher struct {
 	Protocol      string `json:"Protocol"`
 }
 
+// composePS is one row of compose's ps JSON. Service can come through empty, which is
+// why parsePS falls back to Name before giving up and calling the service "unknown".
 type composePS struct {
 	Service    string             `json:"Service"`
 	Name       string             `json:"Name"`

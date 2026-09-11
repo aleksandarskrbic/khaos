@@ -15,11 +15,12 @@ import (
 	"time"
 )
 
+// TestSecurityValidate pins the flag-coupling rules: protocol and mechanism enum
+// membership, the credentials a SASL protocol demands, the all-or-nothing mTLS pair, and
+// the encrypted-key rejection.
 func TestSecurityValidate(t *testing.T) {
 	t.Parallel()
 
-	// Coupling rules under test: protocol/mechanism enum membership and the SASL/mTLS
-	// field pairing.
 	tests := []struct {
 		name    string
 		sec     Security
@@ -119,10 +120,11 @@ func TestSecurityValidate(t *testing.T) {
 	}
 }
 
+// TestSecurityOptions pins one kgo option per active feature -- kgo.SASL for SASL,
+// kgo.DialTLSConfig for TLS -- and that TLS material is inert under a plaintext protocol.
 func TestSecurityOptions(t *testing.T) {
 	t.Parallel()
 
-	// One option per active feature: SASL adds kgo.SASL, TLS adds kgo.DialTLSConfig.
 	tests := []struct {
 		name     string
 		sec      Security
@@ -202,6 +204,10 @@ func TestSecuritySASLMechanismNames(t *testing.T) {
 	}
 }
 
+// TestSecurityOptionsTLSFromPEMFiles pins the TLS loader against real PEM files: a CA that
+// parses lands in the pool, a CA that parses into nothing is rejected at load time instead
+// of as an unknown-authority handshake failure later, and an encrypted key is refused
+// before any file is opened.
 func TestSecurityOptionsTLSFromPEMFiles(t *testing.T) {
 	t.Parallel()
 

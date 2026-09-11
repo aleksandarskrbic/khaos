@@ -94,6 +94,9 @@ func sparkline(vals []float64) string {
 		case v <= 0:
 			// zero stays visually zero regardless of the window's range
 		case hi-lo < hi*0.05:
+			// A window this flat has no range worth scaling against, and hi == lo would
+			// divide by zero in the branch below. Mid-height reads as "steady"; scaling a
+			// constant rate to its own range would paint it as a wall of full blocks.
 			i = 4
 		default:
 			i = 1 + int((v-lo)/(hi-lo)*6.99)
@@ -114,6 +117,8 @@ func truncate(s string, n int) string {
 	return ansi.Truncate(s, n, "…")
 }
 
+// fmtDuration renders a run time as 1m30s, growing an hours field only once there is one.
+// The header prints two of these side by side, so the short form is what keeps it narrow.
 func fmtDuration(d time.Duration) string {
 	d = d.Round(time.Second)
 	h := int(d.Hours())

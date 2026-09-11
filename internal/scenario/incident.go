@@ -57,9 +57,9 @@ type ProducerTarget struct {
 
 // ID is a stable opaque handle for one producer or consumer.
 //
-// A recreated consumer always gets a new ID; the old one is simply gone from the
-// registry. This makes it impossible for a targeted incident scheduled after a
-// rebalance to silently select a closed consumer.
+// A recreated consumer always gets a new ID; the old one is gone from the registry.
+// This makes it impossible for a targeted incident scheduled after a rebalance to
+// silently select a closed consumer.
 type ID string
 
 // ConsumerRef is the engine-independent view of a consumer that incidents need.
@@ -115,9 +115,15 @@ type EmitEvent struct {
 type EventLevel int
 
 const (
+	// EventInfo is ordinary narration; the TUI renders it dim.
 	EventInfo EventLevel = iota
+	// EventWarn covers what an incident is expected to cause ("ISR will shrink"),
+	// a target that matched nothing, and degradation the run notices on its own.
 	EventWarn
+	// EventAlert is a fault going in.
 	EventAlert
+	// EventRecovery is a fault being undone: a broker coming back, consumers
+	// resuming.
 	EventRecovery
 )
 
@@ -156,8 +162,12 @@ type CreateConsumer struct {
 	Conf              ConsumerConf
 }
 
-// StopBroker / StartBroker act on the local Docker cluster. Against an external
-// cluster they are filtered out entirely.
+// StopBroker stops one broker container of the local Docker cluster.
+//
+// Against an external cluster the engine wires a no-op BrokerController instead, which
+// records "broker fault skipped" as a warning event. The incident still fires and still
+// reaches the output layer, so the user learns why nothing happened rather than
+// watching a broker incident pass in silence.
 type StopBroker struct{ Broker string }
 
 // StartBroker restarts a broker stopped by StopBroker.
@@ -184,6 +194,13 @@ func (StartBroker) isCommand()             {}
 func (Delay) isCommand()                   {}
 
 // Incident is one scheduled fault, implemented by six concrete types below.
+//
+// Commands returns the ordered command list to apply and performs no I/O of its own: it
+// reads the registry view in ctx and, when the incident picks targets at random, draws
+// from ctx.Rand. That is what lets every incident be tested without a broker. An incident
+// whose target matched nothing still returns a list -- a single warning event -- rather
+// than an empty one, so a mistargeted incident is visible in the output instead of
+// passing unnoticed.
 type Incident interface {
 	Type() string
 	Sched() Schedule
@@ -197,10 +214,6 @@ type IncidentGroup struct {
 	IntervalSeconds int
 	Incidents       []Incident
 }
-
-// ---------------------------------------------------------------------------
-// Target selection
-// ---------------------------------------------------------------------------
 
 // selectConsumers applies target filters in order: topic, then group, then indices,
 // then a random subset by count or percentage. With no narrowing at all, every consumer
@@ -296,10 +309,6 @@ func consumerIDs(cs []ConsumerRef) []ID {
 	}
 	return out
 }
-
-// ---------------------------------------------------------------------------
-// Incident implementations
-// ---------------------------------------------------------------------------
 
 // StopBrokerIncident stops a broker container.
 type StopBrokerIncident struct {

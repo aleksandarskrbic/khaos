@@ -97,7 +97,7 @@ func (e *Engine) Run(ctx context.Context) error {
 }
 
 // allIncidents flattens incidents and groups across every scenario. Scenarios lose their
-// identity at this point -- their incidents are simply concatenated.
+// identity at this point -- their incidents are concatenated.
 func (e *Engine) allIncidents() ([]scenario.Incident, []scenario.IncidentGroup) {
 	var incidents []scenario.Incident
 	var groups []scenario.IncidentGroup
@@ -304,7 +304,12 @@ func (e *Engine) Snapshot() Snapshot {
 	return snap
 }
 
-// Healthy reports whether the engine is in a state it can recover from. It backs /healthz.
+// Healthy reports whether the engine has recorded a condition it cannot recover from. It
+// backs /healthz.
+//
+// Nothing clears the flag today, so a live engine always reports healthy. It exists as
+// the single place such a condition would land, already wired to the endpoint, rather
+// than as a signal anything currently raises.
 func (e *Engine) Healthy() error {
 	if !e.healthy.Load() {
 		return fmt.Errorf("engine unhealthy")

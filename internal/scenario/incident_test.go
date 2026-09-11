@@ -110,6 +110,9 @@ func TestPauseConsumersEmbedsDelayInSequence(t *testing.T) {
 	}
 }
 
+// TestRebalanceConsumerCommands pins the whole close-wait-recreate sequence, including
+// the hardcoded 3s gap: shortening it would change how long the group spends rebalancing
+// in every scenario that uses this incident.
 func TestRebalanceConsumerCommands(t *testing.T) {
 	c := consumer("c1", "orders", "payments-group-1")
 	c.ProcessingDelayMS = 25
@@ -190,6 +193,9 @@ func TestChangeProducerRateCommands(t *testing.T) {
 	}
 }
 
+// TestNoMatchProducesWarningOnly pins that a target matching nothing yields exactly one
+// warning event and no mutation, so a mistargeted incident shows up in the output
+// instead of passing unnoticed.
 func TestNoMatchProducesWarningOnly(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -212,10 +218,8 @@ func TestNoMatchProducesWarningOnly(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Target selection.
-// ---------------------------------------------------------------------------
-
+// TestSelectConsumers pins the filter algebra: topic, group and indices AND together,
+// and count/percentage then draw a random subset of whatever survived.
 func TestSelectConsumers(t *testing.T) {
 	all := []ConsumerRef{
 		consumer("c0", "orders", "g1"),

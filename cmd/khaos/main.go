@@ -74,6 +74,8 @@ func usageArgs(fn cobra.PositionalArgs) cobra.PositionalArgs {
 	}
 }
 
+// newRootCmd builds the whole command tree. Tests call it directly instead of exec'ing
+// the binary, which is why nothing below reaches for os.Stdout or os.Args by name.
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "khaos",
@@ -96,8 +98,9 @@ func newRootCmd() *cobra.Command {
 		},
 	}
 
-	// Unknown or malformed flags are Click UsageErrors too. FlagErrorFunc is inherited by
-	// every subcommand, so setting it once on the root covers the whole tree.
+	// An unknown or malformed flag is a bad invocation as well, so it exits 2 like the
+	// rest. FlagErrorFunc is inherited by every subcommand, so setting it once on the
+	// root covers the whole tree.
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return usageError{err}
 	})

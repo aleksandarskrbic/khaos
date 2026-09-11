@@ -1,3 +1,26 @@
+// Package engine runs a scenario: it builds the producers, consumers and flows the
+// scenario describes, drives them against a Kafka cluster, applies the incidents
+// scheduled against them, and reports what happened.
+//
+// Three entry points, in the order a run uses them. New does the setup I/O -- topic
+// creation, codec construction, schema registration, client dials -- so an unusable
+// scenario or an unreachable cluster is diagnosed before any traffic exists. Run owns the
+// run's goroutines for its whole lifetime and tears them down under a hard deadline.
+// Snapshot is how a run is read from outside: a fully-owned value a caller polls on its
+// own schedule (Healthy backs /healthz alongside it).
+//
+// The concurrency shape is flat and has no worker pool. One goroutine per producer, per
+// consumer and per flow runner, plus the incident scheduler and -- only when --lag-poll
+// asked for it -- the lag poller, all members of one errgroup that Run owns. Consumers
+// created mid-run by a rebalance incident join that same group through Engine.pending, so
+// nothing in a run is unowned or unawaited.
+//
+// Neighbours: internal/scenario supplies the validated model and expands each incident
+// into commands; internal/kafka builds the clients; internal/generate and internal/codec
+// build and encode payloads; internal/telemetry receives the Prometheus counters. Nothing
+// here knows a TUI exists -- cmd/khaos and internal/tui are consumers of Snapshot and
+// nothing else, so a wedged renderer cannot apply backpressure to a run. The one write to
+// a terminal is teardown's goroutine dump to stderr when the shutdown deadline is blown.
 package engine
 
 import (
@@ -148,6 +171,9 @@ type topicMeta struct {
 	groups       []string
 }
 
+// flowCounters are the hot-path counters for one flow. Separate from counters because a
+// flow is measured in instances -- issued, completed, still in flight -- rather than in
+// records.
 type flowCounters struct {
 	started   atomic.Int64
 	completed atomic.Int64
@@ -310,7 +336,7 @@ func (e *Engine) build(ctx context.Context) error {
 		r, err := codec.NewRegistryWithConfig(rc)
 		if err != nil {
 			// The codec error already names the URL and, for a 401/403, which flag is
-			// probably wrong. Repeating the URL here just doubled it in the output.
+			// probably wrong. Repeating the URL here only doubled it in the output.
 			return fmt.Errorf("schema registry: %w", err)
 		}
 		reg = r
@@ -331,6 +357,11 @@ func (e *Engine) build(ctx context.Context) error {
 	return nil
 }
 
+// buildTopic wires one declared topic into the engine: shared counters and one shared
+// codec, then NumProducers producers and NumConsumerGroups x ConsumersPerGroup consumers.
+//
+// Called only from build, before any goroutine exists, which is what lets it write
+// topicStats and topicOrder without a lock.
 func (e *Engine) buildTopic(ctx context.Context, scenarioName string, t scenario.Topic, reg *codec.Registry) error {
 	stats := &counters{}
 	e.topicStats[t.Name] = stats
@@ -490,7 +521,7 @@ func (e *Engine) recreateConsumer(ctx context.Context, groupID string, topics []
 	// awaited at shutdown.
 	//
 	// If the run is already shutting down nobody is reading pending. The consumer is
-	// registered either way, so drain still closes its client; it simply never polls.
+	// registered either way, so drain still closes its client; it never polls.
 	if e.pending != nil {
 		select {
 		case e.pending <- c:
@@ -507,6 +538,11 @@ func (e *Engine) trackClient(c *kgo.Client) {
 }
 
 // rngFor derives a deterministic per-component RNG from the run seed.
+//
+// The stream is keyed by the (kind, name, index) tuple rather than drawn in construction
+// order, so adding a producer to one topic does not shift the values every other
+// component generates. That is what makes --seed reproducible across scenario edits and
+// not only across identical reruns.
 func (e *Engine) rngFor(kind, name string, index int) *rand.Rand {
 	h := uint64(14695981039346656037)
 	mix := func(s string) {
