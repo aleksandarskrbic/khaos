@@ -214,7 +214,7 @@ func (f *flowRunner) emit(ctx context.Context, msgs []generate.FlowMessage) {
 //
 // Flows get a client of their own rather than borrowing a topic's, because a flow's steps
 // span several topics and none of those topics need have a `topics:` entry at all.
-func (e *Engine) buildFlow(scenarioName string, f scenario.Flow) error {
+func (e *Engine) buildFlow(tb *topicTableBuilder, scenarioName string, f scenario.Flow) error {
 	gen, err := generate.NewFlowGen(f, e.rngFor("flow", f.Name, 0), generate.BoundFillAttempts(cardinalityFillAttempts))
 	if err != nil {
 		return fmt.Errorf("flow generator: %w", err)
@@ -226,7 +226,7 @@ func (e *Engine) buildFlow(scenarioName string, f scenario.Flow) error {
 	}
 	e.trackClient(client)
 
-	topicC, err := e.buildStepConsumers(scenarioName, f)
+	topicC, err := e.buildStepConsumers(tb, scenarioName, f)
 	if err != nil {
 		return err
 	}
@@ -245,16 +245,16 @@ func (e *Engine) buildFlow(scenarioName string, f scenario.Flow) error {
 // that step's topic, each simulating DelayMS of processing per message -- which is how a
 // scenario builds deliberate lag on a flow topic.
 //
-// A step topic is not necessarily a declared topic, so it may have no counters and no
-// place in topicOrder. Those are created here, which is safe for exactly the reason
-// buildTopic's writes are: build runs before any goroutine exists. Only topics that
-// declare consumers get an entry -- a step topic nobody consumes has nothing to measure
-// and stays out of the topic table, as it was before this existed.
+// A step topic is not necessarily a declared topic, so it may have no row yet. One is
+// added here, which is safe for exactly the reason buildTopic's additions are: build runs
+// before any goroutine exists and the builder is unreachable from anything running. Only
+// topics that declare consumers get a row -- a step topic nobody consumes has nothing to
+// measure and stays out of the topic table.
 //
 // Two steps of one flow on the same topic share one set of consumers rather than
 // subscribing twice: the second block is a restatement of the first, not a request for
 // more consumers.
-func (e *Engine) buildStepConsumers(scenarioName string, f scenario.Flow) (map[string]*counters, error) {
+func (e *Engine) buildStepConsumers(tb *topicTableBuilder, scenarioName string, f scenario.Flow) (map[string]*counters, error) {
 	if e.cfg.NoConsumers {
 		return nil, nil
 	}
@@ -266,24 +266,13 @@ func (e *Engine) buildStepConsumers(scenarioName string, f scenario.Flow) (map[s
 			continue
 		}
 
-		stats := e.topicStats[step.Topic]
-		if stats == nil {
-			// An undeclared step topic. EnsureTopics already created it (see
-			// Engine.createTopics, which walks Flow.Topics), so only the bookkeeping
-			// that makes it renderable is missing.
-			stats = &counters{}
-			e.topicStats[step.Topic] = stats
-			e.topicOrder = append(e.topicOrder, step.Topic)
-		}
+		// add is idempotent, so a step naming an already-declared topic shares that
+		// topic's row and counters instead of opening a second one.
+		stats := tb.add(step.Topic, scenarioName)
 		if topicC == nil {
 			topicC = make(map[string]*counters)
 		}
 		topicC[step.Topic] = stats
-
-		meta := e.topicMeta[step.Topic]
-		if meta.scenarioName == "" {
-			meta.scenarioName = scenarioName
-		}
 
 		for gi := 0; gi < sc.Groups; gi++ {
 			// The flow name is in the group id because a declared topic may already have
@@ -291,20 +280,18 @@ func (e *Engine) buildStepConsumers(scenarioName string, f scenario.Flow) (map[s
 			// one topic. Colliding ids would silently join one Kafka group with two
 			// different configurations.
 			groupID := fmt.Sprintf("%s-%s-group-%d", f.Name, step.Topic, gi+1)
-			meta.groups = append(meta.groups, groupID)
+			tb.addGroup(step.Topic, groupID)
 
 			e.specMu.Lock()
 			e.consumerSpecs[groupID] = consumerSpec{topic: step.Topic, conf: defaultFlowConsumerConf()}
 			e.specMu.Unlock()
 
 			for ci := 0; ci < sc.PerGroup; ci++ {
-				if _, err := e.addConsumer(groupID, step.Topic, []string{step.Topic}, sc.DelayMS, defaultFlowConsumerConf()); err != nil {
+				if _, err := e.addConsumer(groupID, step.Topic, []string{step.Topic}, sc.DelayMS, defaultFlowConsumerConf(), stats); err != nil {
 					return nil, err
 				}
 			}
 		}
-
-		e.topicMeta[step.Topic] = meta
 	}
 	return topicC, nil
 }

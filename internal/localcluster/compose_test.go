@@ -7,6 +7,7 @@ import (
 	"net"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -380,6 +381,58 @@ func TestIsContainerRunning(t *testing.T) {
 
 			if got := c.isContainerRunning(context.Background(), "schema-registry"); got != tt.want {
 				t.Fatalf("isContainerRunning = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestBrokerActionsIssueTheirOwnVerb pins that StopBroker stops and StartBroker starts.
+//
+// serviceAction used to re-derive the command from its `action` string with
+// `if action == "stop" { stopArgs } else { startArgs }`, so the else branch meant "start"
+// for any other string and a typo at a call site would have started a broker it was asked
+// to stop -- a runtime surprise where a compile error belongs. The builder is now passed
+// in and the string only formats the error prefix.
+func TestBrokerActionsIssueTheirOwnVerb(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(*Cluster, context.Context) error
+		verb string
+	}{
+		{"stop", func(c *Cluster, ctx context.Context) error { return c.StopBroker(ctx, "kafka-1") }, "stop"},
+		{"start", func(c *Cluster, ctx context.Context) error { return c.StartBroker(ctx, "kafka-1") }, "start"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFakeRunner()
+			f.stdout["ps"] = `{"Service":"kafka-1","State":"running"}`
+			c := newTestCluster(t, f)
+
+			if err := tt.call(c, context.Background()); err != nil {
+				t.Fatalf("%s: %v", tt.verb, err)
+			}
+
+			var verbs []string
+			for _, call := range f.calls {
+				for i, arg := range call {
+					// The subcommand is whatever follows the compose file.
+					if arg == "-f" && i+2 < len(call) {
+						verbs = append(verbs, call[i+2])
+					}
+				}
+			}
+			if !slices.Contains(verbs, tt.verb) {
+				t.Errorf("compose subcommands were %v, want one of them to be %q", verbs, tt.verb)
+			}
+			// The opposite verb must never be issued -- that is the misroute the old
+			// else branch made possible.
+			other := "start"
+			if tt.verb == "start" {
+				other = "stop"
+			}
+			if slices.Contains(verbs, other) {
+				t.Errorf("%sBroker issued %q: compose subcommands were %v", tt.name, other, verbs)
 			}
 		})
 	}

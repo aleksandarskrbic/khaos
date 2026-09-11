@@ -133,11 +133,11 @@ type Engine struct {
 
 	admin *kafka.Admin
 
-	// topicStats is keyed by topic name and shared by every producer and consumer on
-	// that topic.
-	topicStats map[string]*counters
-	topicMeta  map[string]topicMeta
-	topicOrder []string
+	// topics is the published topic table: every topic with a row, its counters and its
+	// consumer groups. Written exactly once, by the last statement of build, and read
+	// without a lock by Snapshot and the lag poller for the rest of the run. See
+	// topics.go.
+	topics *topicTable
 
 	flowStats map[string]*flowCounters
 	flowOrder []string
@@ -211,8 +211,6 @@ func New(ctx context.Context, cfg Config) (*Engine, error) {
 		log:           cfg.Logger,
 		reg:           newRegistry(),
 		events:        events,
-		topicStats:    make(map[string]*counters),
-		topicMeta:     make(map[string]topicMeta),
 		flowStats:     make(map[string]*flowCounters),
 		consumerSpecs: make(map[string]consumerSpec),
 		seed:          seed,
@@ -327,7 +325,12 @@ func (e *Engine) schemaRegistryURL() string {
 	return ""
 }
 
-// build constructs producers, consumers and flow workers for every scenario.
+// build constructs producers, consumers and flow workers for every scenario, then
+// publishes the topic table.
+//
+// The table is assembled in a builder and handed over in one assignment at the end, so
+// there is no window in which a half-built table is reachable and no field a later edit
+// could append to mid-run.
 func (e *Engine) build(ctx context.Context) error {
 	var reg *codec.Registry
 	if url := e.schemaRegistryURL(); url != "" {
@@ -342,30 +345,30 @@ func (e *Engine) build(ctx context.Context) error {
 		reg = r
 	}
 
+	tb := newTopicTableBuilder()
 	for _, sc := range e.cfg.Scenarios {
 		for _, topic := range sc.Topics {
-			if err := e.buildTopic(ctx, sc.Name, topic, reg); err != nil {
+			if err := e.buildTopic(ctx, tb, sc.Name, topic, reg); err != nil {
 				return fmt.Errorf("topic %q: %w", topic.Name, err)
 			}
 		}
 		for _, flow := range sc.Flows {
-			if err := e.buildFlow(sc.Name, flow); err != nil {
+			if err := e.buildFlow(tb, sc.Name, flow); err != nil {
 				return fmt.Errorf("flow %q: %w", flow.Name, err)
 			}
 		}
 	}
+	e.topics = tb.freeze()
 	return nil
 }
 
 // buildTopic wires one declared topic into the engine: shared counters and one shared
 // codec, then NumProducers producers and NumConsumerGroups x ConsumersPerGroup consumers.
 //
-// Called only from build, before any goroutine exists, which is what lets it write
-// topicStats and topicOrder without a lock.
-func (e *Engine) buildTopic(ctx context.Context, scenarioName string, t scenario.Topic, reg *codec.Registry) error {
-	stats := &counters{}
-	e.topicStats[t.Name] = stats
-	e.topicOrder = append(e.topicOrder, t.Name)
+// Called only from build, before any goroutine exists, which is what lets it add to the
+// topic table at all -- tb is unreachable from anything running.
+func (e *Engine) buildTopic(ctx context.Context, tb *topicTableBuilder, scenarioName string, t scenario.Topic, reg *codec.Registry) error {
+	stats := tb.add(t.Name, scenarioName)
 
 	// One codec per topic, shared by every producer on it. Unlike the generators, a
 	// codec.Codec is safe to share: New resolves the schema text, the parsed descriptor
@@ -413,51 +416,35 @@ func (e *Engine) buildTopic(ctx context.Context, scenarioName string, t scenario
 		}))
 	}
 
-	meta := topicMeta{scenarioName: scenarioName}
-
 	if !e.cfg.NoConsumers {
 		for gi := 0; gi < t.NumConsumerGroups; gi++ {
 			groupID := fmt.Sprintf("%s-group-%d", t.Name, gi+1)
-			meta.groups = append(meta.groups, groupID)
+			tb.addGroup(t.Name, groupID)
 
 			e.specMu.Lock()
 			e.consumerSpecs[groupID] = consumerSpec{topic: t.Name, conf: t.ConsumerConfig}
 			e.specMu.Unlock()
 
 			for ci := 0; ci < t.ConsumersPerGroup; ci++ {
-				if _, err := e.addConsumer(groupID, t.Name, []string{t.Name}, t.ConsumerDelayMS, t.ConsumerConfig); err != nil {
+				if _, err := e.addConsumer(groupID, t.Name, []string{t.Name}, t.ConsumerDelayMS, t.ConsumerConfig, stats); err != nil {
 					return err
 				}
 			}
 		}
 	}
 
-	e.topicMeta[t.Name] = meta
 	return nil
 }
 
 // addConsumer constructs and registers one consumer, returning it so the caller can start
 // its goroutine.
 //
-// It is called both from build (single-threaded) and from the scheduler mid-run, which is
-// why it must not touch any engine map that Snapshot reads without a lock.
-func (e *Engine) addConsumer(groupID, topic string, topics []string, delayMS int, conf scenario.ConsumerConf) (*Consumer, error) {
-	// Checked BEFORE any client is created, so the failure costs no connection and
-	// nothing needs closing on the way out.
-	//
-	// topicStats is written only during build and read by Snapshot for the whole run, so
-	// a mid-run rebalance must not insert into it -- an unregistered topic is not
-	// something this can fix. It must not paper over it either: substituting fresh
-	// counters used to yield a consumer that consumed real records whose counts reached
-	// nothing, not the topic row and not the totals. No live path produces one (every
-	// group id in consumerSpecs was registered during build against a topic that is in
-	// the map), so this is the invariant failing loudly rather than a condition to
-	// recover from. The scheduler reports it as an alert event and the run continues.
-	stats := e.topicStats[topic]
-	if stats == nil {
-		return nil, fmt.Errorf("no counters registered for topic %q (group %q): a consumer's topic must be registered during build", topic, groupID)
-	}
-
+// stats is passed in rather than looked up. It is called both from build and from the
+// scheduler mid-run, and the two know the topic's counters by different means -- build
+// has them in hand from the topic table builder, the scheduler reads them off the frozen
+// table. Taking them as an argument is what keeps this function from touching engine
+// state that Snapshot reads unlocked.
+func (e *Engine) addConsumer(groupID, topic string, topics []string, delayMS int, conf scenario.ConsumerConf, stats *counters) (*Consumer, error) {
 	client, err := kafka.NewConsumer(e.cfg.Kafka, groupID, topics, conf)
 	if err != nil {
 		return nil, fmt.Errorf("consumer client: %w", err)
@@ -518,7 +505,19 @@ func (e *Engine) recreateConsumer(ctx context.Context, groupID string, topics []
 		topic = topics[0]
 	}
 
-	c, err := e.addConsumer(groupID, topic, topics, delayMS, conf)
+	// Looked up BEFORE addConsumer opens a client, so the failure costs no connection and
+	// leaves nothing to close. A nil answer means the topic was never registered during
+	// build, which no live path produces -- every group id in consumerSpecs was recorded
+	// against a topic the builder had added. Substituting fresh counters here, as this
+	// once did, yielded a consumer whose records reached no row and no total; failing is
+	// the honest answer, and the scheduler turns it into an alert event rather than
+	// ending the run.
+	stats := e.topics.counters(topic)
+	if stats == nil {
+		return fmt.Errorf("no counters registered for topic %q (group %q): a consumer's topic must be registered during build", topic, groupID)
+	}
+
+	c, err := e.addConsumer(groupID, topic, topics, delayMS, conf, stats)
 	if err != nil {
 		return err
 	}

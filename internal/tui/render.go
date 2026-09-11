@@ -190,17 +190,21 @@ func (m model) header(w int) string {
 	if s.Scenario != "" {
 		sep = lipgloss.Width(" · ")
 	}
-	scenMax := func() int {
+	// right is a parameter, not a capture. It is reassigned between the two calls below,
+	// so a closure over it would return a different number at each site with nothing at
+	// either site to say so -- and any later edit that reordered these lines would change
+	// the layout without touching this function.
+	scenMax := func(right string) int {
 		return w - lipgloss.Width(right) - lipgloss.Width(title) -
 			lipgloss.Width(badge) - lipgloss.Width(stop) - sep - 2
 	}
-	if scenMax() < 8 {
+	if scenMax(right) < 8 {
 		right = buildRight(false)
 	}
 
 	left := title
 	if s.Scenario != "" {
-		if scen := truncate(s.Scenario, max(scenMax(), 0)); scen != "" {
+		if scen := truncate(s.Scenario, max(scenMax(right), 0)); scen != "" {
 			left += dimStyle.Render(" · ") + headerStyle.Render(scen)
 		}
 	}
