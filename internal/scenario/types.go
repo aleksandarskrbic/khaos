@@ -320,10 +320,11 @@ type FlowStep struct {
 // StepConsumer is a step's `consumers:` block: Groups consumer groups of PerGroup
 // consumers each, each consumer simulating DelayMS of processing per message.
 //
-// Decoded and validated, but no engine code reads it today -- a flow step spawns no
-// consumers of its own, whatever this block says. FlowStep.Consumers stays a pointer so
-// "no block" and "an empty block filled with defaults" remain distinguishable for
-// whoever wires it up.
+// FlowStep.Consumers is a pointer because "no block" and "an empty block filled with
+// defaults" are different requests: the first spawns nothing, the second spawns the
+// defaulted Groups x PerGroup. The engine reads it in buildStepConsumers, which also
+// gives the step's topic a row in the topic table so the lag a slow DelayMS builds is
+// actually visible.
 type StepConsumer struct {
 	Groups   int `yaml:"groups"`
 	PerGroup int `yaml:"per_group"`
