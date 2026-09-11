@@ -901,7 +901,7 @@ func (v *validator) incident(n *yaml.Node, path string) {
 	if target := mapGet(n, "target"); target != nil {
 		v.target(target, join(path, "target"))
 	}
-	v.incidentTypeFields(n, incidentType, path, true)
+	v.incidentTypeFields(n, incidentType, path)
 }
 
 // incidentType reads and checks the `type` key shared by both incident paths.
@@ -920,15 +920,16 @@ func (v *validator) incidentType(n *yaml.Node, path string) (string, bool) {
 	return incidentType, true
 }
 
-// incidentTypeFields checks the parameters each incident type requires.
+// incidentTypeFields checks the parameters each incident type requires: that the key is
+// present, and that its value is in range. Both checks apply wherever an incident
+// appears, standalone or inside a group.
 //
-// strict controls whether a present value is also range-checked: a standalone incident
-// is strict, a group member is not. Inside a group the key must still be PRESENT, but
-// its value is not range-checked, so a group member may carry `delay_ms: -5` while the
-// identical standalone incident is rejected. That asymmetry is almost certainly an
-// oversight, but it is observable behaviour and is preserved rather than silently
-// tightened.
-func (v *validator) incidentTypeFields(n *yaml.Node, incidentType, path string, strict bool) {
+// The two used to be split by a `strict` parameter that standalone incidents passed true
+// and group members passed false, so a group member could carry `delay_ms: -5` while the
+// identical standalone incident was rejected. That was not merely untidy: `rate: -5`
+// inside a group reached Producer.SetRate, which reads any value <= 0 as rate.Inf, so an
+// out-of-range value in a group silently unlimited the producer it targeted.
+func (v *validator) incidentTypeFields(n *yaml.Node, incidentType, path string) {
 	switch incidentType {
 	case IncidentStopBroker, IncidentStartBroker:
 		broker := mapGet(n, "broker")
@@ -944,7 +945,7 @@ func (v *validator) incidentTypeFields(n *yaml.Node, incidentType, path string, 
 		if delay == nil {
 			v.errf(n, join(path, "delay_ms"),
 				"Incident type 'increase_consumer_delay' requires 'delay_ms' field")
-		} else if strict {
+		} else {
 			if ms, ok := intValue(delay); !ok || ms < 0 {
 				v.errf(delay, join(path, "delay_ms"),
 					"Field 'delay_ms' must be a non-negative integer")
@@ -956,7 +957,7 @@ func (v *validator) incidentTypeFields(n *yaml.Node, incidentType, path string, 
 		if rate == nil {
 			v.errf(n, join(path, "rate"),
 				"Incident type 'change_producer_rate' requires 'rate' field")
-		} else if strict {
+		} else {
 			if r, ok := floatValue(rate); !ok || r < 0 {
 				v.errf(rate, join(path, "rate"), "Field 'rate' must be a non-negative number")
 			}
@@ -967,7 +968,7 @@ func (v *validator) incidentTypeFields(n *yaml.Node, incidentType, path string, 
 		if duration == nil {
 			v.errf(n, join(path, "duration_seconds"),
 				"Incident type 'pause_consumer' requires 'duration_seconds' field")
-		} else if strict {
+		} else {
 			if seconds, ok := intValue(duration); !ok || seconds < 1 {
 				v.errf(duration, join(path, "duration_seconds"),
 					"Field 'duration_seconds' must be a positive integer")
@@ -1094,9 +1095,9 @@ func (v *validator) incidentGroup(n *yaml.Node, path string) {
 }
 
 // groupIncident validates one member of a `group:` block's `incidents:` list. Differs
-// from a standalone incident in three ways: no schedule is required (a missing
-// at_seconds is a warning), every_seconds is not checked at all, and value checks are
-// relaxed (strict=false).
+// from a standalone incident in two ways: no schedule is required (a missing at_seconds
+// is a warning), and every_seconds is not checked at all. Type-specific field values are
+// checked exactly as they are outside a group.
 func (v *validator) groupIncident(n *yaml.Node, path string) {
 	if !isMapping(n) {
 		v.errf(n, path, "Incident must be an object/dict")
@@ -1119,5 +1120,5 @@ func (v *validator) groupIncident(n *yaml.Node, path string) {
 	if target := mapGet(n, "target"); target != nil {
 		v.target(target, join(path, "target"))
 	}
-	v.incidentTypeFields(n, incidentType, path, false)
+	v.incidentTypeFields(n, incidentType, path)
 }

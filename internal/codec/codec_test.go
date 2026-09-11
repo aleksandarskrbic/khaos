@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -55,8 +56,8 @@ func TestNewSelectsCodec(t *testing.T) {
 			want:  jsonCodec{},
 		},
 		{
-			name:  "an unknown format falls back to json",
-			topic: topicWith("orders", "yaml", fields),
+			name:  "no format at all is json",
+			topic: topicWith("orders", "", fields),
 			want:  jsonCodec{},
 		},
 	}
@@ -214,5 +215,31 @@ func TestJSONCodecRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(out, in) {
 		t.Errorf("round trip:\n got %#v\nwant %#v", out, in)
+	}
+}
+
+// TestNewRejectsUnknownDataFormat replaces the "an unknown format falls back to json"
+// case in TestNew, which pinned the opposite.
+//
+// New used to return jsonCodec for any format string it did not recognise. That was safe
+// only because scenario validation rejects an unknown data_format first -- a guarantee
+// borrowed from a caller in another package, and invisible here. Any caller that skips
+// validation got JSON records against an Avro consumer with nothing said.
+func TestNewRejectsUnknownDataFormat(t *testing.T) {
+	fields := []scenario.Field{fld("id", scenario.FieldString)}
+
+	for _, format := range []string{"avroo", "yaml", "AVRO", "json "} {
+		t.Run(format, func(t *testing.T) {
+			c, err := New(context.Background(), topicWith("orders", format, fields), nil)
+			if err == nil {
+				t.Fatalf("New(%q) = %T, want an error", format, c)
+			}
+			if !strings.Contains(err.Error(), format) {
+				t.Errorf("error %q does not name the offending format", err)
+			}
+			if !strings.Contains(err.Error(), "orders") {
+				t.Errorf("error %q does not name the topic", err)
+			}
+		})
 	}
 }

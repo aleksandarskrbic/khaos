@@ -442,18 +442,25 @@ func (e *Engine) buildTopic(ctx context.Context, scenarioName string, t scenario
 // It is called both from build (single-threaded) and from the scheduler mid-run, which is
 // why it must not touch any engine map that Snapshot reads without a lock.
 func (e *Engine) addConsumer(groupID, topic string, topics []string, delayMS int, conf scenario.ConsumerConf) (*Consumer, error) {
+	// Checked BEFORE any client is created, so the failure costs no connection and
+	// nothing needs closing on the way out.
+	//
+	// topicStats is written only during build and read by Snapshot for the whole run, so
+	// a mid-run rebalance must not insert into it -- an unregistered topic is not
+	// something this can fix. It must not paper over it either: substituting fresh
+	// counters used to yield a consumer that consumed real records whose counts reached
+	// nothing, not the topic row and not the totals. No live path produces one (every
+	// group id in consumerSpecs was registered during build against a topic that is in
+	// the map), so this is the invariant failing loudly rather than a condition to
+	// recover from. The scheduler reports it as an alert event and the run continues.
+	stats := e.topicStats[topic]
+	if stats == nil {
+		return nil, fmt.Errorf("no counters registered for topic %q (group %q): a consumer's topic must be registered during build", topic, groupID)
+	}
+
 	client, err := kafka.NewConsumer(e.cfg.Kafka, groupID, topics, conf)
 	if err != nil {
 		return nil, fmt.Errorf("consumer client: %w", err)
-	}
-
-	// topicStats is written only during build and read by Snapshot for the whole run, so
-	// a mid-run rebalance must not insert into it. A topic absent from the map is also
-	// absent from topicOrder, so a fresh entry would never be rendered anyway -- the
-	// consumer gets unpublished counters instead of a map write racing every Snapshot.
-	stats := e.topicStats[topic]
-	if stats == nil {
-		stats = &counters{}
 	}
 
 	var dlq *dlqProducer
