@@ -273,14 +273,18 @@ func TestValidateMessageTextContract(t *testing.T) {
 			clean: true,
 		},
 		{
-			// Group members pass a relaxed check, so the key must be PRESENT but its
-			// value is never range-checked -- delay_ms: -5 is accepted inside a group and
-			// rejected outside one. An oversight, pinned here on purpose.
-			name: "group member value checks are relaxed",
+			// This case previously asserted clean: true, pinning the oversight where a
+			// group member's value was never range-checked -- delay_ms: -5 accepted
+			// inside a group, rejected outside one. A group member now produces the same
+			// message at the same severity as its standalone twin, which is the parity
+			// this file exists to check.
+			name: "group member values are checked like standalone ones",
 			doc: "name: s\ntopics:\n  - name: t\nincidents:\n  - group:\n      repeat: 1\n      interval_seconds: 30\n" +
 				"      incidents:\n        - type: increase_consumer_delay\n          at_seconds: 5\n" +
 				"          delay_ms: -5\n",
-			clean: true,
+			errs: []string{
+				"incidents[0].group.incidents[0].delay_ms: Field 'delay_ms' must be a non-negative integer",
+			},
 		},
 	})
 }

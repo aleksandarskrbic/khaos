@@ -39,8 +39,12 @@ const (
 //
 // Two fallbacks are deliberate: an "avro" or "protobuf" topic with no fields
 // falls back to JSON rather than failing, since scenario validation already
-// rejects that combination for inline schemas; and an unrecognised
-// data_format also falls back to JSON.
+// rejects that combination for inline schemas. An unrecognised data_format is
+// NOT one of them -- it is an error here, even though scenario validation
+// rejects it first (validate.go checks against validDataFormats). Falling back
+// would mean a caller that skipped validation got JSON records against an Avro
+// consumer with nothing said; the duplicate check costs a branch and makes the
+// guarantee this function's own rather than borrowed from its caller.
 //
 // A schema fetched via schema_provider: registry (Avro or protobuf) is used
 // verbatim -- its text drives encoding, its id goes into the header -- and is
@@ -76,8 +80,13 @@ func New(ctx context.Context, t scenario.Topic, reg *Registry) (Codec, error) {
 			return jsonCodec{}, nil
 		}
 		return newProtoCodec(ctx, t, fields, fetched, reg)
-	default:
+	case formatJSON, "":
+		// Empty means a Topic that never went through the decoder, which defaults
+		// data_format to json.
 		return jsonCodec{}, nil
+	default:
+		return nil, fmt.Errorf("codec: topic %q has unsupported data_format %q (valid: %s, %s, %s)",
+			t.Name, format, formatAvro, formatJSON, formatProtobuf)
 	}
 }
 

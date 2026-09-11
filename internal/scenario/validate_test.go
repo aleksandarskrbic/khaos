@@ -679,10 +679,13 @@ incidents:
 			clean: true,
 		},
 		{
-			// QUIRK: group members use a relaxed check, so value checks on delay_ms,
-			// rate and duration_seconds are skipped INSIDE a group while the identical
-			// standalone incident below is rejected. Presence is still required.
-			name: "group members skip value checks",
+			// This case previously asserted clean: true, pinning a quirk where value
+			// checks on delay_ms, rate and duration_seconds were skipped INSIDE a group
+			// while the identical standalone incident was rejected. It was an oversight,
+			// not a feature -- `rate: -5` reaches Producer.SetRate, which reads any value
+			// <= 0 as rate.Inf, so the relaxed branch was a way to unlimit a producer by
+			// accident. Group members are now checked exactly like standalone incidents.
+			name: "group members are value-checked like standalone incidents",
 			doc: `
 name: s
 topics:
@@ -702,7 +705,11 @@ incidents:
           at_seconds: 2
           duration_seconds: 0
 `,
-			clean: true,
+			errs: []string{
+				"incidents[0].group.incidents[0].delay_ms: Field 'delay_ms' must be a non-negative integer",
+				"incidents[0].group.incidents[1].rate: Field 'rate' must be a non-negative number",
+				"incidents[0].group.incidents[2].duration_seconds: Field 'duration_seconds' must be a positive integer",
+			},
 		},
 		{
 			name: "group members still require the key itself",

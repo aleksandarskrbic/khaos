@@ -501,3 +501,52 @@ func TestEngineReportsUnhealthyOnGeneratorFailure(t *testing.T) {
 		t.Error("Snapshot reported Healthy after a generator failure aborted the run")
 	}
 }
+
+// TestAddConsumerRejectsUnregisteredTopic pins that an unknown topic fails loudly.
+//
+// addConsumer used to substitute a fresh, unpublished *counters when topicStats had no
+// entry for the topic. The consumer then consumed real records whose counts reached
+// nothing -- not the topic row, not the totals, not Prometheus -- which is exactly the
+// wrong-number bug the rest of this package works to avoid. No live path reaches it, so
+// this asserts the invariant, not a recovery.
+func TestAddConsumerRejectsUnregisteredTopic(t *testing.T) {
+	addrs := newFakeCluster(t)
+
+	sc := &scenario.Scenario{Name: "reg", Topics: []scenario.Topic{jsonTopic("registered-topic")}}
+	eng, err := New(context.Background(), Config{
+		Kafka:     kafka.Config{BootstrapServers: addrs},
+		Scenarios: []*scenario.Scenario{sc},
+		Duration:  time.Second,
+		Seed:      21,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// This test never calls Run, so nothing else would close the clients New and
+	// addConsumer open. goleak fails the package without this.
+	t.Cleanup(eng.teardown)
+
+	c, err := eng.addConsumer("ghost-group", "never-registered", []string{"never-registered"}, 0, scenario.ConsumerConf{})
+	if err == nil {
+		// A returned consumer would also be an untracked client, so fail hard.
+		t.Fatalf("addConsumer for an unregistered topic returned %v, want an error", c)
+	}
+	if c != nil {
+		t.Errorf("addConsumer returned both a consumer and an error")
+	}
+	for _, want := range []string{"never-registered", "ghost-group"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not name %q", err, want)
+		}
+	}
+
+	// A registered topic still works, so the check is on registration and not on
+	// something incidental to the call.
+	good, err := eng.addConsumer("extra-group", "registered-topic", []string{"registered-topic"}, 0, scenario.ConsumerConf{})
+	if err != nil {
+		t.Fatalf("addConsumer for a registered topic: %v", err)
+	}
+	if good == nil {
+		t.Fatal("addConsumer returned no consumer and no error")
+	}
+}
