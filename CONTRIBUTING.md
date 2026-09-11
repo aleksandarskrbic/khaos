@@ -83,7 +83,14 @@ name with no description.
    `website/content/docs/reference/cli.mdx`.
 4. Open the PR with a clear description of what changed and why.
 
-Two other files are worth knowing about: `RUNBOOK.md` covers building, releasing and driving
-a cluster by hand, and `DECISIONS.md` records the deliberate behavioural choices (which
-partitioner, which rebalance protocol, whether topics are recreated) together with the line
-of code each one is set on.
+One other file is worth knowing about: `RUNBOOK.md` covers building, releasing and driving a
+cluster by hand.
+
+The deliberate behavioural choices -- which partitioner, which rebalance protocol, whether
+topics are recreated, what a producer does when its buffer fills -- are documented at the
+symbol that sets each one, so the explanation cannot drift from the value. Most are in
+`internal/kafka/policy.go` (`Partitioner`, `Balancers`, `RecreateTopicsByDefault`,
+`BlockOnBufferFull`); the other two are `scenario.ClusterAssumptions` in
+`internal/scenario/validate.go` and `engine.DefaultFlowConcurrency` in
+`internal/engine/flow.go`. Each doc comment gives the current value, why it was chosen, and
+what changes if you flip it.
