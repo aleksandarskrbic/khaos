@@ -172,10 +172,11 @@ func looksLikeScenario(data []byte) bool {
 //     appended and the first that exists is used;
 //  3. anything else is a bundled scenario name looked up through Discover.
 //
-// Case 2 REPLACES any existing extension rather than appending: "./release-1.2"
-// resolves to "./release-1.yaml", not "./release-1.2.yaml". That is surprising, but
-// changing it would silently load a different file than before for anyone relying on
-// the current behaviour.
+// Case 2 APPENDS and never rewrites: "./release-1.2" resolves to "./release-1.2.yaml"
+// and nothing else. It used to strip the last extension first, so that same input
+// loaded "./release-1.yaml" -- a different file than the user named, with no warning.
+// A path whose intended file does not exist now fails by name rather than quietly
+// resolving to a neighbour.
 func Resolve(nameOrPath string, roots ...string) (string, error) {
 	if strings.HasSuffix(nameOrPath, ".yaml") || strings.HasSuffix(nameOrPath, ".yml") {
 		if !fileExists(nameOrPath) {
@@ -185,13 +186,12 @@ func Resolve(nameOrPath string, roots ...string) (string, error) {
 	}
 
 	if filepath.IsAbs(nameOrPath) || strings.HasPrefix(nameOrPath, "./") || strings.HasPrefix(nameOrPath, "../") {
-		stem := strings.TrimSuffix(nameOrPath, filepath.Ext(nameOrPath))
 		for _, ext := range []string{".yaml", ".yml"} {
-			if candidate := stem + ext; fileExists(candidate) {
+			if candidate := nameOrPath + ext; fileExists(candidate) {
 				return absOrSelf(candidate), nil
 			}
 		}
-		return "", fmt.Errorf("scenario file not found: %q (tried .yaml and .yml)", nameOrPath)
+		return "", fmt.Errorf("scenario file not found: %q (tried %s.yaml and %s.yml)", nameOrPath, nameOrPath, nameOrPath)
 	}
 
 	available, err := Discover(roots...)

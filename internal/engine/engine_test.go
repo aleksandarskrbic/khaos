@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"errors"
 	"math/rand/v2"
 	"regexp"
 	"strings"
@@ -451,4 +452,52 @@ func TestBuildFlowRejectsImpossibleCardinality(t *testing.T) {
 func valueFuncForTest(t scenario.Topic, rnd *rand.Rand) (func() ([]byte, error), error) {
 	raw := generate.NewRawJSONGen(t.MessageSchema, rnd)
 	return func() ([]byte, error) { return raw.Next(), nil }, nil
+}
+
+// TestEngineReportsUnhealthyOnGeneratorFailure proves /healthz can actually fail.
+//
+// Engine.healthy is set true in New; before this test there was no path that cleared it,
+// so Healthy() was structurally incapable of returning an error and an operator alerting
+// on /healthz got silence for a run that had already aborted.
+func TestEngineReportsUnhealthyOnGeneratorFailure(t *testing.T) {
+	addrs := newFakeCluster(t)
+
+	sc := &scenario.Scenario{
+		Name:   "unhealthy",
+		Topics: []scenario.Topic{jsonTopic("unhealthy-topic")},
+	}
+	eng, err := New(context.Background(), Config{
+		Kafka:     kafka.Config{BootstrapServers: addrs},
+		Scenarios: []*scenario.Scenario{sc},
+		Duration:  2 * time.Second,
+		Seed:      3,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := eng.Healthy(); err != nil {
+		t.Fatalf("engine unhealthy before the run started: %v", err)
+	}
+
+	// A generator that fails on its first call is the real condition: it means the
+	// scenario cannot produce a single record, so the run is over.
+	boom := errors.New("generator exploded")
+	producers := eng.reg.allProducers()
+	if len(producers) == 0 {
+		t.Fatal("engine registered no producers")
+	}
+	for _, p := range producers {
+		p.nextValue = func() ([]byte, error) { return nil, boom }
+	}
+
+	runErr := eng.Run(context.Background())
+	if !errors.Is(runErr, boom) {
+		t.Fatalf("Run error = %v, want the generator failure", runErr)
+	}
+	if err := eng.Healthy(); err == nil {
+		t.Error("Healthy() returned nil after a generator failure aborted the run")
+	}
+	if eng.Snapshot().Healthy {
+		t.Error("Snapshot reported Healthy after a generator failure aborted the run")
+	}
 }

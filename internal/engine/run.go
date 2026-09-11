@@ -40,7 +40,16 @@ func (e *Engine) Run(ctx context.Context) error {
 	g, gctx := errgroup.WithContext(runCtx)
 
 	for _, p := range e.reg.allProducers() {
-		g.Go(func() error { return p.Run(gctx) })
+		g.Go(func() error {
+			// A producer returns an error only on generator failure, which means the
+			// scenario itself is unusable and every other producer will hit the same
+			// thing. That is precisely the unrecoverable condition Healthy reports.
+			if err := p.Run(gctx); err != nil {
+				e.healthy.Store(false)
+				return err
+			}
+			return nil
+		})
 	}
 	for _, c := range e.reg.allConsumers() {
 		g.Go(func() error { return c.Run(gctx) })
@@ -129,6 +138,11 @@ func (e *Engine) teardown() {
 	select {
 	case <-done:
 	case <-deadline.C:
+		// An abandoned drain goroutine is an unrecoverable condition: buffered records
+		// may never be delivered and a client is left open. Say so on /healthz for
+		// however long the process lingers.
+		e.healthy.Store(false)
+
 		// Hanging past the container's grace period is worse than dying loudly. Dump
 		// goroutines so the hang is diagnosable rather than mysterious.
 		fmt.Fprintf(os.Stderr, "khaos: teardown exceeded %s, dumping goroutines\n", teardownDeadline)
@@ -307,9 +321,10 @@ func (e *Engine) Snapshot() Snapshot {
 // Healthy reports whether the engine has recorded a condition it cannot recover from. It
 // backs /healthz.
 //
-// Nothing clears the flag today, so a live engine always reports healthy. It exists as
-// the single place such a condition would land, already wired to the endpoint, rather
-// than as a signal anything currently raises.
+// Two conditions clear the flag, both in this file: a producer returning a generator
+// failure from Run, and teardown abandoning its drain goroutine at the deadline. Nothing
+// sets it back -- an engine that has reached either state stays unhealthy for the rest of
+// the process's life, because neither is something a later tick can undo.
 func (e *Engine) Healthy() error {
 	if !e.healthy.Load() {
 		return fmt.Errorf("engine unhealthy")

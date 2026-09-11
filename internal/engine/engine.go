@@ -349,7 +349,7 @@ func (e *Engine) build(ctx context.Context) error {
 			}
 		}
 		for _, flow := range sc.Flows {
-			if err := e.buildFlow(flow); err != nil {
+			if err := e.buildFlow(sc.Name, flow); err != nil {
 				return fmt.Errorf("flow %q: %w", flow.Name, err)
 			}
 		}

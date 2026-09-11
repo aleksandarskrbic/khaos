@@ -241,7 +241,7 @@ func TestResolve(t *testing.T) {
 		{
 			name:    "missing extensionless path",
 			input:   "./nope",
-			wantErr: "tried .yaml and .yml",
+			wantErr: "tried ./nope.yaml and ./nope.yml",
 		},
 		{
 			name:    "unknown bundled name lists alternatives",
@@ -271,19 +271,43 @@ func TestResolve(t *testing.T) {
 	}
 }
 
-// TestResolveReplacesExistingExtension pins that an extensionless path containing a dot
-// loses everything after the last one, per the quirk documented on Resolve.
-func TestResolveReplacesExistingExtension(t *testing.T) {
+// TestResolveAppendsRatherThanReplacingExtension replaces TestResolveReplacesExistingExtension,
+// which pinned the opposite.
+//
+// Resolve used to strip the last extension before appending, so "./release-1.2" loaded
+// "./release-1.yaml" -- a real file, but not the one named, and with nothing in the
+// output saying so. The old test defended that as a documented quirk; it was a bug, and
+// pinning it meant any fix had to fight the suite. The contract is now: append only, and
+// fail by name when the appended path does not exist rather than resolving to a
+// same-stem neighbour.
+func TestResolveAppendsRatherThanReplacingExtension(t *testing.T) {
 	root := tempDir(t)
 	write(t, filepath.Join(root, "release-1.yaml"), "name: release\ntopics: [{name: a}]\n")
+	write(t, filepath.Join(root, "release-1.2.yaml"), "name: release-point-two\ntopics: [{name: a}]\n")
 	chdir(t, root)
 
 	got, err := Resolve("./release-1.2")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if want := filepath.Join(root, "release-1.yaml"); got != want {
+	if want := filepath.Join(root, "release-1.2.yaml"); got != want {
 		t.Errorf("Resolve(./release-1.2) = %q, want %q", got, want)
+	}
+}
+
+// TestResolveDoesNotFallBackToStem is the other half: with no release-1.2.yaml on disk,
+// the neighbouring release-1.yaml must NOT be substituted.
+func TestResolveDoesNotFallBackToStem(t *testing.T) {
+	root := tempDir(t)
+	write(t, filepath.Join(root, "release-1.yaml"), "name: release\ntopics: [{name: a}]\n")
+	chdir(t, root)
+
+	got, err := Resolve("./release-1.2")
+	if err == nil {
+		t.Fatalf("Resolve(./release-1.2) = %q, want an error: release-1.2.yaml does not exist", got)
+	}
+	if !strings.Contains(err.Error(), "release-1.2") {
+		t.Errorf("error %q does not name the path the user asked for", err)
 	}
 }
 

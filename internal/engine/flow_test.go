@@ -188,3 +188,103 @@ func TestFlowDrainDoesNotOutlastItsBudget(t *testing.T) {
 		t.Errorf("%d flow instances still in flight after Run returned", got)
 	}
 }
+
+// TestFlowStepConsumersActuallyConsume proves a step's `consumers:` block is not dead
+// configuration.
+//
+// The block was decoded, defaulted and validated, but nothing in the engine read it: a
+// scenario asking for consumers on a flow step got none, silently, while the reference
+// docs and the bundled order-flow scenario both promised it worked.
+func TestFlowStepConsumersActuallyConsume(t *testing.T) {
+	addrs := newStrictFakeCluster(t)
+
+	flow := twoStepFlow("stepcons", 10)
+	// Only the first step declares consumers, so the second step's topic must stay out of
+	// the topic table entirely -- a topic nobody consumes has nothing to measure.
+	flow.Steps[0].Consumers = &scenario.StepConsumer{Groups: 1, PerGroup: 2}
+
+	sc := &scenario.Scenario{Name: "flows", Flows: []scenario.Flow{flow}}
+
+	eng, err := New(context.Background(), Config{
+		Kafka:     kafka.Config{BootstrapServers: addrs},
+		Scenarios: []*scenario.Scenario{sc},
+		Duration:  3 * time.Second,
+		Seed:      11,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := eng.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	snap := eng.Snapshot()
+	if len(snap.Topics) != 1 {
+		t.Fatalf("topics in snapshot = %+v, want only the step that declared consumers", snap.Topics)
+	}
+
+	ts := snap.Topics[0]
+	if ts.Topic != "stepcons-created" {
+		t.Fatalf("topic row = %q, want %q", ts.Topic, "stepcons-created")
+	}
+	if ts.Scenario != "flows" {
+		t.Errorf("topic row scenario = %q, want %q", ts.Scenario, "flows")
+	}
+	// Produced is counted by the flow runner itself. Without it the row would show
+	// consumed-but-never-produced and render negative lag.
+	if ts.Produced == 0 {
+		t.Error("flow-produced records were not counted against the step topic")
+	}
+	if ts.Bytes == 0 {
+		t.Error("no bytes recorded for the step topic")
+	}
+	if ts.Consumed == 0 {
+		t.Fatalf("step consumers consumed nothing: produced=%d groups=%+v", ts.Produced, ts.Groups)
+	}
+	if ts.Lag < 0 {
+		t.Errorf("lag = %d: a step topic must count its own production", ts.Lag)
+	}
+	if snap.TotalConsumed == 0 {
+		t.Error("step-consumer traffic reached no total")
+	}
+
+	if len(ts.Groups) != 1 {
+		t.Fatalf("groups = %+v, want exactly one", ts.Groups)
+	}
+	g := ts.Groups[0]
+	if want := "stepcons-stepcons-created-group-1"; g.GroupID != want {
+		t.Errorf("group id = %q, want %q", g.GroupID, want)
+	}
+	if g.Consumers != 2 {
+		t.Errorf("consumers in group = %d, want the per_group of 2", g.Consumers)
+	}
+}
+
+// TestFlowStepConsumersRespectNoConsumers pins that --no-consumers suppresses step
+// consumers too, not just the ones declared under `topics:`.
+func TestFlowStepConsumersRespectNoConsumers(t *testing.T) {
+	addrs := newStrictFakeCluster(t)
+
+	flow := twoStepFlow("nocons", 10)
+	flow.Steps[0].Consumers = &scenario.StepConsumer{Groups: 1, PerGroup: 2}
+
+	sc := &scenario.Scenario{Name: "flows", Flows: []scenario.Flow{flow}}
+
+	eng, err := New(context.Background(), Config{
+		Kafka:       kafka.Config{BootstrapServers: addrs},
+		Scenarios:   []*scenario.Scenario{sc},
+		Duration:    time.Second,
+		Seed:        12,
+		NoConsumers: true,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := eng.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if snap := eng.Snapshot(); len(snap.Topics) != 0 || snap.TotalConsumed != 0 {
+		t.Errorf("--no-consumers still produced topic rows %+v / consumed %d", snap.Topics, snap.TotalConsumed)
+	}
+}
