@@ -396,3 +396,60 @@ func TestProgressBar(t *testing.T) {
 }
 
 func plainStr(s string) string { return ansiRe.ReplaceAllString(s, "") }
+
+// scenarioText returns the scenario name as rendered in a header line, or "" when the
+// header dropped it.
+func scenarioText(header string) string {
+	_, rest, ok := strings.Cut(header, "khaos · ")
+	if !ok {
+		return ""
+	}
+	name, _, _ := strings.Cut(rest, "  ")
+	return name
+}
+
+// TestHeaderMeasuresTheScenarioAgainstTheLayoutItGot pins that once the progress bar has
+// been dropped, the scenario name is sized against the narrower right-hand side rather
+// than the one that included the bar.
+//
+// The budget used to come from a closure capturing `right`, which is reassigned between
+// its two call sites -- so the same call returned a different number each time, with
+// nothing at either site saying so. The behaviour was correct and this pins it, because
+// the obvious "cleanup" of hoisting that call to a single variable would silently shrink
+// the scenario name in exactly this band.
+func TestHeaderMeasuresTheScenarioAgainstTheLayoutItGot(t *testing.T) {
+	snap := engine.Snapshot{
+		At:       time.Now(),
+		Scenario: "orders-pipeline-with-a-very-long-name",
+		Elapsed:  time.Minute,
+		Deadline: 10 * time.Minute,
+		Healthy:  false,
+		Stopping: true,
+	}
+	m := model{snap: snap}
+
+	// At 81 the bar still fits, so the scenario is measured against the wide right.
+	withBar := plainStr(m.header(81))
+	if !strings.Contains(withBar, "█") {
+		t.Fatalf("width 81 was expected to keep the progress bar: %q", withBar)
+	}
+
+	// 76..80 is the band where the bar is dropped: wide enough for barWidth to offer one,
+	// too narrow to leave the scenario 8 cells beside it.
+	for w := 76; w <= 80; w++ {
+		header := plainStr(m.header(w))
+		if strings.Contains(header, "█") {
+			t.Errorf("width %d: progress bar should have yielded: %q", w, header)
+		}
+		if got := lipgloss.Width(header); got > w {
+			t.Errorf("width %d: header is %d cells wide: %q", w, got, header)
+		}
+		// The point of the reassignment: dropping the bar hands its cells to the scenario.
+		// Measuring against the stale wide right would leave them empty.
+		if len(scenarioText(header)) <= len(scenarioText(withBar)) {
+			t.Errorf("width %d: scenario %q is no longer than the with-bar layout at 81 (%q); "+
+				"the freed cells went nowhere",
+				w, scenarioText(header), scenarioText(withBar))
+		}
+	}
+}

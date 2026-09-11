@@ -58,10 +58,10 @@ type lagPoller struct {
 	// groups is every consumer group in the run, in a stable order.
 	groups []string
 
-	// topics is the engine's topic -> counters map. It is written only during build and
-	// read-only thereafter, so indexing it from this goroutine is safe; the mutable state
-	// is the per-topic atomic pointer inside each counters.
-	topics map[string]*counters
+	// topics is the engine's frozen topic table. Read-only by construction, so reading it
+	// from this goroutine needs no lock; the mutable state is the atomic pointer inside
+	// each of its counters.
+	topics *topicTable
 
 	log    *slog.Logger
 	events *eventRing
@@ -82,19 +82,9 @@ func (e *Engine) newLagPoller() *lagPoller {
 		return nil
 	}
 
-	// topicOrder rather than ranging topicMeta: map order is random, and the group order
+	// topicTable.groups is ordered and deduplicated, which matters here: the group order
 	// decides the order of admin calls and therefore of any reported failures.
-	seen := make(map[string]bool)
-	var groups []string
-	for _, name := range e.topicOrder {
-		for _, g := range e.topicMeta[name].groups {
-			if seen[g] {
-				continue
-			}
-			seen[g] = true
-			groups = append(groups, g)
-		}
-	}
+	groups := e.topics.groups()
 	if len(groups) == 0 {
 		// --no-consumers, or a scenario with no consumer groups. There is no group whose
 		// lag could be measured, and asking about groups that do not exist would be pure
@@ -107,7 +97,7 @@ func (e *Engine) newLagPoller() *lagPoller {
 		interval: e.cfg.LagPoll,
 		timeout:  lagPollTimeout(e.cfg.LagPoll),
 		groups:   groups,
-		topics:   e.topicStats,
+		topics:   e.topics,
 		log:      e.log,
 		events:   e.events,
 		reported: make(map[string]string),
@@ -157,7 +147,7 @@ func (p *lagPoller) run(ctx context.Context) error {
 // groups, and it would trade a slower tick for a burst of admin requests at a fixed
 // interval forever -- the wrong side of that trade for a process that runs for weeks.
 func (p *lagPoller) pollOnce(ctx context.Context) {
-	byTopic := make(map[string]map[string]int64, len(p.topics))
+	byTopic := make(map[string]map[string]int64, len(p.topics.rows()))
 
 	for _, group := range p.groups {
 		lag, err := p.fetch(ctx, group)
@@ -173,7 +163,7 @@ func (p *lagPoller) pollOnce(ctx context.Context) {
 		p.recovered(group)
 
 		for topic, parts := range lag {
-			if _, ok := p.topics[topic]; !ok {
+			if p.topics.counters(topic) == nil {
 				// A topic this run does not track: nothing would ever render it.
 				continue
 			}
@@ -226,7 +216,8 @@ func (p *lagPoller) fetch(ctx context.Context, group string) (map[string]map[int
 // reading. Lag from thirty seconds ago rendered as the current value is exactly the kind
 // of quietly-wrong number this decision exists to eliminate.
 func (p *lagPoller) publish(byTopic map[string]map[string]int64) {
-	for name, c := range p.topics {
+	for _, name := range p.topics.rows() {
+		c := p.topics.counters(name)
 		m := byTopic[name]
 		if len(m) == 0 {
 			c.brokerLag.Store(nil)

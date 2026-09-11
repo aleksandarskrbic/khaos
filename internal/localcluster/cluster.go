@@ -160,22 +160,27 @@ func (c *Cluster) Status(ctx context.Context) ([]ServiceStatus, error) {
 
 // StopBroker stops one broker container, leaving the rest of the cluster up.
 func (c *Cluster) StopBroker(ctx context.Context, name string) error {
-	return c.serviceAction(ctx, "stop", name)
+	return c.serviceAction(ctx, "stop", name, stopArgs)
 }
 
 // StartBroker restarts a broker previously stopped by StopBroker.
 func (c *Cluster) StartBroker(ctx context.Context, name string) error {
-	return c.serviceAction(ctx, "start", name)
+	return c.serviceAction(ctx, "start", name, startArgs)
 }
 
-// serviceAction runs `compose stop|start <service>` after confirming there is a cluster
-// to act on.
+// serviceAction runs one compose command against a single service after confirming there
+// is a cluster to act on.
 //
 // The check asks the compose project's own service list rather than probing for a
 // specific container name: once StopBroker has taken kafka-1 down, a name-based probe for
 // "kafka-1" would find nothing and StartBroker("kafka-1") could never bring it back, while
 // the service list still reports kafka-2, kafka-3 and kafka-ui as present.
-func (c *Cluster) serviceAction(ctx context.Context, action, name string) error {
+//
+// argv builds the command; action only names it in errors. The two used to be one string,
+// with the builder re-derived as `if action == "stop" { ... } else { ... }` -- so the else
+// branch meant "start" for any string at all, and a typo at a call site started a broker
+// it was asked to stop instead of failing to compile.
+func (c *Cluster) serviceAction(ctx context.Context, action, name string, argv func(composeFile, service string) []string) error {
 	file := c.clusterFile()
 
 	statuses, err := c.Status(ctx)
@@ -186,14 +191,7 @@ func (c *Cluster) serviceAction(ctx context.Context, action, name string) error 
 		return fmt.Errorf("%s broker %s: %w", action, name, ErrNoActiveCluster)
 	}
 
-	var args []string
-	if action == "stop" {
-		args = stopArgs(file, name)
-	} else {
-		args = startArgs(file, name)
-	}
-
-	if _, stderr, err := c.run(ctx, args...); err != nil {
+	if _, stderr, err := c.run(ctx, argv(file, name)...); err != nil {
 		return classifyComposeError(fmt.Sprintf("%s broker %s", action, name), file, stderr, err)
 	}
 	return nil

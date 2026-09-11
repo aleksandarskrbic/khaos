@@ -255,12 +255,12 @@ func (e *Engine) Snapshot() Snapshot {
 		}
 	}
 
-	for _, name := range e.topicOrder {
-		cs := e.topicStats[name]
+	for _, name := range e.topics.rows() {
+		cs := e.topics.counters(name)
 		if cs == nil {
 			continue
 		}
-		meta := e.topicMeta[name]
+		meta := e.topics.metaFor(name)
 
 		ts := TopicStat{
 			Topic:      name,

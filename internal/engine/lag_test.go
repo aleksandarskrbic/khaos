@@ -51,23 +51,19 @@ func (s *stubLagSource) Calls() int {
 func lagEngine(t *testing.T, topics ...string) *Engine {
 	t.Helper()
 
-	e := &Engine{
-		log:        slog.New(slog.DiscardHandler),
-		reg:        newRegistry(),
-		sched:      &scheduler{},
-		events:     newEventRing(64),
-		topicStats: make(map[string]*counters, len(topics)),
-		topicMeta:  make(map[string]topicMeta, len(topics)),
-	}
+	tb := newTopicTableBuilder()
 	for _, name := range topics {
-		e.topicStats[name] = &counters{}
-		e.topicOrder = append(e.topicOrder, name)
-		e.topicMeta[name] = topicMeta{
-			scenarioName: "lag",
-			groups:       []string{name + "-group-1"},
-		}
+		tb.add(name, "lag")
+		tb.addGroup(name, name+"-group-1")
 	}
-	return e
+
+	return &Engine{
+		log:    slog.New(slog.DiscardHandler),
+		reg:    newRegistry(),
+		sched:  &scheduler{},
+		events: newEventRing(64),
+		topics: tb.freeze(),
+	}
 }
 
 // pollerFor wires a stub source to an engine's topics the way newLagPoller wires the real
@@ -75,16 +71,12 @@ func lagEngine(t *testing.T, topics ...string) *Engine {
 func pollerFor(t *testing.T, e *Engine, src lagSource) *lagPoller {
 	t.Helper()
 
-	var groups []string
-	for _, name := range e.topicOrder {
-		groups = append(groups, e.topicMeta[name].groups...)
-	}
 	return &lagPoller{
 		src:      src,
 		interval: time.Millisecond,
 		timeout:  lagPollTimeout(time.Millisecond),
-		groups:   groups,
-		topics:   e.topicStats,
+		groups:   e.topics.groups(),
+		topics:   e.topics,
 		log:      e.log,
 		events:   e.events,
 		reported: make(map[string]string),

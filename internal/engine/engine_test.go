@@ -502,14 +502,15 @@ func TestEngineReportsUnhealthyOnGeneratorFailure(t *testing.T) {
 	}
 }
 
-// TestAddConsumerRejectsUnregisteredTopic pins that an unknown topic fails loudly.
+// TestRecreateConsumerRejectsUnregisteredTopic pins that an unknown topic fails loudly.
 //
-// addConsumer used to substitute a fresh, unpublished *counters when topicStats had no
-// entry for the topic. The consumer then consumed real records whose counts reached
-// nothing -- not the topic row, not the totals, not Prometheus -- which is exactly the
-// wrong-number bug the rest of this package works to avoid. No live path reaches it, so
-// this asserts the invariant, not a recovery.
-func TestAddConsumerRejectsUnregisteredTopic(t *testing.T) {
+// The engine used to substitute a fresh, unpublished *counters when no entry existed for
+// the topic. The consumer then consumed real records whose counts reached nothing -- not
+// the topic row, not the totals, not Prometheus -- which is exactly the wrong-number bug
+// the rest of this package works to avoid. The check lives on recreateConsumer, the only
+// path that looks a topic up rather than being handed its counters. No live path reaches
+// it, so this asserts the invariant, not a recovery.
+func TestRecreateConsumerRejectsUnregisteredTopic(t *testing.T) {
 	addrs := newFakeCluster(t)
 
 	sc := &scenario.Scenario{Name: "reg", Topics: []scenario.Topic{jsonTopic("registered-topic")}}
@@ -526,27 +527,27 @@ func TestAddConsumerRejectsUnregisteredTopic(t *testing.T) {
 	// addConsumer open. goleak fails the package without this.
 	t.Cleanup(eng.teardown)
 
-	c, err := eng.addConsumer("ghost-group", "never-registered", []string{"never-registered"}, 0, scenario.ConsumerConf{})
+	err = eng.recreateConsumer(context.Background(), "ghost-group", []string{"never-registered"}, 0, scenario.ConsumerConf{})
 	if err == nil {
-		// A returned consumer would also be an untracked client, so fail hard.
-		t.Fatalf("addConsumer for an unregistered topic returned %v, want an error", c)
-	}
-	if c != nil {
-		t.Errorf("addConsumer returned both a consumer and an error")
+		t.Fatal("recreateConsumer for an unregistered topic returned nil, want an error")
 	}
 	for _, want := range []string{"never-registered", "ghost-group"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not name %q", err, want)
 		}
 	}
-
-	// A registered topic still works, so the check is on registration and not on
-	// something incidental to the call.
-	good, err := eng.addConsumer("extra-group", "registered-topic", []string{"registered-topic"}, 0, scenario.ConsumerConf{})
-	if err != nil {
-		t.Fatalf("addConsumer for a registered topic: %v", err)
+	// No consumer may have been registered on the way out, or drain would close a client
+	// for a row that does not exist.
+	if n := len(eng.reg.allConsumers()); n != 1 {
+		t.Errorf("consumers registered = %d, want the 1 built for registered-topic", n)
 	}
-	if good == nil {
-		t.Fatal("addConsumer returned no consumer and no error")
+
+	// A registered group still works, so the check is on registration and not on
+	// something incidental to the call.
+	if err := eng.recreateConsumer(context.Background(), "registered-topic-group-1", []string{"registered-topic"}, 0, scenario.ConsumerConf{}); err != nil {
+		t.Fatalf("recreateConsumer for a registered topic: %v", err)
+	}
+	if n := len(eng.reg.allConsumers()); n != 2 {
+		t.Errorf("consumers registered = %d, want the replacement to have joined", n)
 	}
 }
