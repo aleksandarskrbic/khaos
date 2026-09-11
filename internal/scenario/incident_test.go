@@ -139,7 +139,7 @@ func TestRebalanceConsumerCommands(t *testing.T) {
 // Pins that a replacement consumer carries the victim's failure-simulation config
 // (failure_rate, commit_failure_rate, on_failure, max_retries) into the CreateConsumer
 // it's rebuilt from, instead of silently reverting to model defaults partway through a
-// rebalance storm -- see DECISIONS.md D16.
+// rebalance storm.
 func TestRebalanceConsumerCarriesFailureConfig(t *testing.T) {
 	c := consumer("c1", "orders", "g1")
 	c.Conf = ConsumerConf{

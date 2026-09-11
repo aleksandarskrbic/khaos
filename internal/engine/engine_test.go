@@ -353,8 +353,7 @@ func f64Ptr(v float64) *float64 { return &v }
 // impossibleCardinalityField asks for more distinct values than its value space can
 // supply: an int in [0,5] has 6 possible values, but cardinality demands 100. Without
 // generate.BoundFillAttempts wired into the engine's generator construction, filling
-// this field's distinct-value cache loops forever with no error and no output -- see D17
-// in DECISIONS.md.
+// this field's distinct-value cache loops forever with no error and no output.
 func impossibleCardinalityField() scenario.Field {
 	return scenario.Field{
 		Name:        "n",
