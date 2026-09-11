@@ -462,7 +462,8 @@ func TestValidateFields(t *testing.T) {
 			errs: []string{"topics[0].message_schema.fields[0].items.fields[0]: min cannot be greater than max"},
 		},
 		{
-			// An array item needs no name -- _validate_array_item never checks for one.
+			// An array item needs no name: validator.field skips the name check when
+			// asItem is set.
 			name:  "array item needs no name",
 			doc:   prefix + "        - name: tags\n          type: array\n          items:\n            type: string\n",
 			clean: true,

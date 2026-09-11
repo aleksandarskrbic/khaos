@@ -46,7 +46,10 @@ func TestFakerProvidersUsedByShippedScenarios(t *testing.T) {
 	}
 }
 
-// Provider output must match the expected shape for each format.
+// Provider output shapes are a contract, so a gofakeit upgrade that changes
+// what Email() or IPv4Address() returns has to fail here rather than silently
+// reshape every message built from these providers. The date cases pin
+// something this package owns instead: the isoDate and isoDateTime layouts.
 func TestFakerProviderShapes(t *testing.T) {
 	tests := []struct {
 		provider string
@@ -123,6 +126,8 @@ func TestFakerLocaleIsAcceptedAndIgnored(t *testing.T) {
 	}
 }
 
+// The list is complete and sorted: it is spliced into the "supported providers are: ..."
+// error a mistyped provider produces.
 func TestFakerProvidersListIsSorted(t *testing.T) {
 	list := FakerProviders()
 	if len(list) != len(fakerProviders) {

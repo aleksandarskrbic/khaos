@@ -72,6 +72,9 @@ func familyNames(t *testing.T, reg *prometheus.Registry) []string {
 	return names
 }
 
+// The want list is the full exported metric surface. Metric names are what dashboards and
+// alert rules are written against, so adding or renaming one has to be a deliberate edit
+// here rather than something a change to NewMetrics can do quietly.
 func TestNewMetricsRegistersTheWholeSet(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
@@ -104,6 +107,9 @@ func TestNewMetricsRegistersTheWholeSet(t *testing.T) {
 	}
 }
 
+// Label sets are part of the contract too, not only the names: dropping "group" from
+// messages_consumed_total would collapse the per-group series into one, and a dashboard
+// grouping by consumer group would go blank rather than fail loudly.
 func TestCounterValues(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)

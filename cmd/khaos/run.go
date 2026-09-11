@@ -49,6 +49,8 @@ type runFlags struct {
 	metricsAddr string
 }
 
+// bind registers the flags run and simulate have in common. They are declared once, here,
+// so the two commands cannot drift apart on a default or a shorthand.
 func (f *runFlags) bind(c *cobra.Command) {
 	// --duration/-d accepts a bare integer of seconds (DEFAULT 0, meaning "run until
 	// Ctrl-C") or a Go duration string like "10m", so `-d 60` and `-d 90s` both work; see
@@ -316,7 +318,6 @@ func (d *durationValue) Set(v string) error {
 
 func (d *durationValue) Type() string { return "duration" }
 
-// registry assembles the Schema Registry configuration from the flags.
 func (f *runFlags) registry() codec.RegistryConfig {
 	return codec.RegistryConfig{
 		URL:          f.schemaRegistryURL,
@@ -361,7 +362,7 @@ func execute(ctx context.Context, stdout, stderr io.Writer, names []string, kcfg
 	}
 
 	// A registry is only built when --metrics-addr is set: an idle Metrics struct nobody
-	// scrapes just adds a WithLabelValues call to every hot-path increment for nothing.
+	// scrapes adds a WithLabelValues call to every hot-path increment for nothing.
 	var metricsReg *prometheus.Registry
 	var metrics *telemetry.Metrics
 	if f.metricsAddr != "" {
@@ -589,6 +590,8 @@ func parseMode(mode string) (kraft bool, err error) {
 // `simulate`.
 var errNoScenario = errors.New("please specify at least one scenario (use `khaos list` to see them)")
 
+// splitServers splits a comma-separated broker list, trimming each entry and dropping
+// empty ones, so a stray space or trailing comma in `-b "a:9092, b:9092,"` costs nothing.
 func splitServers(s string) []string {
 	parts := strings.Split(s, ",")
 	out := make([]string, 0, len(parts))

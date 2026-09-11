@@ -13,10 +13,13 @@ import (
 )
 
 // fakeCluster stands in for the Docker-backed localcluster.Cluster so `run`'s teardown
-// path can be exercised in CI. Every field is atomic because the engine may call
-// StopBroker/StartBroker from its own goroutines while the test reads the counters.
+// path can be exercised in CI.
+//
+// The four call counters are atomic because the engine drives StopBroker and StartBroker
+// from its own goroutines while the test reads them. The plain fields above them are
+// touched only by the command goroutine, through Up, Down and Running.
 type fakeCluster struct {
-	running  bool // whether BootstrapServers succeeds before Up is called
+	running  bool // is the cluster up: set at construction, then flipped by Up and Down
 	brokers  string
 	upErr    error
 	downErr  error

@@ -8,9 +8,7 @@ import "testing"
 // per-key type errors, and the flow and group rules.
 func TestValidateMessageTextContract(t *testing.T) {
 	runValidationCases(t, []validationCase{
-		// -------------------------------------------------------------------
 		// "must be an object/dict" -- one per container, each with its own wording.
-		// -------------------------------------------------------------------
 		{
 			name: "topic is not a mapping",
 			doc:  "name: s\ntopics:\n  - just-a-string\n",
@@ -90,9 +88,7 @@ func TestValidateMessageTextContract(t *testing.T) {
 			errs: []string{"topics[0].message_schema.fields: fields must be a list"},
 		},
 
-		// -------------------------------------------------------------------
 		// Per-key type and range errors on a field definition.
-		// -------------------------------------------------------------------
 		{
 			name: "type is not a string",
 			doc:  "name: s\ntopics:\n  - name: t\n    message_schema:\n      fields:\n        - name: a\n          type: 7\n",
@@ -151,9 +147,7 @@ func TestValidateMessageTextContract(t *testing.T) {
 			errs: []string{"topics[0].message_schema.fields[0].locale: Field 'locale' must be a string"},
 		},
 
-		// -------------------------------------------------------------------
 		// message_schema rules that depend on the defaults rather than on the file.
-		// -------------------------------------------------------------------
 		{
 			// The pairing check compares against the MODEL default, so setting only
 			// min_size_bytes is enough to trip it against the default max of 500.
@@ -171,9 +165,7 @@ func TestValidateMessageTextContract(t *testing.T) {
 			warns: []string{"schema_registry: Using Avro without Schema Registry (schemaless mode)"},
 		},
 
-		// -------------------------------------------------------------------
 		// Flow steps.
-		// -------------------------------------------------------------------
 		{
 			name: "step missing topic and event_type",
 			doc:  "name: s\nflows:\n  - name: f\n    steps:\n      - {}\n      - {}\n",
@@ -241,9 +233,7 @@ func TestValidateMessageTextContract(t *testing.T) {
 			errs: []string{"flows[0].correlation.field: Field 'field' must be a string"},
 		},
 
-		// -------------------------------------------------------------------
 		// Incident targets and groups.
-		// -------------------------------------------------------------------
 		{
 			name: "target topic and group types",
 			doc: "name: s\ntopics:\n  - name: t\nincidents:\n  - type: rebalance_consumer\n    at_seconds: 5\n" +

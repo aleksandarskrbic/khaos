@@ -318,6 +318,12 @@ func (r *Registry) FieldsFor(ctx context.Context, subject string) (string, []sce
 }
 
 // fetch returns the cached schema for a subject, fetching it on first use.
+//
+// The mutex is released before the network call rather than held across it, so
+// one slow subject lookup cannot block every other caller. Two callers racing
+// on the same cold subject therefore both fetch, and the second overwrites the
+// first: a subjectSchema is read-only once built, so the duplicate request is
+// the whole cost.
 func (r *Registry) fetch(ctx context.Context, subject string) (*subjectSchema, error) {
 	r.mu.Lock()
 	cached, ok := r.subjects[subject]

@@ -1,5 +1,11 @@
 // Package tui renders live run state in the terminal.
 //
+// Run is the entry point: it drives a Bubble Tea program over a Source -- engine.Engine in
+// the binary, a stub in tests -- until the run ends or a quit key cancels it. Everything
+// under that is layout. render.go assembles the frame and decides which columns fit,
+// rates.go derives per-second figures from successive snapshots, and format.go does the
+// number and width arithmetic the tables are aligned on.
+//
 // The single most important property of this package is what it does NOT do: it never
 // mutates engine state, never owns the run deadline, and never decides when the run stops.
 // It polls engine.Snapshot on its own timer and draws whatever it gets, so a wedged UI

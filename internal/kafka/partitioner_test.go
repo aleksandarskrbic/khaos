@@ -50,7 +50,12 @@ func TestConsistentRandomNeverNegative(t *testing.T) {
 	}
 }
 
-// TestConsistentRandomSpreadsKeylessRecords asserts the "random" half.
+// TestConsistentRandomSpreadsKeylessRecords asserts the "random" half: keyless records
+// must not pile onto one partition.
+//
+// The 10-of-12 threshold is slack on purpose. A working generator covers all 12 in 2000
+// draws with overwhelming probability, and a broken one collapses onto one or two
+// partitions, so the loose bound still catches the real failure and cannot flake.
 func TestConsistentRandomSpreadsKeylessRecords(t *testing.T) {
 	tp := consistentRandomPartitioner{}.ForTopic("t")
 	seen := make(map[int]bool)

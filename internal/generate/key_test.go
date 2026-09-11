@@ -185,6 +185,9 @@ func TestEmptyDistributionDefaultsToUniform(t *testing.T) {
 	}
 }
 
+// Equally seeded generators agree call for call. round_robin and single_key draw nothing
+// from the source, so for those two this pins only that a fresh generator always starts
+// from the same place: key-0 for round_robin, hot-key for single_key.
 func TestKeyGenSeededReproducibility(t *testing.T) {
 	for _, dist := range []string{KeyUniform, KeyZipfian, KeyRoundRobin, KeySingleKey} {
 		t.Run(dist, func(t *testing.T) {

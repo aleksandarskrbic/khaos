@@ -109,11 +109,13 @@ var fakerProviders = map[string]func(*gofakeit.Faker) any{
 
 // newFakerGen builds the generator for a `type: faker` field.
 //
-// Locale is accepted and ignored: gofakeit has no locale concept, so
+// Locale is accepted and ignored: gofakeit v7 has no locale concept, so
 // `locale: de_DE` silently produces the same en_US-flavoured data as
 // everything else. That is a documented no-op rather than an error, since
 // rejecting it would break existing scenarios for no gain.
-// o is unused: faker fields have no cardinality cache, so no fill loop to bound.
+//
+// The options argument goes unused because faker fields have no cardinality
+// cache, and so no fill loop to bound.
 func newFakerGen(f scenario.Field, r *rand.Rand, _ options) (func() any, error) {
 	if f.Provider == "" {
 		return nil, fmt.Errorf("faker field %q requires 'provider'", f.Name)
@@ -130,8 +132,10 @@ func newFakerGen(f scenario.Field, r *rand.Rand, _ options) (func() any, error) 
 	return func() any { return fn(fake) }, nil
 }
 
-// FakerProviders lists the supported `provider:` names, sorted. Exported so the
-// CLI can show them when a scenario names an unsupported provider.
+// FakerProviders lists the supported `provider:` names, sorted.
+//
+// The sort is what keeps newFakerGen's "supported providers are: ..." error stable;
+// ranging over the map unsorted would reshuffle that list on every run.
 func FakerProviders() []string {
 	out := make([]string, 0, len(fakerProviders))
 	for name := range fakerProviders {

@@ -14,7 +14,10 @@ import (
 // the same palette the live TUI uses, so every khaos screen reads as one product.
 //
 // Colour is suppressed when stdout is not a terminal, so piping into a file or another
-// process yields clean text with no escape sequences.
+// process yields clean text with no escape sequences. The decision is made once, at init,
+// from the process's real stdout rather than from whatever writer a command was handed --
+// which is why `go test` sees plain text and the contract tests can match on it with
+// strings.Contains.
 var (
 	colorEnabled = detectColor()
 

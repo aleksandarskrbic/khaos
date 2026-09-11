@@ -83,7 +83,8 @@ func containerRunningArgs(nameFilter string) []string {
 }
 
 // isContainerRunning reports whether a container whose name contains nameFilter is up.
-// The match is by substring, not exact name.
+// Both `docker ps --filter name=` and the stdout check below match on a substring, not on
+// the exact container name.
 func (c *Cluster) isContainerRunning(ctx context.Context, nameFilter string) bool {
 	stdout, _, err := c.run(ctx, containerRunningArgs(nameFilter)...)
 	if err != nil {

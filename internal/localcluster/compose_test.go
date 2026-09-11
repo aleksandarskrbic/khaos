@@ -185,6 +185,9 @@ func TestComposeFileSelectionByMode(t *testing.T) {
 	}
 }
 
+// Teardown order is load-bearing. The registry stack joins the cluster stack's bridge as
+// an external network (NetworkName), so bringing the cluster down first asks docker to
+// remove a network the registry container is still attached to.
 func TestDownTearsDownRegistryBeforeCluster(t *testing.T) {
 	f := newFakeRunner()
 	c := newTestCluster(t, f, WithSchemaRegistry(true))
@@ -234,6 +237,9 @@ func TestBrokerActionRequiresRunningCluster(t *testing.T) {
 	}
 }
 
+// A failed `compose up` must abort Up, not fall through to the readiness poll: the call
+// count is the real assertion here, because polling a cluster that never started would
+// sit on kafkaReadyTimeout for two minutes before reporting the same failure.
 func TestUpSurfacesClassifiedComposeError(t *testing.T) {
 	f := newFakeRunner()
 	f.fail["up"] = true

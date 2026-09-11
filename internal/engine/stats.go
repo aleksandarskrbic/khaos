@@ -103,10 +103,14 @@ type FlowStat struct {
 	Messages  int64
 	Errors    int64
 
-	// InFlight is the number of flow instances currently executing their step delays.
-	// The pool is bounded and this depth is reported live.
-	InFlight  int64
-	Saturated int64 // times issuance blocked because the pool was full
+	// InFlight is the number of flow instances currently working through their step
+	// delays. Issuance is unbounded by default, so this climbs to whatever the rate and
+	// the step delays imply -- a few hundred at rate 50 with multi-second delays.
+	InFlight int64
+
+	// Saturated counts the times issuance had to block on a full pool, and stays at zero
+	// unless DefaultFlowConcurrency was raised above zero.
+	Saturated int64
 }
 
 // EventLevel mirrors scenario.EventLevel for output consumers that should not need to
@@ -148,8 +152,11 @@ type Snapshot struct {
 	Rebalances    int64
 
 	// Healthy is false when the engine has recorded a condition it cannot recover from
-	// on its own. It drives /healthz.
-	Healthy  bool
+	// on its own. It drives /healthz. See Engine.Healthy for what does and does not set it.
+	Healthy bool
+
+	// Stopping is true once Run has left its supervision loop, so a renderer can say the
+	// run is shutting down while teardown is still flushing.
 	Stopping bool
 }
 

@@ -242,6 +242,9 @@ func TestRawJSONGenExtremeSizeBounds(t *testing.T) {
 	}
 }
 
+// growHint has to clamp both ends, because strings.Builder.Grow panics on a
+// negative count and a hint of max_size_bytes would reserve that much memory
+// for every message even when the message comes out a few hundred bytes long.
 func TestGrowHint(t *testing.T) {
 	tests := []struct {
 		in, want int

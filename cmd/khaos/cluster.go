@@ -83,10 +83,10 @@ func newClusterDownCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "cluster-down",
-		Short: "Stop the local Kafka cluster and remove its volumes",
+		Short: "Stop the local Kafka cluster",
 		Long: "Stop the bundled Kafka cluster.\n\n" +
-			"Pass --volumes to remove data volumes as well. Note that the bundled compose\n" +
-			"files declare no volumes -- the brokers keep their logs inside the container --\n" +
+			"Pass --volumes to remove data volumes as well. The bundled compose files\n" +
+			"declare no volumes -- the brokers keep their logs inside the container --\n" +
 			"so today the next `cluster-up` starts empty either way.",
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(c *cobra.Command, _ []string) error {
@@ -94,7 +94,6 @@ func newClusterDownCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// --volumes/-v: volumes are kept unless asked for.
 			err = spin(c.OutOrStdout(), "Stopping Kafka cluster", "",
 				func() error { return cl.Down(c.Context(), volumes) })
 			if err != nil {

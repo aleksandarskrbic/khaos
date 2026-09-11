@@ -146,8 +146,12 @@ func (g *FlowGen) Instance() ([]FlowMessage, error) {
 	return msgs, nil
 }
 
-// Steps returns the flow's steps, so the engine can set up producers and
-// consumers without re-reading the scenario.
+// Steps returns the flow's steps.
+//
+// Unlike Doc.Keys and DocGen.Fields this is not a copy: it is the same slice
+// the scenario was decoded into. Reordering it reorders what Instance emits
+// while the per-step field generators stay where they are, so step 0 would get
+// step 1's topic and step 0's fields.
 func (g *FlowGen) Steps() []scenario.FlowStep { return g.steps }
 
 // correlationID resolves the correlation id for a flow instance from the

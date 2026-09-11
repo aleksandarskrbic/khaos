@@ -139,9 +139,9 @@ func avroFieldToField(entry map[string]any) (scenario.Field, bool) {
 	return convertedField(name, scenario.FieldString), true
 }
 
-// avroItemField converts an array's item type. It deliberately handles less
-// than avroFieldToField does: an array of logical types or an array of arrays
-// degrades to the underlying primitive or to a string.
+// avroItemField converts an array's item type. It deliberately covers less
+// ground than avroFieldToField: an array of logical types or an array of
+// arrays degrades to the underlying primitive or to a string.
 func avroItemField(name string, items any) scenario.Field {
 	if s, ok := items.(string); ok {
 		if mapped, ok := avroFieldTypes[s]; ok {
@@ -232,7 +232,6 @@ func protoMessageFields(md protoreflect.MessageDescriptor, seen map[protoreflect
 	return out
 }
 
-// protoFieldToField converts one protobuf field.
 func protoFieldToField(fd protoreflect.FieldDescriptor, seen map[protoreflect.FullName]bool) scenario.Field {
 	name := string(fd.Name())
 	switch {

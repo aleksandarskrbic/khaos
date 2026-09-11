@@ -55,8 +55,9 @@ func (a *authRecorder) seen() []string {
 	return append([]string(nil), a.headers...)
 }
 
-// The credentials must reach the registry on the wire, and -- the point of DEFAULTS
-// UNCHANGED -- a config with only a URL must send no Authorization header at all.
+// The credentials must reach the registry on the wire, and a config carrying nothing but
+// a URL must still send no Authorization header at all: adding authentication support must
+// not change a single byte of what an unauthenticated khaos run puts on the wire.
 func TestRegistryAuthSendsHeader(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -415,8 +416,8 @@ func TestRegistryTLSConfigFromPEMFiles(t *testing.T) {
 	})
 }
 
-// End to end over real TLS: the CA file must actually be what lets the probe succeed, and
-// a client certificate must actually be presented.
+// End to end over real TLS: the CA file must be what lets the probe succeed, and a
+// configured client certificate must actually reach the server's handshake.
 func TestRegistryOverTLS(t *testing.T) {
 	ca := newTestCA(t)
 	dir := t.TempDir()

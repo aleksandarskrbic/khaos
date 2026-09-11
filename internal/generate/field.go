@@ -25,11 +25,9 @@ const (
 	defaultFloatMax  = 1000.0
 )
 
-// maxCardinalityAttempts bounds the rejection loop that fills the
-// distinct-value cache for one cardinality slot, so a value space smaller
-// than the requested cardinality -- `type: int, min: 0, max: 5, cardinality:
-// 100` -- fails with a diagnosable error instead of spinning forever; see
-// NewFieldGen.
+// maxCardinalityAttempts is unreferenced: nothing in the package reads it. The live bound
+// on the distinct-value fill loop is whatever the caller passes to BoundFillAttempts -- the
+// engine passes 4096 -- and with no option the loop in withCardinality is unbounded.
 const maxCardinalityAttempts = 1000
 
 // lowercaseAlphabet is the character set generated string fields draw from.
@@ -67,8 +65,9 @@ const maxInt64AsFloat = 9223372036854775808.0
 // it saturates on arm64 and wraps on amd64 -- so `max: 1e30` would silently
 // become a different number on different machines and then panic inside the
 // range draw. Values that don't fit, including NaN and the infinities, are
-// reported as an error instead; note that `min: .nan` passes schema
-// validation, because every comparison against NaN is false.
+// reported as an error instead. `min: .nan` gets this far at all because every
+// comparison against NaN is false, so the validator's min <= max check waves it
+// through.
 func float64ToInt64(v float64) (int64, bool) {
 	if math.IsNaN(v) || v >= maxInt64AsFloat || v < -maxInt64AsFloat {
 		return 0, false
@@ -284,6 +283,11 @@ func newArrayGen(f scenario.Field, r *rand.Rand, o options) (func() any, error) 
 // The cache is filled eagerly, at construction, rather than lazily on the
 // first N calls, because a bounded fill loop needs to be able to report
 // failure, and the closure NewFieldGen returns cannot return an error.
+//
+// Only string and int fields route through here, and that is a constraint
+// rather than an accident: the duplicate check keys a map by the drawn value,
+// so wrapping an array field would panic with "hash of unhashable type []any"
+// on the first insert.
 func withCardinality(f scenario.Field, draw func() any, o options) (func() any, error) {
 	card := cardinalityOf(f)
 	if card < 0 {

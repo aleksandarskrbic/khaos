@@ -45,7 +45,10 @@ const (
 // A schema fetched via schema_provider: registry (Avro or protobuf) is used
 // verbatim -- its text drives encoding, its id goes into the header -- and is
 // never re-registered, so pointing khaos at an existing subject never mutates
-// it.
+// it. The subject also wins outright over the topic's own message_schema: both
+// data_format and the field list come from the fetched schema, so a topic that
+// declares data_format: json alongside a registry Avro subject produces Avro.
+// Anything else would encode records the subject's consumers cannot read.
 func New(ctx context.Context, t scenario.Topic, reg *Registry) (Codec, error) {
 	format := t.MessageSchema.DataFormat
 	fields := t.MessageSchema.Fields

@@ -41,6 +41,8 @@ func newFakeRegistry(t *testing.T) (*srfake.Registry, *Registry) {
 	return fake, reg
 }
 
+// A registry that cannot be reached is a startup error, not a surprise on the first
+// serialised message: NewRegistry probes before returning a client.
 func TestNewRegistryRejectsUnreachable(t *testing.T) {
 	tests := []struct {
 		name string

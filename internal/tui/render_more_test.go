@@ -355,6 +355,8 @@ func TestHumanUnits(t *testing.T) {
 	}
 }
 
+// The block mapping, which is where a sparkline misleads most easily: a steady rate must
+// not look saturated, and a zero must not look like a small value.
 func TestSparkline(t *testing.T) {
 	if got := sparkline(nil); got != "" {
 		t.Errorf("sparkline(nil) = %q, want empty", got)
@@ -376,6 +378,9 @@ func TestSparkline(t *testing.T) {
 	}
 }
 
+// The bar clamps at full rather than overflowing. A run can outlive its -d budget while
+// shutdown drains, and past 100% the unfilled remainder would be a negative repeat count,
+// which panics -- inside the one component whose job is to survive anything.
 func TestProgressBar(t *testing.T) {
 	if got := progressBar(time.Minute, 0, 20); got != "" {
 		t.Errorf("no deadline must render no bar, got %q", got)

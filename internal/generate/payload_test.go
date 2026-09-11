@@ -85,8 +85,8 @@ func TestRawJSONGenPaddingUndershootsTargetByTen(t *testing.T) {
 				t.Fatalf("data key present = %v, want %v (payload %s)", padded, tt.wantPadding, raw)
 			}
 			if !tt.wantPadding {
-				// No truncation either: a target smaller than the base document
-				// simply yields the base document, since padding only ever adds.
+				// No truncation either: padding only ever adds bytes, so a target
+				// below the base document yields the base document unchanged.
 				return
 			}
 			if len(raw) != tt.wantLen {

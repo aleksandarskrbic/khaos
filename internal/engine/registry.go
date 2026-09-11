@@ -59,8 +59,8 @@ func (r *registry) addConsumer(c *Consumer) {
 // removeConsumer drops a consumer from the registry.
 //
 // The ID is not reused and the ordering slot is left in place, so index-based targeting
-// keeps referring to the same logical position while a departed consumer simply stops
-// matching anything.
+// keeps referring to the same logical position while a departed consumer stops matching
+// anything.
 func (r *registry) removeConsumer(id scenario.ID) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

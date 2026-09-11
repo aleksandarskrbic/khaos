@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+// The first probe runs before any wait, so `khaos run` against an already-healthy cluster
+// does not pay a poll interval on every start.
 func TestPollSucceedsOnFirstProbe(t *testing.T) {
 	calls := 0
 	err := poll(context.Background(), time.Second, time.Millisecond, "thing", func(context.Context) error {
@@ -41,6 +43,9 @@ func TestPollRetriesUntilReady(t *testing.T) {
 	}
 }
 
+// Exhausting the budget must wrap ErrNotReady rather than returning the last probe error
+// on its own, so the timeout stays distinguishable with errors.Is from the connection
+// refusals that produced it.
 func TestPollTimesOut(t *testing.T) {
 	err := poll(context.Background(), 20*time.Millisecond, 5*time.Millisecond, "kafka cluster", func(context.Context) error {
 		return errors.New("connection refused")
@@ -160,6 +165,9 @@ func deadAddress(t *testing.T) string {
 	return addr
 }
 
+// The literal 127.0.0.1 is the point: "localhost" can resolve to ::1, where docker's
+// published ports may not be listening, so a "localhost" bootstrap string can fail against
+// a cluster that is perfectly healthy.
 func TestHostPort(t *testing.T) {
 	if got := hostPort(9092); got != "127.0.0.1:9092" {
 		t.Fatalf("hostPort = %q, want 127.0.0.1:9092", got)

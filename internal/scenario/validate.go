@@ -137,10 +137,6 @@ func (v *validator) knownKeys(n *yaml.Node, path string, known ...string) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Top level
-// ---------------------------------------------------------------------------
-
 func (v *validator) scenario(n *yaml.Node) {
 	n = resolveNode(n)
 	if !isMapping(n) {
@@ -160,9 +156,9 @@ func (v *validator) scenario(n *yaml.Node) {
 		v.errf(name, "name", "Field 'name' must not be empty")
 	}
 
-	// At least one of topics/flows. Note both a missing key and a key whose value is
-	// not a non-empty list count as absent here, which is why a bare `topics:`
-	// produces this error as well as the "must be a list" one below.
+	// At least one of topics/flows. Both a missing key and a key whose value is not
+	// a non-empty list count as absent here, which is why a bare `topics:` produces
+	// this error as well as the "must be a list" one below.
 	topics, flows := mapGet(n, "topics"), mapGet(n, "flows")
 	hasTopics := isSequence(topics) && len(seqItems(topics)) > 0
 	hasFlows := isSequence(flows) && len(seqItems(flows)) > 0
@@ -506,10 +502,6 @@ func (v *validator) rate01(n *yaml.Node, path, key, errMessage, warnFormat strin
 // percent renders a rate as a whole-number percentage, e.g. 0.75 -> "75%".
 func percent(rate float64) string { return fmt.Sprintf("%.0f%%", rate*100) }
 
-// ---------------------------------------------------------------------------
-// Fields
-// ---------------------------------------------------------------------------
-
 func (v *validator) fields(n *yaml.Node, path string) {
 	if !isSequence(n) {
 		v.errf(n, path, "fields must be a list")
@@ -524,8 +516,8 @@ func (v *validator) fields(n *yaml.Node, path string) {
 //
 // asItem distinguishes a named field from an array's `items:` schema, which differ in
 // two ways preserved verbatim: an array item needs no `name`, and an array item of type
-// faker is NOT checked for a `provider` since the item dispatch below simply has no
-// faker branch.
+// faker is NOT checked for a `provider`, because the dispatch below skips fakerField
+// when asItem is set.
 //
 // A YAML anchor can make a field definition contain itself:
 //
@@ -535,10 +527,10 @@ func (v *validator) fields(n *yaml.Node, path string) {
 //	    type: array
 //	    items: *f
 //
-// Without a guard that recurses forever, walking a hand-built node tree until the
-// machine runs out of memory. Nodes on the current recursion stack are therefore
-// tracked and re-entry is reported. A finite tree, however deeply nested, is
-// unaffected: only an alias can revisit a node.
+// Without a guard that recurses forever, appending another ".items" to the diagnostic
+// path on each pass until the process is killed. Nodes on the current recursion stack
+// are therefore tracked and re-entry is reported as an error. A finite tree, however
+// deeply nested, is unaffected: only an alias can revisit a node.
 func (v *validator) field(n *yaml.Node, path string, asItem bool) {
 	n = resolveNode(n)
 	if v.visiting[n] {
@@ -726,10 +718,6 @@ func (v *validator) fakerField(n *yaml.Node, path string) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Flows
-// ---------------------------------------------------------------------------
-
 func (v *validator) flows(n *yaml.Node, path string) {
 	if !isSequence(n) {
 		v.errf(n, path, "Field 'flows' must be a list")
@@ -843,8 +831,7 @@ func (v *validator) flowStep(n *yaml.Node, path string, isFirst bool) {
 		// `delay_ms: 1.5` produces BOTH the range error and this warning. Reading the
 		// value as a float here (rather than only as an int) is what surfaces the
 		// warning even when the range check already failed. A non-numeric delay_ms
-		// simply fails the isNum check below and skips the warning instead of
-		// crashing.
+		// fails the isNum check below, so it produces the range error alone.
 		if value, isNum := floatValue(delay); isFirst && isNum && value > 0 {
 			v.warnf(delay, join(path, "delay_ms"),
 				"First step has delay_ms - delay applies before flow starts")
@@ -870,10 +857,6 @@ func (v *validator) stepConsumers(n *yaml.Node, path string) {
 	v.intAtLeast(n, path, "per_group", 1, "Field 'per_group' must be a positive integer")
 	v.intAtLeast(n, path, "delay_ms", 0, "Field 'delay_ms' must be a non-negative integer")
 }
-
-// ---------------------------------------------------------------------------
-// Incidents
-// ---------------------------------------------------------------------------
 
 // incidentKeys is the union of every key any incident type reads, plus `group`.
 var incidentKeys = []string{

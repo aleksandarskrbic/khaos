@@ -15,6 +15,9 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// The palette, as bright-ANSI indices. Gray is index 8, "bright black", which both light
+// and dark terminal themes render as a mid-grey: it is what the dashboard's table borders
+// are drawn in, and base black would vanish into a dark background.
 var (
 	Red     color.Color = lipgloss.Color("9")
 	Green   color.Color = lipgloss.Color("10")

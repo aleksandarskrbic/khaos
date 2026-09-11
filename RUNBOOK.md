@@ -1,20 +1,30 @@
-# Runbook: build, test, release
+# khaos runbook
 
-Everything you need to drive the Go rewrite by hand.
+How to build khaos, exercise it by hand against a real cluster, and cut a release.
+
+The manual test plan in section 2 is the part worth reading before a release: it walks the
+paths that CI cannot reach, because they need Docker, a Schema Registry, a JVM consumer or
+a human pressing Ctrl-C.
+
+- [1. Build and run locally](#1-build-and-run-locally)
+- [2. Manual test plan](#2-manual-test-plan)
+- [3. Releasing with GoReleaser](#3-releasing-with-goreleaser)
 
 ---
 
-# 1. Build and run locally
+## 1. Build and run locally
 
-## Prerequisites
+### Prerequisites
 
-- **Go 1.26+** — `go version`
-- **Docker** — only for the local cluster. `khaos simulate` against your own broker needs nothing else.
+- **Go 1.26+** -- `go version`. `go.mod` pins `go 1.26.5`.
+- **Docker** -- only for the local cluster. `khaos simulate` against your own broker needs
+  nothing else.
 
-That is the whole list. There is no Python, no `uv`, no virtualenv, and no librdkafka:
-the Kafka client is pure Go.
+That is the whole list. There is no Python, no `uv`, no virtualenv, and no librdkafka: the
+Kafka client is pure Go, which is also why section 3 can cross-compile five targets in one
+CI job.
 
-## Build
+### Build
 
 ```bash
 cd ~/GoProjects/khaos
@@ -40,25 +50,31 @@ Install onto your PATH:
 go install ./cmd/khaos      # lands in $(go env GOPATH)/bin
 ```
 
-## The check script
+### The check script
 
-`./scripts/check.sh` is what CI runs: gofmt, vet, tests, static build, smoke test.
-Add `-r` for the race detector. **It needs no Docker** — the tests use an in-process
-Kafka broker (`kfake`).
+`./scripts/check.sh` is the local equivalent of the CI job: gofmt over `cmd` and
+`internal`, `go vet`, the test suite, a static `CGO_ENABLED=0` build, and a `--version`
+smoke test. Pass `-r` as the first argument for the race detector. **It needs no Docker**
+-- the tests run against `kfake`, an in-process broker that speaks the real Kafka protocol.
 
 ```bash
 ./scripts/check.sh        # ~1 min
 ./scripts/check.sh -r     # ~3 min, race detector
 ```
 
+`.github/workflows/ci.yml` inlines those same steps rather than calling the script, and
+adds two jobs the script does not have: `govulncheck` (advisory, `continue-on-error`) and a
+cross-compile of all five release targets to `/dev/null`. So a green `check.sh` is a strong
+signal, not a complete one.
+
 ---
 
-# 2. Manual test plan
+## 2. Manual test plan
 
 Work through these in order. Each step says what to look for, so a wrong result is
 obvious. Times assume a warm Docker.
 
-## Step 0 — automated suite first
+### Step 0 -- the automated suite first
 
 ```bash
 ./scripts/check.sh -r
@@ -66,7 +82,7 @@ obvious. Times assume a warm Docker.
 
 **Expect:** `All checks passed.` If this fails, stop; nothing below will be meaningful.
 
-## Step 1 — no cluster needed
+### Step 1 -- no cluster needed
 
 ```bash
 ./khaos --version
@@ -77,11 +93,13 @@ obvious. Times assume a warm Docker.
 ./khaos validate ./scenarios/chaos/broker-chaos.yaml
 ```
 
-**Expect:** `list` prints a two-column table of 21 scenarios grouped into five categories,
-starting with the line `Available Scenarios` (the homebrew formula asserts that string).
-Every `validate` call prints `valid` per scenario and a closing `all N scenario(s) valid`,
-and exits 0 (`echo $?`). Bare `./khaos validate` covers all 21 and reports four warnings —
-warnings do not fail it.
+**Expect:** `list` prints a two-column table of 21 scenarios grouped into five categories
+(Traffic Patterns, Chaos Engineering, Event Flows, Serialization, Testing), starting with
+the line `Available Scenarios` -- the homebrew-core formula's test block asserts that
+string, so it is a compatibility surface, not decoration. Every `validate` call prints
+`valid` per scenario and a closing `all N scenario(s) valid`, and exits 0 (`echo $?`). Bare
+`./khaos validate` covers all 21 and reports four warnings -- two schemaless-serialization
+ones and two DLQ ones. Warnings do not fail it.
 
 Check the exit codes, which scripts branch on:
 
@@ -93,10 +111,11 @@ Check the exit codes, which scripts branch on:
 ./khaos validate no/such/scenario; echo "exit=$?"    # exit=1
 ```
 
-**Expect:** `2` for a bad invocation, `1` for a command that ran and failed. This is what
-Click did under the Python version.
+**Expect:** `2` for a bad invocation, `1` for a command that ran and failed. That split is
+what Click gave the Python version, and scripts in the wild depend on it;
+`cmd/khaos/cli_contract_test.go` pins it.
 
-Now prove validation actually reports everything at once:
+Now prove validation reports everything at once rather than stopping at the first problem:
 
 ```bash
 cat > /tmp/bad.yaml <<'EOF'
@@ -111,33 +130,34 @@ EOF
 ./khaos validate /tmp/bad.yaml; echo "exit=$?"
 ```
 
-**Expect:** three separate errors — `partitions`, `replication_factor` and
-`producer_config.acks` — each with a **line number**, then a `1 of 1 scenario(s) invalid`
-tally and `exit=1`. Not one error — all of them. (Python had no line numbers; this is the
-one deliberate improvement.)
+**Expect:** three separate errors -- `partitions`, `replication_factor` and
+`producer_config.acks` -- each with a **line number**, then a `1 of 1 scenario(s) invalid`
+tally and `exit=1`. Not one error, all of them. (Python had no line numbers; this is the
+one deliberate improvement over its output.)
 
 `--strict` additionally rejects keys no khaos version has ever read, which catches a typo
-in a field name rather than silently ignoring it:
+in a field name instead of silently ignoring it:
 
 ```bash
 printf 'name: typo\ntopics:\n  - name: orders\n    partitons: 6\n' > /tmp/typo.yaml
-./khaos validate /tmp/typo.yaml; echo "lenient exit=$?"
-./khaos validate --strict /tmp/typo.yaml; echo "strict exit=$?"
+./khaos validate /tmp/typo.yaml; echo "lenient exit=$?"          # valid, exit=0
+./khaos validate --strict /tmp/typo.yaml; echo "strict exit=$?"  # Unknown field, exit=1
 ```
 
-## Step 2 — start the cluster
+### Step 2 -- start the cluster
 
 ```bash
 ./khaos cluster-up
 ./khaos cluster-status
 ```
 
-**Expect:** `cluster ready: 127.0.0.1:9092,127.0.0.1:9093,127.0.0.1:9094`, then three
-brokers `running` on 9092/9093/9094.
+**Expect:** `✓ Kafka cluster ready  127.0.0.1:9092,127.0.0.1:9093,127.0.0.1:9094`, then a
+table from `cluster-status` with three brokers `running` on 9092/9093/9094 (plus kafka-ui
+on 8080).
 
 > **Port 8080 conflict.** The stack also starts `kafka-ui` on 8080. If something else holds
-> it (nocodb, for example) `cluster-up` fails and now tells you *which* port. Free it, or
-> ignore kafka-ui — the brokers work regardless.
+> it (nocodb, for example) `cluster-up` fails and names the port it could not bind. Free it,
+> or ignore kafka-ui -- the brokers work regardless.
 
 `cluster-up` is idempotent; running it again is safe.
 
@@ -150,7 +170,7 @@ ZooKeeper mode uses the same ports and the same compose project, so it is a drop
 ./khaos cluster-down
 ```
 
-## Step 3 — a basic run
+### Step 3 -- a basic run
 
 ```bash
 ./khaos run traffic/high-throughput -d 15 -k
@@ -159,10 +179,11 @@ ZooKeeper mode uses the same ports and the same compose project, so it is a drop
 `-k` keeps the cluster up for the following steps.
 
 **Expect:** a live terminal UI with a topic table, counts climbing, lag near zero. After
-15s it exits and prints a summary. Roughly 60k produced. Errors should be **0**.
+15s it exits and prints a summary. Roughly 60k produced -- the scenario's two topics each
+run two producers at 1000 msg/s, and the rate is per producer. Errors should be **0**.
 
-The `LAG` column here is khaos's own produced−consumed count, exactly as the Python
-version reported it — no broker is asked anything. Step 6b covers the real one.
+The `LAG` column here is khaos's own produced-minus-consumed count, exactly as the Python
+version reported it; no broker is asked anything. Step 6b covers the real one.
 
 Then the headless path, which is what runs in a container:
 
@@ -170,7 +191,7 @@ Then the headless path, which is what runs in a container:
 ./khaos run traffic/high-throughput -d 15 -k --tui off --log-json
 ```
 
-**Expect:** one JSON log line every 10s, then the summary. No TUI. This must work when
+**Expect:** one JSON log line every 10s, then the summary. No TUI. This must survive being
 piped: `... --tui off | cat` should not corrupt anything.
 
 A typo in either flag is rejected rather than silently falling back:
@@ -199,12 +220,12 @@ docker ps --filter name=kafka-      # three brokers still up
 ./khaos cluster-down
 ```
 
-**Expect:** `stopping Kafka cluster...` on the first two, `Kafka cluster left running` on
-the third, and `exit=1` on the two failures. Leaking a three-broker cluster on every failed
-run is the most expensive thing this CLI could get wrong; `cmd/khaos/run_teardown_test.go`
-pins all four combinations in CI.
+**Expect:** `✓ Kafka cluster stopped` on the first two, `Kafka cluster left running ·
+khaos cluster-down to stop` on the third, and `exit=1` on the two failures. Leaking a
+three-broker cluster on every failed run is the most expensive thing this CLI could get
+wrong; `cmd/khaos/run_teardown_test.go` pins all four combinations in CI.
 
-## Step 4 — Ctrl-C actually works
+### Step 4 -- Ctrl-C stops the run
 
 ```bash
 ./khaos run traffic/high-throughput -k        # -d defaults to 0 = run forever
@@ -212,13 +233,13 @@ pins all four combinations in CI.
 
 Let it run ~10s, then press **Ctrl-C once**.
 
-**Expect:** it stops within a couple of seconds and prints a summary. Press Ctrl-C twice
-in quick succession and it dies immediately. Neither should hang.
+**Expect:** it stops within a couple of seconds and prints a summary. Press Ctrl-C twice in
+quick succession and it dies immediately. Neither should hang.
 
 This is the specific defect the rewrite targets: in the Python version the render loop
 owned the shutdown path, so a stalled UI could wedge an infinite run.
 
-## Step 5 — broker faults
+### Step 5 -- broker faults
 
 ```bash
 cat > /tmp/fault.yaml <<'EOF'
@@ -246,7 +267,7 @@ EOF
 **Expect:** events at ~8s (`Stopping kafka-2`) and ~20s (`Starting kafka-2`). Production
 continues throughout; errors stay 0 because `acks: all` plus RF 3 survives one broker.
 
-Verify the broker really was killed:
+Confirm the container really went down, rather than only the event being logged:
 
 ```bash
 docker ps --filter name=kafka- --format '{{.Names}}\t{{.Status}}'
@@ -254,7 +275,7 @@ docker ps --filter name=kafka- --format '{{.Names}}\t{{.Status}}'
 
 **Expect:** `kafka-2` uptime is much lower than kafka-1/kafka-3.
 
-## Step 6 — client-side incidents
+### Step 6 -- client-side incidents
 
 ```bash
 ./khaos run chaos/rebalance-storm -d 80 -k --tui off      # consumers torn down and recreated
@@ -264,12 +285,12 @@ docker ps --filter name=kafka- --format '{{.Names}}\t{{.Status}}'
 Both durations are chosen to outlast the incident schedules in the YAML, which is easy to
 get wrong: `rebalance-storm` waits `initial_delay_seconds: 15` and only then starts its
 `every_seconds: 20` ticker, so the first rebalance lands at **T+35s** and the second at
-T+55s — a 40s run sees none at all. `throughput-drop` fires once at `at_seconds: 30`.
+T+55s -- a 40s run sees none at all. `throughput-drop` fires once at `at_seconds: 30`.
 
 **Expect:** rebalance-storm ends with `rebalances 2` or more in the summary;
 throughput-drop shows lag climbing from T+30s onwards.
 
-## Step 6b — real consumer-group lag
+### Step 6b -- real consumer-group lag
 
 Off by default. Everything above ran with the self-reported `LAG` column and must keep
 doing so; this step is the only one that asks the brokers.
@@ -278,12 +299,12 @@ doing so; this step is the only one that asks the brokers.
 ./khaos run chaos/throughput-drop -d 60 -k --lag-poll 5s
 ```
 
-**Expect:** the topic table now carries **two** lag columns, `LAG(SELF)` and
-`LAG(BROKER)`, and per-group rows carry their own broker figure. `LAG(BROKER)` is usually
-far larger than `LAG(SELF)` in short runs: khaos auto-commits every 5s, so a group that
-has read everything but committed nothing is genuinely behind by the whole log, and only
-the broker column knows that. A group whose row reads `unknown` was not measured — that
-is not a zero.
+**Expect:** the topic table now carries **two** lag columns, `LAG(SELF)` and `LAG(BROKER)`,
+and per-group rows carry their own broker figure. `LAG(BROKER)` is usually far larger than
+`LAG(SELF)` in short runs: khaos auto-commits every 5s (`autoCommitInterval` in
+`internal/kafka/consumer.go`), so a group that has read everything but committed nothing is
+genuinely behind by the whole log, and only the broker column knows that. A group whose row
+reads `unknown` was not measured -- that is not a zero.
 
 Then prove it is off by default and that it never becomes load-bearing:
 
@@ -295,12 +316,12 @@ The failure path matters more than the happy one, because managed clusters routi
 `DESCRIBE` on consumer groups. Point khaos at a cluster where the credentials lack that
 right (or revoke it) and re-run with `--lag-poll 5s`:
 
-**Expect:** the run behaves *identically* — same throughput, same exit code, errors still
+**Expect:** the run behaves *identically* -- same throughput, same exit code, errors still
 0. One warning is logged naming the group and the reason, **once**, not once per poll, and
-the broker column reads `unknown` for the whole run. Leave it running for a few minutes
-and confirm the warning does not repeat.
+the broker column reads `unknown` for the whole run. Leave it running for a few minutes and
+confirm the warning does not repeat.
 
-## Step 7 — flows
+### Step 7 -- flows
 
 ```bash
 ./khaos run flows/order-flow -d 20 -k --tui off
@@ -309,7 +330,7 @@ and confirm the warning does not repeat.
 **Expect:** a flow section in the summary with `started`, `completed` and `messages`.
 Completed should track started closely.
 
-## Step 8 — Avro and Protobuf against a real Schema Registry
+### Step 8 -- Avro and Protobuf against a real Schema Registry
 
 ```bash
 ./khaos cluster-up --schema-registry
@@ -321,7 +342,7 @@ curl -s localhost:8081/subjects            # []
 curl -s localhost:8081/subjects            # ["orders-value","shipments-value"]
 ```
 
-Now the test that matters — can a **Java** consumer read what Go wrote? A wrong Confluent
+Now the test that matters: can a **Java** consumer read what Go wrote? A wrong Confluent
 header or protobuf message index round-trips fine in Go and fails only on the JVM.
 
 ```bash
@@ -336,13 +357,13 @@ docker exec schema-registry kafka-protobuf-console-consumer \
   --property schema.registry.url=http://localhost:8081
 ```
 
-**Expect:** three decoded JSON records from each. Note `created_at` is an **integer**
-(epoch millis, not ISO-8601) — that is Python's behaviour, deliberately preserved.
+**Expect:** three decoded JSON records from each. `created_at` comes out as an **integer**
+(epoch millis, not ISO-8601) -- that is Python's behaviour, deliberately preserved.
 
-This registry is open, which is the default path and must keep working with no extra
-flags. Step 8b covers the secured one.
+This registry is open, which is the default path and must keep working with no extra flags.
+Step 8b covers the secured one.
 
-## Step 8b — a Schema Registry that requires credentials
+### Step 8b -- a Schema Registry that requires credentials
 
 Confluent Cloud and Aiven put the registry behind auth, which Python could not reach at
 all. Stand up the same thing locally: nginx with basic auth, proxying the registry from
@@ -370,7 +391,10 @@ curl -s -o /dev/null -w '%{http_code}\n' localhost:8082/subjects   # 401
 curl -s -u sruser:srsecret localhost:8082/subjects                 # the subject list
 ```
 
-**1. No credentials — the error has to be diagnosable.**
+The compose project is always `khaos` (`localcluster.ProjectName`), which is where the
+`khaos_kafka-net` network name comes from.
+
+**1. No credentials -- the error has to be diagnosable.**
 
 ```bash
 ./khaos run serialization/avro-example -d 5 -k --tui off \
@@ -379,8 +403,8 @@ curl -s -u sruser:srsecret localhost:8082/subjects                 # the subject
 
 **Expect:** a failure *before any message is produced*, naming the URL and both flags:
 `schema registry at "http://localhost:8082" rejected the startup reachability check with
-HTTP 401 Unauthorized: this registry requires authentication but no credentials were
-given; pass --schema-registry-username and --schema-registry-password …`. A bare
+HTTP 401 Unauthorized: this registry requires authentication but no credentials were given;
+pass --schema-registry-username and --schema-registry-password ...`. A bare
 `401 Unauthorized` here is a bug.
 
 **2. Wrong password.**
@@ -395,7 +419,7 @@ given; pass --schema-registry-username and --schema-registry-password …`. A ba
 `--schema-registry-password` and noting that on Confluent Cloud those are the **Schema
 Registry** API key and secret, not the Kafka cluster's.
 
-**3. Correct credentials — a normal run.**
+**3. Correct credentials -- a normal run.**
 
 ```bash
 ./khaos run serialization/avro-example -d 10 -k --tui off \
@@ -405,7 +429,7 @@ Registry** API key and secret, not the Kafka cluster's.
 curl -s -u sruser:srsecret localhost:8082/subjects   # ["orders-value"]
 ```
 
-**Expect:** identical output to step 8 — the credentials are used for the startup probe,
+**Expect:** identical output to step 8 -- the credentials are used for the startup probe,
 the schema registration and every fetch.
 
 **4. Incoherent flags fail at startup, not on the first message.**
@@ -420,26 +444,34 @@ the schema registration and every fetch.
   --schema-registry-ca-location /tmp/khaos-sr.conf
 ```
 
-**Expect:** three different errors — password required with username; token cannot be
-combined with basic auth; TLS files given against a URL that is not `https` (which would
-have connected in the clear with the CA silently ignored).
+**Expect:** three different errors -- password required with username; token cannot be
+combined with basic auth; TLS files given against a URL that is not `https`, which would
+otherwise have connected in the clear with the CA silently ignored.
 
 ```bash
 docker rm -f sr-auth
 ```
 
-## Step 9 — external cluster path
+### Step 9 -- external cluster path
 
 ```bash
 ./khaos simulate traffic/high-throughput \
   -b 127.0.0.1:9092 -d 10 --tui off
 ```
 
-**Expect:** identical behaviour to `run`, but broker-fault incidents report as *skipped*
-because khaos does not own the cluster. Try `./khaos simulate chaos/leadership-churn -b 127.0.0.1:9092 -d 50 --tui off`
-and look for the skip event rather than a failure.
+**Expect:** identical behaviour to `run`, but broker-fault incidents report as *skipped*,
+because khaos does not own the cluster and will not pretend to restart someone else's
+broker. `simulate` also requires `-b`: with no bootstrap servers it fails on that before it
+even looks at the scenario list.
 
-## Step 10 — multiple scenarios together
+```bash
+./khaos simulate chaos/leadership-churn -b 127.0.0.1:9092 -d 50 --tui off
+```
+
+**Expect:** a skip event at ~T+45s, where the scenario's `stop_broker` would have fired,
+rather than a failure.
+
+### Step 10 -- multiple scenarios together
 
 ```bash
 ./khaos run traffic/high-throughput traffic/consumer-lag -d 15 -k --tui off
@@ -447,7 +479,7 @@ and look for the skip event rather than a failure.
 
 **Expect:** topics from both scenarios in one run.
 
-## Step 11 — tear down
+### Step 11 -- tear down
 
 ```bash
 ./khaos cluster-down
@@ -455,11 +487,12 @@ docker ps            # no kafka-* containers
 docker volume ls     # no khaos_* volumes either
 ```
 
-**Expect:** `Kafka cluster stopped`. Schema Registry goes down with it if step 8 started it.
-Data volumes are kept by default; pass `--volumes`/`-v` to remove them too — though none of
-the bundled compose files declare a volume, so `docker volume ls` shows nothing either way.
+**Expect:** `✓ Kafka cluster stopped`. Schema Registry goes down with it if step 8 started
+it. Data volumes are kept by default; pass `--volumes`/`-v` to remove them too -- though
+none of the bundled compose files declares a volume, so `docker volume ls` shows nothing
+either way.
 
-## Step 12 — the container image
+### Step 12 -- the container image
 
 ```bash
 docker build -t khaos:local .
@@ -467,14 +500,14 @@ docker run --rm khaos:local --version
 docker run --rm khaos:local list
 ```
 
-**Expect:** builds with no C toolchain, and the image is tiny — scenarios and compose files
-are embedded in the binary.
+**Expect:** builds with no C toolchain, and the image is tiny -- scenarios and compose
+files are embedded in the binary, so nothing has to be copied in beside it.
 
 ---
 
-# 3. Releasing with GoReleaser
+## 3. Releasing with GoReleaser
 
-## What it does
+### What it does
 
 On a pushed tag, GoReleaser reads `.goreleaser.yaml` and, in one run:
 
@@ -482,20 +515,24 @@ On a pushed tag, GoReleaser reads `.goreleaser.yaml` and, in one run:
    windows/arm64 is excluded);
 2. packs each into a `.tar.gz` (`.zip` on Windows) with README, LICENSE and CHANGELOG;
 3. writes `checksums.txt`;
-4. generates a changelog from commit messages since the previous tag;
-5. builds **two container images** (amd64, arm64), pushes them to `ghcr.io`, and joins
-   them under one multi-arch tag;
+4. generates a changelog from commit messages since the previous tag, dropping `docs:`,
+   `test:` and `chore:`;
+5. builds **two container images** (amd64, arm64), pushes them to `ghcr.io`, and joins them
+   under one multi-arch tag;
 6. creates the **GitHub Release** and attaches everything.
 
 Cross-compiling to five targets in one job is only possible because the Kafka client is
 pure Go. With a cgo client each target would need its own C toolchain.
 
-## Credentials
+There is deliberately no `brews:` block: khaos is already in homebrew-core, and shipping a
+competing formula from a personal tap would give users two different `khaos` packages.
+
+### Credentials
 
 **You need to set up nothing.** `.github/workflows/release.yml` uses only
-`secrets.GITHUB_TOKEN`, which GitHub Actions injects automatically. It covers both
-creating the release and pushing to `ghcr.io`, because ghcr accepts the Actions token for
-the repo's own namespace.
+`secrets.GITHUB_TOKEN`, which GitHub Actions injects automatically. It covers both creating
+the release and pushing to `ghcr.io`, because ghcr accepts the Actions token for the repo's
+own namespace.
 
 The workflow declares the permissions it needs:
 
@@ -508,13 +545,13 @@ permissions:
 One thing to check once, in the GitHub UI: **Settings → Actions → General → Workflow
 permissions** must allow read *and* write. If it is read-only the release fails with a 403.
 
-## Cutting a release
+### Cutting a release
 
 ```bash
 # 1. Make sure main is green
 ./scripts/check.sh -r
 
-# 2. Dry run — builds everything locally, publishes nothing
+# 2. Dry run -- builds everything locally, publishes nothing
 go install github.com/goreleaser/goreleaser/v2@latest
 goreleaser check                     # validate the config
 goreleaser release --snapshot --clean
@@ -527,12 +564,13 @@ ls dist/                             # inspect the artifacts
 `--snapshot --clean` is the safe rehearsal: it does the whole build without needing a tag,
 without touching GitHub, and without pushing images.
 
-`scripts/release.sh <version>` buckets `feat:`/`fix:`/`perf:`/`refactor:`/`docs:` commits
-since the last tag into a Keep a Changelog-style entry (skipping `chore:`/`ci:`/`test:`/
-`build:`/`style:` and merge commits), shows you the draft, and on confirmation commits it,
-pushes `main`, tags `vX.Y.Z`, and pushes the tag — which triggers the release workflow.
-Pass `--yes` to skip the confirmation prompt. It refuses to run off `main`, with a dirty
-tree, or if the tag already exists. The draft is mechanical, not narrative — read it before
-confirming and hand-edit `CHANGELOG.md` afterward if a bullet needs better wording.
+`scripts/release.sh <version>` takes the version without a leading `v`. It buckets
+`feat:`/`fix:`/`perf:`/`refactor:`/`docs:` commits since the last tag into a Keep a
+Changelog-style entry (skipping merge commits and anything else, which covers
+`chore:`/`ci:`/`test:`/`build:`/`style:`), shows you the draft, and on confirmation commits
+it, pushes `main`, tags `vX.Y.Z`, and pushes the tag. Pass `--yes` to skip the confirmation
+prompt. It refuses to run off `main`, with a dirty tree, or if the tag already exists. The
+draft is mechanical, not narrative -- read it before confirming and hand-edit `CHANGELOG.md`
+afterward if a bullet needs better wording.
 
 The tag push triggers the release workflow above. Watch it under Actions.

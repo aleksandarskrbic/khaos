@@ -11,9 +11,9 @@ import (
 )
 
 // NewProducer builds a producing client for the given scenario producer configuration:
-// batch size, linger, acks and compression, plus the options forced by the
-// acks/idempotency interaction described on producerAcks, plus the partitioner from
-// policy.go.
+// batch size, linger, acks and compression, plus the partitioner from policy.go and the
+// options that acks=0 or acks=1 force on franz-go's idempotent-write default -- see the
+// !idempotent branch below.
 //
 // Any extra options are applied last and therefore win, which is how the engine attaches
 // metrics hooks or a logger without this package knowing about them.

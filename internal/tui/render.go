@@ -52,6 +52,10 @@ const (
 // titles compact, buying the name column room it otherwise loses whole names to.
 const narrowWidth = 96
 
+// render draws the frame top-down: header, topic table, optional flow table, rule, totals,
+// issues, events, quit hint. An unknown terminal size falls back to 100x40, the same
+// default New starts at, so every frame before the first WindowSizeMsg renders at that
+// size.
 func (m model) render() string {
 	s := m.snap
 	w := m.width
@@ -208,6 +212,9 @@ func (m model) header(w int) string {
 	return truncate(left+strings.Repeat(" ", gap)+right, w)
 }
 
+// barWidth is how many cells the progress bar may claim, and zero below 76 columns. Down
+// there the bar would take its width out of the name column, which is already truncating
+// topic names, to repeat what the elapsed/deadline text says exactly.
 func barWidth(w int) int {
 	switch {
 	case w >= 110:
@@ -349,9 +356,10 @@ func padHeader(h string, n int) string {
 	return h
 }
 
-// Width thresholds for the derived columns, a function of terminal width and the
-// config-gated column set only -- never of how many digits the counters have grown to --
-// so a column present at the first frame stays present for the whole run.
+// rateThreshold is the terminal width at which the MSG/S column joins; BYTES joins 16
+// cells later. It is a function of the config-gated column set only -- never of how many
+// digits the counters have grown to -- so a column present at the first frame stays
+// present for the whole run instead of appearing the moment a counter crosses 1,000.
 func rateThreshold(broker, failures bool) int {
 	t := 78
 	if broker {
@@ -363,6 +371,13 @@ func rateThreshold(broker, failures bool) int {
 	return t
 }
 
+// topicTable renders topics with their consumer groups as child rows, at most budget rows
+// tall, closing with a "… N more rows" note when the budget cuts the list.
+//
+// The column set is settled here before anything is drawn, because the dependency runs one
+// way: which columns exist fixes the numeric block's width, which fixes what is left for
+// the name column, which fixes the table width -- and that width is the frame the header,
+// flow table, totals and events all align to.
 func (m model) topicTable(w, budget int) string {
 	broker := m.showBrokerLag()
 	failures := m.showFailures()
@@ -527,7 +542,7 @@ func groupCells(t engine.TopicStat, g engine.GroupStat, broker, failures bool) m
 		"consumed": dimStyle.Render(comma(g.Consumed)),
 	}
 	if broker {
-		// The group row is where broker lag actually belongs -- lag is per group, and the
+		// The group row is where broker lag belongs -- lag is per group, and the
 		// topic figure above is only their sum. "unknown" is deliberate: a dash or blank
 		// cell would read as zero at a glance, which nil BrokerLag must never imply.
 		if lag, known := t.BrokerLag[g.GroupID]; known {
@@ -585,7 +600,7 @@ func blankZero(n int64, sty lipgloss.Style) string {
 // topicBrokerLag sums a topic's measured lag across consumer groups, the same convention
 // the self-reported Lag column uses, keeping the two comparable at a glance. The bool is
 // false when the topic was not measured at all; a group missing from a measured topic is
-// simply absent from the sum, making the total a lower bound.
+// absent from the sum, making the total a lower bound.
 func topicBrokerLag(t engine.TopicStat) (int64, bool) {
 	if t.BrokerLag == nil {
 		return 0, false

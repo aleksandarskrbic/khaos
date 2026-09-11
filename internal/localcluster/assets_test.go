@@ -111,6 +111,10 @@ func TestMaterializeAssetsRepairsDivergedFile(t *testing.T) {
 	}
 }
 
+// Every khaos invocation calls composeDir independently, so it has to resolve to the same
+// path each time and land under <user cache>/khaos/compose. Materialization is keyed on
+// that path: a directory that varied per call would rewrite all four files on every
+// command instead of only when the embedded copies change.
 func TestComposeDirIsStable(t *testing.T) {
 	first, err := composeDir()
 	if err != nil {

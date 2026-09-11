@@ -25,6 +25,8 @@ func newStrictFakeCluster(t *testing.T) []string {
 	return c.ListenAddrs()
 }
 
+// twoStepFlow is the smallest flow that proves correlation: two steps on two topics, so a
+// completed instance means both records were produced in order under one correlation id.
 func twoStepFlow(name string, secondStepDelayMS int) scenario.Flow {
 	return scenario.Flow{
 		Name:        name,

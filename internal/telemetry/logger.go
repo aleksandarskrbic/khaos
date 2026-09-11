@@ -1,6 +1,12 @@
 // Package telemetry provides khaos's structured logger, its Prometheus metric set and the
 // small HTTP server that exposes /healthz and /metrics.
 //
+// The three are independent and wired up separately by cmd/khaos. NewLogger (logger.go)
+// stands alone, NewMetrics (metrics.go) registers the whole counter set against a registry
+// the caller owns, and NewServer (server.go) needs that registry plus a health func. A run
+// without --metrics-addr builds the logger and neither of the other two, so an unscraped
+// metric set costs a run nothing.
+//
 // Nothing in this package ever touches os.Stdout or os.Stderr. The caller supplies the
 // writer, and under a bubbletea TUI that writer is a file or a pipe, never the terminal.
 package telemetry

@@ -217,8 +217,9 @@ message Node {
 	}
 }
 
-// An unparseable .proto is now a real error instead of a silently truncated
-// regex match.
+// A .proto that does not compile must fail loudly. Field extraction used to be a regex
+// over the source text, which quietly returned a short field list and then generated data
+// that did not match the subject's schema.
 func TestProtoFieldsFromSourceRejectsGarbage(t *testing.T) {
 	if _, err := protoFieldsFromSource(context.Background(), "this is not a proto file"); err == nil {
 		t.Error("expected a compile error")

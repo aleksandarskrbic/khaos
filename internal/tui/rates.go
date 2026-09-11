@@ -11,6 +11,10 @@ const rateWindow = 5 * time.Second
 // is worse than showing nothing.
 const minRateSpan = 900 * time.Millisecond
 
+// rate is delta over span in per-second terms, never below zero. The engine's counters only
+// climb, so a negative result would mean the sampling went wrong rather than that traffic
+// reversed. A non-positive span returns 0, which leaves the callers' minRateSpan check to
+// be about display steadiness rather than about dividing by zero.
 func rate(delta int64, span time.Duration) float64 {
 	if span <= 0 {
 		return 0

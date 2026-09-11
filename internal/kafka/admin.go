@@ -24,6 +24,9 @@ const defaultRetentionMS = 604800000
 // deleting the topics a scenario uses, checking reachability, and reading consumer-group
 // lag.
 type Admin struct {
+	// client is kept alongside adm -- which is only a wrapper around it -- because
+	// topicsPresent sends a kmsg.MetadataRequest directly and kadm offers no uncached
+	// equivalent. Closing either closes the same connections.
 	client *kgo.Client
 	adm    *kadm.Client
 
