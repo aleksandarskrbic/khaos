@@ -108,16 +108,12 @@ func (g *FlowGen) Instance() ([]FlowMessage, error) {
 	var correlationID string
 
 	for i, step := range g.steps {
-		doc := g.gens[i].Next()
-
-		// Rebuild with the injected keys leading, before the step's fields.
-		body := NewDoc(doc.Len() + 2)
+		// The injected keys go in first so they lead the document; the step's
+		// fields are generated straight in after them.
+		body := NewDoc(len(g.gens[i].names) + 2)
 		body.Set(correlationIDKey, "")
 		body.Set(eventTypeKey, step.EventType)
-		for _, name := range doc.Keys() {
-			v, _ := doc.Get(name)
-			body.Set(name, v)
-		}
+		g.gens[i].fill(body)
 
 		if i == 0 {
 			correlationID = g.correlationID(body)
@@ -145,14 +141,6 @@ func (g *FlowGen) Instance() ([]FlowMessage, error) {
 	}
 	return msgs, nil
 }
-
-// Steps returns the flow's steps.
-//
-// Unlike Doc.Keys and DocGen.Fields this is not a copy: it is the same slice
-// the scenario was decoded into. Reordering it reorders what Instance emits
-// while the per-step field generators stay where they are, so step 0 would get
-// step 1's topic and step 0's fields.
-func (g *FlowGen) Steps() []scenario.FlowStep { return g.steps }
 
 // correlationID resolves the correlation id for a flow instance from the
 // first step's document.

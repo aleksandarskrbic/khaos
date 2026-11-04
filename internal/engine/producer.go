@@ -36,10 +36,8 @@ type Producer struct {
 	dupRate float64
 	rnd     *rand.Rand
 
-	// stats is this producer's own tally, topicC the shared per-topic one. Only topicC
-	// reaches Snapshot -- nothing reads a single producer's counters today, and no
-	// per-producer row is rendered anywhere.
-	stats  *counters
+	// topicC is the per-topic counter set shared with every producer on this topic; it
+	// is what Snapshot and the Prometheus series read.
 	topicC *counters
 	events *eventRing
 
@@ -79,7 +77,6 @@ func newProducer(o producerOpts) *Producer {
 		limiter:   newLimiter(o.rate),
 		dupRate:   o.dupRate,
 		rnd:       o.rnd,
-		stats:     &counters{},
 		topicC:    o.topicC,
 		events:    o.events,
 	}
@@ -131,7 +128,6 @@ func (p *Producer) Run(ctx context.Context) error {
 
 		value, err := p.nextValue()
 		if err != nil {
-			p.stats.produceErr.Add(1)
 			p.topicC.produceErr.Add(1)
 			if p.promProduceErr != nil {
 				p.promProduceErr.Inc()
@@ -152,7 +148,6 @@ func (p *Producer) Run(ctx context.Context) error {
 				return nil
 			}
 			p.produce(ctx, key, value)
-			p.stats.duplicate.Add(1)
 			p.topicC.duplicate.Add(1)
 		}
 	}
@@ -179,15 +174,12 @@ func (p *Producer) produce(ctx context.Context, key, value []byte) {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
 			}
-			p.stats.produceErr.Add(1)
 			p.topicC.produceErr.Add(1)
 			if p.promProduceErr != nil {
 				p.promProduceErr.Inc()
 			}
 			return
 		}
-		p.stats.sent.Add(1)
-		p.stats.bytes.Add(size)
 		p.topicC.sent.Add(1)
 		p.topicC.bytes.Add(size)
 		if p.promGenerated != nil {

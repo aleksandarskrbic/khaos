@@ -24,8 +24,13 @@ func summary(w io.Writer, s engine.Snapshot, hadTUI bool) {
 		styHeader.Render(s.Scenario),
 		styDim.Render(" · elapsed "+s.Elapsed.Round(time.Second).String()))
 
+	// The TOTAL row is a TopicStat too, so one row builder serves both.
+	total := engine.TopicStat{Topic: "TOTAL", Produced: s.TotalProduced, Consumed: s.TotalConsumed}
+	total.Lag = total.Produced - total.Consumed
 	failures := false
 	for _, t := range s.Topics {
+		total.Failed += t.Failed
+		total.DLQ += t.DLQ
 		if t.Failed > 0 || t.DLQ > 0 {
 			failures = true
 		}
@@ -36,32 +41,9 @@ func summary(w io.Writer, s engine.Snapshot, hadTUI bool) {
 	}
 	rows := make([][]string, 0, len(s.Topics)+1)
 	for _, t := range s.Topics {
-		row := []string{
-			styScenario.Render(t.Topic),
-			styOK.Render(thousands(t.Produced)),
-			styWarn.Render(thousands(t.Consumed)),
-			summaryLag(t.Lag),
-		}
-		if failures {
-			row = append(row, summaryBlankZero(t.Failed), summaryBlankZero(t.DLQ))
-		}
-		rows = append(rows, row)
+		rows = append(rows, summaryRow(t, styScenario, failures))
 	}
-	total := []string{
-		styHeader.Render("TOTAL"),
-		styOK.Render(thousands(s.TotalProduced)),
-		styWarn.Render(thousands(s.TotalConsumed)),
-		summaryLag(s.TotalProduced - s.TotalConsumed),
-	}
-	if failures {
-		var tf, td int64
-		for _, t := range s.Topics {
-			tf += t.Failed
-			td += t.DLQ
-		}
-		total = append(total, summaryBlankZero(tf), summaryBlankZero(td))
-	}
-	rows = append(rows, total)
+	rows = append(rows, summaryRow(total, styHeader, failures))
 	fmt.Fprintln(w, summaryTable(headers, rows))
 
 	if len(s.Flows) > 0 {
@@ -87,6 +69,21 @@ func summary(w io.Writer, s engine.Snapshot, hadTUI bool) {
 	if len(notes) > 0 {
 		fmt.Fprintln(w, " "+strings.Join(notes, "   "))
 	}
+}
+
+// summaryRow renders one line of the topic table; the FAILED and DLQ cells are only
+// present when the table has those columns.
+func summaryRow(t engine.TopicStat, nameStyle lipgloss.Style, failures bool) []string {
+	row := []string{
+		nameStyle.Render(t.Topic),
+		styOK.Render(thousands(t.Produced)),
+		styWarn.Render(thousands(t.Consumed)),
+		summaryLag(t.Lag),
+	}
+	if failures {
+		row = append(row, summaryBlankZero(t.Failed), summaryBlankZero(t.DLQ))
+	}
+	return row
 }
 
 // summaryTable is the shared khaos table look, with numeric columns right-aligned.

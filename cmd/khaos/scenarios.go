@@ -56,15 +56,15 @@ func printDiagnostics(w io.Writer, name string, diags scenario.Diagnostics) {
 // named here sorts last, under a title-cased version of its own name, so dropping a new
 // scenario directory into scenarios/ still lists it. list_contract_test.go pins both
 // halves of that.
-var categoryOrder = []string{"traffic", "chaos", "flows", "serialization"}
+var categoryOrder = []string{"traffic", "chaos", "flows", "serialization", "testing"}
 
-// categoryInfo is the heading and the one-line blurb for each known scenario directory:
-// {heading, blurb}.
-var categoryInfo = map[string][2]string{
+// categoryInfo is the heading and the one-line blurb for each known scenario directory.
+var categoryInfo = map[string]struct{ Heading, Blurb string }{
 	"traffic":       {"Traffic Patterns", "Basic traffic generation scenarios"},
 	"chaos":         {"Chaos Engineering", "Fault injection and incident scenarios"},
 	"flows":         {"Event Flows", "Correlated multi-topic event flows"},
 	"serialization": {"Serialization", "Avro and Protobuf format examples"},
+	"testing":       {"Consumer Testing", "Consumer failure, retry and duplicate-delivery scenarios"},
 }
 
 func newListCmd() *cobra.Command {
@@ -82,22 +82,7 @@ func newListCmd() *cobra.Command {
 				return nil
 			}
 
-			byCategory := make(map[string][]string)
-			for name := range found {
-				category, _, ok := strings.Cut(name, "/")
-				if !ok {
-					category = ""
-				}
-				byCategory[category] = append(byCategory[category], name)
-			}
-
-			categories := make([]string, 0, len(byCategory))
-			for cat := range byCategory {
-				categories = append(categories, cat)
-			}
-			sort.Slice(categories, func(i, j int) bool {
-				return categoryRank(categories[i]) < categoryRank(categories[j])
-			})
+			categories, byCategory := groupByCategory(found)
 
 			t := newListTable("SCENARIO", "DESCRIPTION")
 
@@ -108,9 +93,7 @@ func newListCmd() *cobra.Command {
 				display, blurb := categoryDisplay(cat)
 				t.Row(styCategory.Render(display), styDim.Render(blurb))
 
-				names := byCategory[cat]
-				sort.Strings(names)
-				for _, name := range names {
+				for _, name := range byCategory[cat] {
 					desc := ""
 					// A scenario that fails to parse is still listed, by name, rather than
 					// skipped silently: a broken file should be visible, not invisible.
@@ -153,6 +136,32 @@ func tableWidth() int {
 	return w
 }
 
+// groupByCategory buckets discovered scenario names by their directory, sorting the names
+// within each bucket. categories is the bucket keys in categoryOrder's order; a name with
+// no directory lands under "".
+func groupByCategory(found map[string]string) (categories []string, byCategory map[string][]string) {
+	byCategory = make(map[string][]string)
+	for name := range found {
+		category, _, ok := strings.Cut(name, "/")
+		if !ok {
+			category = ""
+		}
+		byCategory[category] = append(byCategory[category], name)
+	}
+	for _, names := range byCategory {
+		sort.Strings(names)
+	}
+
+	categories = make([]string, 0, len(byCategory))
+	for cat := range byCategory {
+		categories = append(categories, cat)
+	}
+	sort.Slice(categories, func(i, j int) bool {
+		return categoryRank(categories[i]) < categoryRank(categories[j])
+	})
+	return categories, byCategory
+}
+
 // categoryRank orders known categories first, in categoryOrder's declared order.
 func categoryRank(cat string) int {
 	for i, c := range categoryOrder {
@@ -166,7 +175,7 @@ func categoryRank(cat string) int {
 // categoryDisplay returns the heading and blurb, title-casing unknown directories.
 func categoryDisplay(cat string) (string, string) {
 	if info, ok := categoryInfo[cat]; ok {
-		return info[0], info[1]
+		return info.Heading, info.Blurb
 	}
 	if cat == "" {
 		return "Other", ""

@@ -15,7 +15,7 @@ func TestAvroFieldsFromSchema(t *testing.T) {
 		want   []scenario.Field
 	}{
 		{
-			name:   "primitives map back through AVRO_TYPE_MAP",
+			name:   "primitives map back through avroFieldTypes",
 			schema: `{"type":"record","name":"R","fields":[{"name":"a","type":"string"},{"name":"b","type":"long"},{"name":"c","type":"int"},{"name":"d","type":"double"},{"name":"e","type":"float"},{"name":"f","type":"boolean"},{"name":"g","type":"bytes"}]}`,
 			want: []scenario.Field{
 				fld("a", scenario.FieldString),

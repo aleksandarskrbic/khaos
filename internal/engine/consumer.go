@@ -210,43 +210,62 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) {
 		return
 	}
 
-	// Failure simulation: roll for failure, dispatch on on_failure, and only commit on
-	// success. The commit is then subject to an independent commit_failure_rate whose
-	// "failure" is declining to commit rather than an error from the broker.
-	attempts := 0
-	for {
-		if c.rnd.Float64() >= c.Conf.FailureRate {
-			break // processed successfully
+	// Failure simulation: roll, dispatch on on_failure, and only commit on success. The
+	// commit is then subject to an independent commit_failure_rate whose "failure" is
+	// declining to commit rather than an error from the broker.
+	switch c.simulateFailure() {
+	case outcomeProcessed:
+		c.stats.consumed.Add(1)
+		c.topicC.consumed.Add(1)
+		if c.promConsumed != nil {
+			c.promConsumed.Inc()
 		}
+		c.maybeCommit(ctx, rec)
+	case outcomeDLQ:
+		c.sendDLQ(ctx, rec)
+	case outcomeDropped:
+	}
+}
 
+// failureOutcome is what the failure simulation decided to do with one record.
+type failureOutcome int
+
+const (
+	// outcomeProcessed: the record counts as consumed and is committed.
+	outcomeProcessed failureOutcome = iota
+	// outcomeDropped: the record is skipped -- on_failure "skip", or "retry" with the
+	// retry budget exhausted -- and nothing further is counted.
+	outcomeDropped
+	// outcomeDLQ: the record goes to the dead-letter topic.
+	outcomeDLQ
+)
+
+// simulateFailure rolls against failure_rate and resolves on_failure to an outcome.
+//
+// Failed counts every failed attempt, so with on_failure "retry" one record can add up to
+// max_retries to Failed while Retries counts the re-attempts actually made (one fewer
+// than the failures, since the last failure is not followed by a retry).
+func (c *Consumer) simulateFailure() failureOutcome {
+	for attempts := 0; ; attempts++ {
+		if c.rnd.Float64() >= c.Conf.FailureRate {
+			return outcomeProcessed
+		}
 		c.stats.failed.Add(1)
 		c.topicC.failed.Add(1)
 
 		switch c.Conf.OnFailure {
-		case "skip":
-			return
 		case "dlq":
-			c.sendDLQ(ctx, rec)
-			return
+			return outcomeDLQ
 		case "retry":
-			attempts++
-			if attempts >= c.Conf.MaxRetries {
-				return
+			if attempts+1 >= c.Conf.MaxRetries {
+				return outcomeDropped
 			}
 			c.stats.retries.Add(1)
 			c.topicC.retries.Add(1)
-			continue
-		default:
-			return
+		default: // "skip", which validation guarantees is the only other value
+			return outcomeDropped
 		}
 	}
-
-	c.stats.consumed.Add(1)
-	c.topicC.consumed.Add(1)
-	if c.promConsumed != nil {
-		c.promConsumed.Inc()
-	}
-	c.maybeCommit(ctx, rec)
 }
 
 // maybeCommit commits the record unless the simulated commit failure fires.

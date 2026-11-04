@@ -25,11 +25,6 @@ const (
 	defaultFloatMax  = 1000.0
 )
 
-// maxCardinalityAttempts is unreferenced: nothing in the package reads it. The live bound
-// on the distinct-value fill loop is whatever the caller passes to BoundFillAttempts -- the
-// engine passes 4096 -- and with no option the loop in withCardinality is unbounded.
-const maxCardinalityAttempts = 1000
-
 // lowercaseAlphabet is the character set generated string fields draw from.
 const lowercaseAlphabet = "abcdefghijklmnopqrstuvwxyz"
 
@@ -126,14 +121,11 @@ func newFieldGen(f scenario.Field, r *rand.Rand, o options) (func() any, error) 
 	case scenario.FieldFloat:
 		return newFloatGen(f, r, o)
 	case scenario.FieldBoolean:
-		return func() any { return r.IntN(2) == 1 }, nil
+		return newBoolGen(f, r, o)
 	case scenario.FieldUUID:
-		return func() any { return uuid4(r) }, nil
+		return newUUIDGen(f, r, o)
 	case scenario.FieldTimestamp:
-		// Emits epoch milliseconds as an int, despite the README documenting
-		// ISO-8601 for this type -- the schema contract is whatever this
-		// function returns.
-		return func() any { return time.Now().UnixMilli() }, nil
+		return newTimestampGen(f, r, o)
 	case scenario.FieldEnum:
 		return newEnumGen(f, r, o)
 	case scenario.FieldObject:
@@ -223,6 +215,24 @@ func newFloatGen(f scenario.Field, r *rand.Rand, o options) (func() any, error) 
 	}, nil
 }
 
+// newBoolGen builds the generator for a `type: boolean` field: a fair coin.
+func newBoolGen(f scenario.Field, r *rand.Rand, o options) (func() any, error) {
+	return func() any { return r.IntN(2) == 1 }, nil
+}
+
+// newUUIDGen builds the generator for a `type: uuid` field: a fresh version-4
+// UUID per call, drawn from r so seeded runs are reproducible.
+func newUUIDGen(f scenario.Field, r *rand.Rand, o options) (func() any, error) {
+	return func() any { return uuid4(r) }, nil
+}
+
+// newTimestampGen builds the generator for a `type: timestamp` field. It emits
+// epoch milliseconds as an int, despite the README documenting ISO-8601 for
+// this type -- the schema contract is whatever this function returns.
+func newTimestampGen(f scenario.Field, r *rand.Rand, o options) (func() any, error) {
+	return func() any { return time.Now().UnixMilli() }, nil
+}
+
 // newEnumGen builds the generator for a `type: enum` field. Duplicate entries
 // are the documented way to weight an enum, so the list is used as-is.
 func newEnumGen(f scenario.Field, r *rand.Rand, o options) (func() any, error) {
@@ -304,21 +314,12 @@ func withCardinality(f scenario.Field, draw func() any, o options) (func() any, 
 	cache := make([]any, 0, prealloc)
 	seen := make(map[any]struct{}, prealloc)
 	for len(cache) < card {
-		attempts := 0
-		for {
-			v := draw()
-			if _, dup := seen[v]; !dup {
-				seen[v] = struct{}{}
-				cache = append(cache, v)
-				break
-			}
-			attempts++
-			if o.maxFillAttempts > 0 && attempts >= o.maxFillAttempts {
-				return nil, fmt.Errorf(
-					"field %q: cannot reach cardinality %d: no new distinct value after %d attempts (had %d); the value space is too small",
-					f.Name, card, o.maxFillAttempts, len(cache))
-			}
+		v, err := drawDistinct(draw, seen, o.maxFillAttempts)
+		if err != nil {
+			return nil, fmt.Errorf("field %q: cannot reach cardinality %d: %w (had %d); the value space is too small",
+				f.Name, card, err, len(cache))
 		}
+		cache = append(cache, v)
 	}
 
 	idx := 0
@@ -327,6 +328,24 @@ func withCardinality(f scenario.Field, draw func() any, o options) (func() any, 
 		idx++
 		return v
 	}, nil
+}
+
+// drawDistinct draws until it gets a value not yet in seen, records it there
+// and returns it. maxAttempts bounds the consecutive rejected draws; zero
+// means unbounded, which hangs if the value space is exhausted.
+func drawDistinct(draw func() any, seen map[any]struct{}, maxAttempts int) (any, error) {
+	attempts := 0
+	for {
+		v := draw()
+		if _, dup := seen[v]; !dup {
+			seen[v] = struct{}{}
+			return v, nil
+		}
+		attempts++
+		if maxAttempts > 0 && attempts >= maxAttempts {
+			return nil, fmt.Errorf("no new distinct value after %d attempts", maxAttempts)
+		}
+	}
 }
 
 func cardinalityOf(f scenario.Field) int {

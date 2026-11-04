@@ -314,7 +314,7 @@ func decodeIncident(n *yaml.Node) (Incident, error) {
 		}, nil
 	case IncidentRebalanceConsumer:
 		return RebalanceConsumer{Target: r.Target.consumer(), Schedule: sched}, nil
-	case IncidentIncreaseConsumerDlay:
+	case IncidentIncreaseConsumerDelay:
 		return IncreaseConsumerDelay{
 			DelayMS:  r.DelayMS,
 			Target:   r.Target.consumer(),

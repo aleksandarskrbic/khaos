@@ -415,7 +415,7 @@ func TestHeaderReportsRunState(t *testing.T) {
 // A run with no flows pays nothing for the flow table -- no header, no frame, no lines out
 // of the height budget. A run with flows also gets the saturation marker, which says the
 // configured concurrency bound, not the configured rate, is what is holding the flow back
-// (see DefaultFlowConcurrency in internal/engine/flow.go).
+// (see Config.FlowConcurrency in internal/engine).
 func TestFlowTableRendersOnlyWhenThereAreFlows(t *testing.T) {
 	without := plain(viewOf(t, engine.Snapshot{Topics: []engine.TopicStat{{Topic: "orders"}}}))
 	if strings.Contains(without, "INFLIGHT") {

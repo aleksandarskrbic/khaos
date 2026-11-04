@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `--flow-concurrency` on `run` and `simulate` bounds how many flow instances may be
+  in flight at once. The default `0` keeps issuance unbounded; when bounded, issuance
+  blocks and the dashboard reports the event as `saturated`.
+- `khaos list` groups the `scenarios/testing/` scenarios under a "Consumer Testing"
+  heading with a blurb, like every other category.
+
+### Changed
+- An unreachable cluster now fails `run` and `simulate` at startup with one explained
+  error instead of at the first produce from inside the worker goroutines.
+- The schemaless-mode warning ("Using Avro without Schema Registry") is emitted once per
+  avro/protobuf topic, at that topic's `data_format` line, rather than once per file on
+  whichever topic came last.
+
 ## [0.9.0] - 2026-08-22
 
 ### Added

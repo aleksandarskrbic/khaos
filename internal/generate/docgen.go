@@ -56,15 +56,14 @@ func newDocGen(fields []scenario.Field, r *rand.Rand, o options) (*DocGen, error
 // cardinality cursor.
 func (g *DocGen) Next() *Doc {
 	d := NewDoc(len(g.names))
-	for i, name := range g.names {
-		d.Set(name, g.gens[i]())
-	}
+	g.fill(d)
 	return d
 }
 
-// Fields returns the field names this generator emits, in declaration order.
-func (g *DocGen) Fields() []string {
-	out := make([]string, len(g.names))
-	copy(out, g.names)
-	return out
+// fill generates one document's fields into d, after whatever keys d already
+// holds. A field named like an existing key overwrites its value in place.
+func (g *DocGen) fill(d *Doc) {
+	for i, name := range g.names {
+		d.Set(name, g.gens[i]())
+	}
 }

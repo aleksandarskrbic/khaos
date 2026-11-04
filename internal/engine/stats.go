@@ -109,7 +109,7 @@ type FlowStat struct {
 	InFlight int64
 
 	// Saturated counts the times issuance had to block on a full pool, and stays at zero
-	// unless DefaultFlowConcurrency was raised above zero.
+	// unless Config.FlowConcurrency was raised above zero.
 	Saturated int64
 }
 

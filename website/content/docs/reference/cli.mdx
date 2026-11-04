@@ -36,6 +36,7 @@ it isn't already running.
 | `--schema-registry-token` | | - | Schema Registry bearer token, instead of basic auth. |
 | `--schema-registry-ca-location` / `--schema-registry-cert-location` / `--schema-registry-key-location` | | - | CA / client cert / client key for the registry connection (mTLS). |
 | `--lag-poll` | | `0` (off) | Poll brokers for real consumer-group lag at this interval, e.g. `5s`. See [Consumer Lag Testing](/docs/guides/consumer-lag-testing). |
+| `--flow-concurrency` | | `0` (unbounded) | Cap on flow instances in flight at once. When the cap is hit, issuance blocks and the dashboard's flow table shows a `saturated` count. |
 | `--seed` | | `0` | Seed for generated data. `0` picks one at random and reports it, so a run is reproducible after the fact. |
 | `--tui` | | `auto` | `auto`, `on`, or `off`. `auto` shows the live dashboard only on a real TTY (not in CI or with `TERM=dumb`). |
 | `--log-json` | | `false` | Emit structured JSON logs instead of text. |

@@ -191,7 +191,7 @@ func TestAdminEnsureTopicsRecreate(t *testing.T) {
 	}, false); err != nil {
 		t.Fatalf("EnsureTopics() without recreate = %v", err)
 	}
-	if got := partitionCount(t, ctx, a, topic); got != 1 {
+	if got := partitionCount(t, a, topic); got != 1 {
 		t.Fatalf("partitions = %d without recreate, want the existing 1 to be left alone", got)
 	}
 
@@ -200,7 +200,7 @@ func TestAdminEnsureTopicsRecreate(t *testing.T) {
 	}, true); err != nil {
 		t.Fatalf("EnsureTopics() with recreate = %v", err)
 	}
-	if got := partitionCount(t, ctx, a, topic); got != 4 {
+	if got := partitionCount(t, a, topic); got != 4 {
 		t.Fatalf("partitions = %d after recreate, want 4", got)
 	}
 }
@@ -246,9 +246,9 @@ func TestAdminWaitForTopicsSeesFreshMetadata(t *testing.T) {
 	}
 }
 
-func partitionCount(t *testing.T, ctx context.Context, a *Admin, topic string) int {
+func partitionCount(t *testing.T, a *Admin, topic string) int {
 	t.Helper()
-	details, err := a.adm.ListTopics(ctx, topic)
+	details, err := a.adm.ListTopics(testCtx(t), topic)
 	if err != nil {
 		t.Fatalf("ListTopics(%q) = %v", topic, err)
 	}

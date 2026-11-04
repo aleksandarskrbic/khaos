@@ -922,6 +922,45 @@ func TestValidateReportsLineNumbers(t *testing.T) {
 	}
 }
 
+// TestSchemalessWarningPerTopic pins that every avro/protobuf topic without a Schema
+// Registry gets its own warning, anchored at its own data_format line.
+func TestSchemalessWarningPerTopic(t *testing.T) {
+	doc := "name: s\n" + // 1
+		"topics:\n" + // 2
+		"  - name: orders\n" + // 3
+		"    message_schema:\n" + // 4
+		"      data_format: avro\n" + // 5
+		"      fields:\n" + // 6
+		"        - name: id\n" + // 7
+		"          type: uuid\n" + // 8
+		"  - name: payments\n" + // 9
+		"    message_schema:\n" + // 10
+		"      data_format: avro\n" + // 11
+		"      fields:\n" + // 12
+		"        - name: id\n" + // 13
+		"          type: uuid\n" // 14
+
+	_, diags := Decode([]byte(doc))
+	if errs := diags.Errors(); len(errs) > 0 {
+		t.Fatalf("want no errors, got:\n%s", errs)
+	}
+	warns := diags.Warnings()
+	if len(warns) != 2 {
+		t.Fatalf("want exactly two warnings, got:\n%s", warns)
+	}
+	for i, wantLine := range []int{5, 11} {
+		if warns[i].Path != "schema_registry" {
+			t.Errorf("warns[%d].Path = %q, want %q", i, warns[i].Path, "schema_registry")
+		}
+		if want := "Using Avro without Schema Registry (schemaless mode)"; warns[i].Message != want {
+			t.Errorf("warns[%d].Message = %q, want %q", i, warns[i].Message, want)
+		}
+		if warns[i].Line != wantLine {
+			t.Errorf("warns[%d].Line = %d, want %d (that topic's data_format)", i, warns[i].Line, wantLine)
+		}
+	}
+}
+
 // TestClusterAssumptionsAreOneSwitch pins that relaxing the hardcoded cluster is a
 // single assignment, not an edit spread across the validator.
 func TestClusterAssumptionsAreOneSwitch(t *testing.T) {

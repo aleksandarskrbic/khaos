@@ -26,8 +26,9 @@ CI job.
 
 ### Build
 
+From the repository root:
+
 ```bash
-cd ~/GoProjects/khaos
 go build -o khaos ./cmd/khaos
 ./khaos --version
 ```
