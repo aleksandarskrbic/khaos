@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-11-04
+
+### Added
+- Add --flow-concurrency, ping the cluster at startup, warn per schemaless topic, list the testing category
+
+### Fixed
+- Reject out-of-range incident values inside groups, unknown data_format, and consumers on unregistered topics
+- Report unhealthy on fatal engine conditions, spawn flow step consumers, append scenario file extensions
+
+### Changed
+- Table-driven error classification, split validate.go, name tui budgets, drop dead counters and symbols
+- Remove DECISIONS.md and point at the symbols that set each behavioural choice
+- Publish topic state as one frozen table, pass compose argv builders, parameterize the header width budget
+- Sweep low-value comments, expand package docs, add architecture diagrams
+
 ## [Unreleased]
 
 ### Added
