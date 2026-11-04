@@ -14,15 +14,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// DefaultFlowConcurrency bounds how many flow instances may be mid-flight at once. Zero
-// means unbounded -- the default, because bounding is an observable change: at
-// saturation the pool must either block issuance (actual flow rate drops below
-// configured), drop work, or queue unboundedly, so opting into a bound is explicit.
-// When bounded, this implementation BLOCKS and counts the event, visible in the
-// snapshot as Saturated rather than silent. At rate=50 with multi-second step delays
-// the steady state is a few hundred instances.
-var DefaultFlowConcurrency = 0
-
 // flowDrainSlack is added to the sum of a flow's step delays to bound the post-cancellation
 // join; the 500ms covers produce and flush latency on top of the configured delays.
 const flowDrainSlack = 500 * time.Millisecond
@@ -71,14 +62,15 @@ type flowRunner struct {
 	// production is tallied in flowCounters alone, exactly as before.
 	topicC map[string]*counters
 
-	// concurrency is a counting semaphore bounding in-flight instances.
+	// concurrency is a counting semaphore bounding in-flight instances, nil when
+	// Config.FlowConcurrency is zero.
 	concurrency chan struct{}
 
 	// drain bounds the post-cancellation join. See drainBudget.
 	drain time.Duration
 }
 
-func newFlowRunner(f scenario.Flow, gen *generate.FlowGen, client *kgo.Client, stats *flowCounters, events *eventRing, topicC map[string]*counters) *flowRunner {
+func newFlowRunner(f scenario.Flow, gen *generate.FlowGen, client *kgo.Client, stats *flowCounters, events *eventRing, topicC map[string]*counters, concurrency int) *flowRunner {
 	return &flowRunner{
 		name:        f.Name,
 		gen:         gen,
@@ -87,7 +79,7 @@ func newFlowRunner(f scenario.Flow, gen *generate.FlowGen, client *kgo.Client, s
 		stats:       stats,
 		events:      events,
 		topicC:      topicC,
-		concurrency: newSemaphore(DefaultFlowConcurrency),
+		concurrency: newSemaphore(concurrency),
 		drain:       drainBudget(f),
 	}
 }
@@ -234,7 +226,7 @@ func (e *Engine) buildFlow(tb *topicTableBuilder, scenarioName string, f scenari
 	stats := &flowCounters{}
 	e.flowStats[f.Name] = stats
 	e.flowOrder = append(e.flowOrder, f.Name)
-	e.flows = append(e.flows, newFlowRunner(f, gen, client, stats, e.events, topicC))
+	e.flows = append(e.flows, newFlowRunner(f, gen, client, stats, e.events, topicC, e.cfg.FlowConcurrency))
 	return nil
 }
 

@@ -7,29 +7,21 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// topics validates the topic list and emits the schemaless-mode warning.
-//
-// The warning names the data_format of the LAST avro/protobuf topic seen, since the
-// scan reassigns schemaFormatName on every matching topic in the loop.
+// topics validates the topic list and emits the schemaless-mode warning once per
+// avro/protobuf topic, anchored at that topic's data_format.
 func (v *validator) topics(n *yaml.Node, hasSchemaRegistry bool) {
 	if !isSequence(n) {
 		v.errf(n, "topics", "Field 'topics' must be a list")
 		return
 	}
-	schemaFormatName := ""
-	var lastFormatNode *yaml.Node
 	for i, topic := range seqItems(n) {
 		path := index("topics", i)
 		v.topic(topic, path)
 		format := mapGet(mapGet(topic, "message_schema"), "data_format")
-		if text := scalarText(format); text == "avro" || text == "protobuf" {
-			schemaFormatName = text
-			lastFormatNode = format
+		if text := scalarText(format); (text == "avro" || text == "protobuf") && !hasSchemaRegistry {
+			v.warnf(format, "schema_registry",
+				"Using %s without Schema Registry (schemaless mode)", title(text))
 		}
-	}
-	if schemaFormatName != "" && !hasSchemaRegistry {
-		v.warnf(lastFormatNode, "schema_registry",
-			"Using %s without Schema Registry (schemaless mode)", title(schemaFormatName))
 	}
 }
 

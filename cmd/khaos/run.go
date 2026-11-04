@@ -40,6 +40,7 @@ type runFlags struct {
 	srCertLocation    string
 	srKeyLocation     string
 	lagPoll           time.Duration
+	flowConcurrency   int
 	seed              uint64
 
 	tuiMode  string // auto | on | off
@@ -86,6 +87,8 @@ func (f *runFlags) bind(c *cobra.Command) {
 	// produced-minus-consumed, which is not consumer lag at all.
 	c.Flags().DurationVar(&f.lagPoll, "lag-poll", 0,
 		"poll brokers for real consumer-group lag at this interval (0 disables)")
+	c.Flags().IntVar(&f.flowConcurrency, "flow-concurrency", 0,
+		"max flow instances in flight at once; 0 is unbounded, a bound blocks issuance and counts it as saturated")
 	c.Flags().Uint64Var(&f.seed, "seed", 0, "seed for generated data; 0 picks one and reports it")
 
 	c.Flags().StringVar(&f.tuiMode, "tui", "auto", "terminal UI: auto, on or off")
@@ -179,34 +182,7 @@ func runCmd(newCluster func(kraft bool) (localCluster, error)) *cobra.Command {
 			// so a scenario that panics or errors still stops the cluster: a run that
 			// leaks a three-broker cluster on every failure is how a laptop ends up with
 			// no memory left.
-			defer func() {
-				// Nothing came up, so there is nothing to stop and nothing truthful to
-				// say about it.
-				if !up {
-					return
-				}
-				if keepCluster {
-					fmt.Fprintln(stderr, styDim.Render("Kafka cluster left running · khaos cluster-down to stop"))
-					return
-				}
-				// Printed unconditionally: the cluster is stopped whether or not this
-				// process started it, and a silent teardown of a cluster the user started
-				// by hand is the surprising case, not the quiet one.
-				if !started {
-					fmt.Fprintln(stderr, styDim.Render("(the cluster was already running; pass -k to keep it)"))
-				}
-				stopCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Context()), 2*time.Minute)
-				defer cancel()
-				// false: `run` never asked to remove volumes. Only `cluster-down --volumes`
-				// does.
-				if err := spin(stderr, "Stopping Kafka cluster", "", func() error {
-					return cluster.Down(stopCtx, false)
-				}); err != nil {
-					fmt.Fprintf(stderr, "khaos: could not stop cluster: %v\n", err)
-					return
-				}
-				spinDone(stderr, "Kafka cluster stopped", "")
-			}()
+			defer teardownCluster(c.Context(), stderr, cluster, up, started, keepCluster)
 
 			servers := bootstrap
 			if servers == "" {
@@ -216,9 +192,14 @@ func runCmd(newCluster func(kraft bool) (localCluster, error)) *cobra.Command {
 				}
 			}
 
-			return execute(c.Context(), c.OutOrStdout(), stderr, args, kafka.Config{
-				BootstrapServers: splitServers(servers),
-			}, cluster, &f)
+			return execute(c.Context(), runRequest{
+				Stdout:  c.OutOrStdout(),
+				Stderr:  stderr,
+				Names:   args,
+				Kafka:   kafka.Config{BootstrapServers: splitServers(servers)},
+				Cluster: cluster,
+				Flags:   &f,
+			})
 		},
 	}
 
@@ -229,6 +210,37 @@ func runCmd(newCluster func(kraft bool) (localCluster, error)) *cobra.Command {
 	cmd.Flags().StringVarP(&mode, "mode", "m", "kraft", "cluster mode: kraft or zookeeper")
 	f.bind(cmd)
 	return cmd
+}
+
+// teardownCluster is `run`'s end-of-run cluster policy: stop the cluster unless
+// --keep-cluster, and say what happened on stderr. up is whether a cluster was ever
+// running; started is whether this process started it. ctx may already be cancelled: the
+// stop runs on a detached, two-minute context of its own.
+func teardownCluster(ctx context.Context, stderr io.Writer, cluster localCluster, up, started, keep bool) {
+	// Nothing came up, so there is nothing to stop and nothing truthful to say about it.
+	if !up {
+		return
+	}
+	if keep {
+		fmt.Fprintln(stderr, styDim.Render("Kafka cluster left running · khaos cluster-down to stop"))
+		return
+	}
+	// Printed unconditionally: the cluster is stopped whether or not this process started
+	// it, and a silent teardown of a cluster the user started by hand is the surprising
+	// case, not the quiet one.
+	if !started {
+		fmt.Fprintln(stderr, styDim.Render("(the cluster was already running; pass -k to keep it)"))
+	}
+	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	defer cancel()
+	// false: `run` never asked to remove volumes. Only `cluster-down --volumes` does.
+	if err := spin(stderr, "Stopping Kafka cluster", "", func() error {
+		return cluster.Down(stopCtx, false)
+	}); err != nil {
+		fmt.Fprintf(stderr, "khaos: could not stop cluster: %v\n", err)
+		return
+	}
+	spinDone(stderr, "Kafka cluster stopped", "")
 }
 
 func newSimulateCmd() *cobra.Command {
@@ -260,11 +272,17 @@ func newSimulateCmd() *cobra.Command {
 			}
 			// Brokers is nil: an external cluster gets the no-op controller, so broker
 			// incidents surface as events instead of doing nothing at all.
-			return execute(c.Context(), c.OutOrStdout(), c.ErrOrStderr(), args, kafka.Config{
-				BootstrapServers: splitServers(boot),
-				Security:         sec,
-				External:         true,
-			}, nil, &f)
+			return execute(c.Context(), runRequest{
+				Stdout: c.OutOrStdout(),
+				Stderr: c.ErrOrStderr(),
+				Names:  args,
+				Kafka: kafka.Config{
+					BootstrapServers: splitServers(boot),
+					Security:         sec,
+					External:         true,
+				},
+				Flags: &f,
+			})
 		},
 	}
 
@@ -330,18 +348,30 @@ func (f *runFlags) registry() codec.RegistryConfig {
 	}
 }
 
+// runRequest is everything execute needs beyond its context: the command's writers, the
+// scenario names or paths as given on the command line, the broker configuration, the
+// managed local cluster (nil under `simulate`) and the parsed flags.
+type runRequest struct {
+	Stdout, Stderr io.Writer
+	Names          []string
+	Kafka          kafka.Config
+	Cluster        localCluster
+	Flags          *runFlags
+}
+
 // execute is the shared body of run and simulate.
 //
 // Several scenarios can run together: their topics, incidents and flows are concatenated
 // into one run.
-func execute(ctx context.Context, stdout, stderr io.Writer, names []string, kcfg kafka.Config, cluster localCluster, f *runFlags) error {
+func execute(ctx context.Context, req runRequest) error {
+	stderr, f := req.Stderr, req.Flags
 	useTUI, level, err := f.resolve()
 	if err != nil {
 		return err
 	}
 
-	scenarios := make([]*scenario.Scenario, 0, len(names))
-	for _, name := range names {
+	scenarios := make([]*scenario.Scenario, 0, len(req.Names))
+	for _, name := range req.Names {
 		sc, err := loadScenario(stderr, name)
 		if err != nil {
 			return err
@@ -357,8 +387,8 @@ func execute(ctx context.Context, stdout, stderr io.Writer, names []string, kcfg
 	}
 
 	var brokers engine.BrokerController
-	if cluster != nil {
-		brokers = cluster
+	if req.Cluster != nil {
+		brokers = req.Cluster
 	}
 
 	// A registry is only built when --metrics-addr is set: an idle Metrics struct nobody
@@ -371,7 +401,7 @@ func execute(ctx context.Context, stdout, stderr io.Writer, names []string, kcfg
 	}
 
 	ecfg := engine.Config{
-		Kafka:             kcfg,
+		Kafka:             req.Kafka,
 		Scenarios:         scenarios,
 		Duration:          time.Duration(f.duration),
 		NoConsumers:       f.noConsumers,
@@ -381,6 +411,7 @@ func execute(ctx context.Context, stdout, stderr io.Writer, names []string, kcfg
 		Brokers:           brokers,
 		Registry:          f.registry(),
 		LagPoll:           f.lagPoll,
+		FlowConcurrency:   f.flowConcurrency,
 		Logger:            logger,
 		Metrics:           metrics,
 	}
@@ -390,15 +421,15 @@ func execute(ctx context.Context, stdout, stderr io.Writer, names []string, kcfg
 		return err
 	}
 
-	names_ := make([]string, len(scenarios))
+	scenarioNames := make([]string, len(scenarios))
 	topics, flows := 0, 0
 	for i, s := range scenarios {
-		names_[i] = s.Name
+		scenarioNames[i] = s.Name
 		topics += len(s.Topics)
 		flows += len(s.Flows)
 	}
 	logger.Info("starting run",
-		"scenarios", strings.Join(names_, ", "),
+		"scenarios", strings.Join(scenarioNames, ", "),
 		"topics", topics,
 		"flows", flows,
 		"duration", time.Duration(f.duration),
@@ -453,7 +484,7 @@ func execute(ctx context.Context, stdout, stderr io.Writer, names []string, kcfg
 		<-srvDone
 	}
 
-	summary(stdout, eng.Snapshot(), useTUI)
+	summary(req.Stdout, eng.Snapshot(), useTUI)
 	return runErr
 }
 

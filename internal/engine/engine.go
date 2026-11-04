@@ -108,6 +108,15 @@ type Config struct {
 	// failing the run.
 	LagPoll time.Duration
 
+	// FlowConcurrency bounds how many flow instances may be mid-flight at once. Zero
+	// means unbounded -- the default, because bounding is an observable change: at
+	// saturation the pool must either block issuance (actual flow rate drops below
+	// configured), drop work, or queue unboundedly, so opting into a bound is explicit.
+	// When bounded, issuance BLOCKS and counts the event, visible in the snapshot as
+	// Saturated rather than silent. At rate=50 with multi-second step delays the steady
+	// state is a few hundred instances.
+	FlowConcurrency int
+
 	Logger *slog.Logger
 
 	// Metrics is where per-message Prometheus counters are recorded, keyed by topic and
@@ -238,6 +247,13 @@ func New(ctx context.Context, cfg Config) (*Engine, error) {
 		return nil, fmt.Errorf("connect to cluster: %w", err)
 	}
 	e.admin = admin
+
+	// Fail on an unreachable cluster here, with one explained error, rather than at the
+	// first produce from inside a dozen goroutines.
+	if err := admin.Ping(ctx); err != nil {
+		admin.Close()
+		return nil, err
+	}
 
 	if err := e.setupTopics(ctx); err != nil {
 		admin.Close()

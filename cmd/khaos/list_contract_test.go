@@ -34,6 +34,7 @@ func TestListOutputContract(t *testing.T) {
 		"Chaos Engineering",
 		"Event Flows",
 		"Serialization",
+		"Consumer Testing",
 		"traffic/high-throughput",     // asserted by the homebrew formula
 		"Usage: khaos run <scenario>", // trailing usage hint
 	} {
@@ -48,7 +49,7 @@ func TestListCategoryOrder(t *testing.T) {
 	t.Parallel()
 	out := listOutput(t)
 
-	order := []string{"Traffic Patterns", "Chaos Engineering", "Event Flows", "Serialization"}
+	order := []string{"Traffic Patterns", "Chaos Engineering", "Event Flows", "Serialization", "Consumer Testing"}
 	prev := -1
 	for _, heading := range order {
 		at := strings.Index(out, heading)
@@ -62,20 +63,21 @@ func TestListCategoryOrder(t *testing.T) {
 	}
 }
 
-// A category khaos has no blurb for -- `testing/` is one today -- must still be listed,
-// title-cased, after the four known ones.
+// A category khaos has no blurb for -- every bundled directory has one today, so this is
+// pinned on the helpers rather than on `list` output -- must still be listed, title-cased
+// and blurb-less, after every known one.
 func TestListIncludesUnknownCategoriesLast(t *testing.T) {
 	t.Parallel()
-	out := listOutput(t)
 
-	// Rows sit inside a lipgloss border, so a heading is no longer at column 0; match the
-	// heading text itself rather than assuming it follows a newline.
-	known := strings.Index(out, "Serialization")
-	unknown := strings.Index(out, "Testing")
-	if unknown < 0 {
-		t.Fatalf("unknown category `testing` missing from list output\n---\n%s", out)
+	for _, known := range categoryOrder {
+		if categoryRank("soak") <= categoryRank(known) {
+			t.Errorf("unknown category sorted at or before known category %q", known)
+		}
 	}
-	if unknown < known {
-		t.Error("an unlisted category sorted before a known one")
+	if heading, blurb := categoryDisplay("soak"); heading != "Soak" || blurb != "" {
+		t.Errorf("categoryDisplay(soak) = %q, %q; want title-cased name and no blurb", heading, blurb)
+	}
+	if heading, _ := categoryDisplay(""); heading != "Other" {
+		t.Errorf("categoryDisplay(\"\") = %q; want Other", heading)
 	}
 }
