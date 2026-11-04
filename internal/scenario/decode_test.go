@@ -347,7 +347,7 @@ incidents:
 `)
 	wantTypes := []string{
 		IncidentStopBroker, IncidentStartBroker, IncidentPauseConsumer,
-		IncidentRebalanceConsumer, IncidentIncreaseConsumerDlay, IncidentChangeProducerRate,
+		IncidentRebalanceConsumer, IncidentIncreaseConsumerDelay, IncidentChangeProducerRate,
 	}
 	if len(sc.Incidents) != len(wantTypes) {
 		t.Fatalf("want %d incidents, got %d", len(wantTypes), len(sc.Incidents))

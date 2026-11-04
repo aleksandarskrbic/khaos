@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -235,7 +236,7 @@ func TestSecurityOptionsTLSFromPEMFiles(t *testing.T) {
 		if len(cfg.Certificates) != 1 {
 			t.Errorf("got %d client certificates, want 1", len(cfg.Certificates))
 		}
-		if cfg.MinVersion < 0x0303 { // TLS 1.2
+		if cfg.MinVersion < tls.VersionTLS12 {
 			t.Errorf("MinVersion = %#x, want at least TLS 1.2", cfg.MinVersion)
 		}
 	})

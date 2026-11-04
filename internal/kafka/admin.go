@@ -217,16 +217,13 @@ func (a *Admin) waitForTopics(ctx context.Context, names []string, want bool) er
 	deadline := time.Now().Add(TopicReadyTimeout)
 
 	for {
+		// Metadata is fanned out, so topicsPresent can be a partial failure. Treat an
+		// error as "not settled yet" and retry until the deadline rather than failing the
+		// run on one transient shard error.
 		present, err := a.topicsPresent(ctx, names)
-		if err != nil {
-			// Metadata is fanned out, so this can be a partial failure. Treat it as
-			// "not settled yet" and retry until the deadline rather than failing the
-			// run on one transient shard error.
-			if time.Now().After(deadline) {
-				return fmt.Errorf("listing topics: %w", describeShardErrors(err))
-			}
-		} else {
-			pending := make([]string, 0, len(names))
+		var pending []string
+		if err == nil {
+			pending = make([]string, 0, len(names))
 			for _, n := range names {
 				if present[n] != want {
 					pending = append(pending, n)
@@ -235,14 +232,18 @@ func (a *Admin) waitForTopics(ctx context.Context, names []string, want bool) er
 			if len(pending) == 0 {
 				return nil
 			}
-			if time.Now().After(deadline) {
-				state := "appear"
-				if !want {
-					state = "disappear"
-				}
-				return fmt.Errorf("timed out after %s waiting for %s to %s",
-					TopicReadyTimeout, strings.Join(pending, ", "), state)
+		}
+
+		if time.Now().After(deadline) {
+			if err != nil {
+				return fmt.Errorf("listing topics: %w", describeShardErrors(err))
 			}
+			state := "appear"
+			if !want {
+				state = "disappear"
+			}
+			return fmt.Errorf("timed out after %s waiting for %s to %s",
+				TopicReadyTimeout, strings.Join(pending, ", "), state)
 		}
 
 		select {

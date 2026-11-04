@@ -227,34 +227,57 @@ func (c RegistryConfig) authError(what string, err error) error {
 		c.URL, what, re.StatusCode, http.StatusText(re.StatusCode), c.authHint(re.StatusCode), err)
 }
 
-// authHint is the "probably this flag" half of authError.
-func (c RegistryConfig) authHint(status int) string {
-	const confluentNote = "on Confluent Cloud these are the Schema Registry API key and secret, " +
-		"which are NOT the Kafka cluster API key and secret"
+// registryCredential is which kind of credential a RegistryConfig carries, the first half of
+// the key into registryAuthHints.
+type registryCredential int
 
+const (
+	registryCredentialNone registryCredential = iota
+	registryCredentialBearer
+	registryCredentialBasic
+)
+
+// registryAuthKey selects one registryAuthHints entry: what was sent, and whether the
+// registry rejected it outright (401) or accepted it but refused the request (403).
+type registryAuthKey struct {
+	credential registryCredential
+	status     int
+}
+
+const confluentRegistryNote = "on Confluent Cloud these are the Schema Registry API key and secret, " +
+	"which are NOT the Kafka cluster API key and secret"
+
+// registryAuthHints holds the "probably this flag" message for every credential kind and
+// rejection status authError can see.
+var registryAuthHints = map[registryAuthKey]string{
+	{registryCredentialBearer, http.StatusForbidden}: "the token in --schema-registry-token was " +
+		"accepted but is not allowed to do this; check its role bindings, and that it was " +
+		"issued for THIS registry",
+	{registryCredentialBearer, http.StatusUnauthorized}: "check --schema-registry-token: it may " +
+		"have expired or belong to another registry",
+	{registryCredentialBasic, http.StatusForbidden}: "the credentials were accepted but are not " +
+		"allowed to do this; check the subject-level ACLs, and that --schema-registry-username " +
+		"is a key for THIS registry (" + confluentRegistryNote + ")",
+	{registryCredentialBasic, http.StatusUnauthorized}: "check --schema-registry-username and " +
+		"--schema-registry-password: " + confluentRegistryNote,
+	{registryCredentialNone, http.StatusForbidden}: "no credentials were sent; pass " +
+		"--schema-registry-username and --schema-registry-password, or --schema-registry-token",
+	{registryCredentialNone, http.StatusUnauthorized}: "this registry requires authentication " +
+		"but no credentials were given; pass --schema-registry-username and " +
+		"--schema-registry-password (" + confluentRegistryNote + "), or --schema-registry-token",
+}
+
+// authHint is the "probably this flag" half of authError: it classifies the credential kind
+// the same way clientOpts does and looks the message up in registryAuthHints.
+func (c RegistryConfig) authHint(status int) string {
+	credential := registryCredentialNone
 	switch {
 	case c.BearerToken != "":
-		if status == http.StatusForbidden {
-			return "the token in --schema-registry-token was accepted but is not allowed to do " +
-				"this; check its role bindings, and that it was issued for THIS registry"
-		}
-		return "check --schema-registry-token: it may have expired or belong to another registry"
+		credential = registryCredentialBearer
 	case c.usesBasicAuth():
-		if status == http.StatusForbidden {
-			return "the credentials were accepted but are not allowed to do this; check the " +
-				"subject-level ACLs, and that --schema-registry-username is a key for THIS " +
-				"registry (" + confluentNote + ")"
-		}
-		return "check --schema-registry-username and --schema-registry-password: " + confluentNote
-	default:
-		if status == http.StatusForbidden {
-			return "no credentials were sent; pass --schema-registry-username and " +
-				"--schema-registry-password, or --schema-registry-token"
-		}
-		return "this registry requires authentication but no credentials were given; pass " +
-			"--schema-registry-username and --schema-registry-password (" + confluentNote +
-			"), or --schema-registry-token"
+		credential = registryCredentialBasic
 	}
+	return registryAuthHints[registryAuthKey{credential, status}]
 }
 
 // NewRegistry builds a registry client from a bare URL, with no authentication.

@@ -250,22 +250,19 @@ func avroDecodedValue(s avroSchemaNode, v any) any {
 		if v == nil {
 			return nil
 		}
-		wrapped, ok := v.(map[string]any)
-		if !ok || len(wrapped) != 1 {
+		wrapped, _ := v.(map[string]any)
+		branchName, branchVal, ok := onlyPair(wrapped)
+		if !ok {
 			return v
 		}
-		// wrapped has exactly one entry, checked above; ranging is how to reach
-		// it. Every path inside returns, so this loop never takes a second turn.
-		for branchName, branchVal := range wrapped {
-			for _, branch := range s.union {
-				if branchMatchesName(*branch, branchName) {
-					return avroDecodedValue(*branch, branchVal)
-				}
+		for _, branch := range s.union {
+			if branchMatchesName(*branch, branchName) {
+				return avroDecodedValue(*branch, branchVal)
 			}
-			// Unknown branch name (should not happen against our own parsed
-			// schema): pass the raw value through rather than dropping it.
-			return branchVal
 		}
+		// Unknown branch name (should not happen against our own parsed
+		// schema): pass the raw value through rather than dropping it.
+		return branchVal
 	}
 
 	switch s.typeName {
@@ -334,6 +331,17 @@ func branchMatchesName(branch avroSchemaNode, branchName string) bool {
 		return branch.fullName == branchName
 	}
 	return branch.typeName == branchName
+}
+
+// onlyPair returns the single entry of a one-entry map; ok is false for a map
+// of any other size (nil included).
+func onlyPair[K comparable, V any](m map[K]V) (k K, v V, ok bool) {
+	if len(m) != 1 {
+		return k, v, false
+	}
+	for k, v = range m {
+	}
+	return k, v, true
 }
 
 func sortedKeys(m map[string]any) []string {
@@ -474,9 +482,7 @@ func buildAvroSchemaNode(raw any, enclosingNS string, ctx *avroSchemaBuildCtx) (
 		switch typeName {
 		case "record", "error":
 			node.typeName = "record"
-			name, _ := t["name"].(string)
-			node.fullName = qualifyAvroName(name, ns)
-			registerAvroName(ctx, node, name, node.fullName)
+			declareNamedType(t, ns, node, ctx)
 			rawFields, _ := t["fields"].([]any)
 			for _, rf := range rawFields {
 				fm, ok := rf.(map[string]any)
@@ -490,14 +496,8 @@ func buildAvroSchemaNode(raw any, enclosingNS string, ctx *avroSchemaBuildCtx) (
 				}
 				node.fields = append(node.fields, avroFieldNode{name: fname, typ: ft})
 			}
-		case "enum":
-			name, _ := t["name"].(string)
-			node.fullName = qualifyAvroName(name, ns)
-			registerAvroName(ctx, node, name, node.fullName)
-		case "fixed":
-			name, _ := t["name"].(string)
-			node.fullName = qualifyAvroName(name, ns)
-			registerAvroName(ctx, node, name, node.fullName)
+		case "enum", "fixed":
+			declareNamedType(t, ns, node, ctx)
 		case "array":
 			items, err := buildAvroSchemaNode(t["items"], ns, ctx)
 			if err != nil {
@@ -511,24 +511,39 @@ func buildAvroSchemaNode(raw any, enclosingNS string, ctx *avroSchemaBuildCtx) (
 			}
 			node.values = values
 		default:
-			// A primitive spelled out as {"type":"string",...} (e.g. carrying a
-			// logicalType) -- typeName is already set correctly above, unless
-			// goavro compiles this particular (type, logicalType) pair under a
-			// compound key (see avroCompoundLogicalTypeNames), in which case the
-			// node's typeName must match that compound key or union branch
-			// wrapping (encode) and matching (decode) picks the wrong name.
-			if lt, ok := t["logicalType"].(string); ok && lt != "" {
-				compound := typeName + "." + lt
-				if avroCompoundLogicalTypeNames[compound] {
-					node.typeName = compound
-				}
-			}
+			// A primitive spelled out as {"type":"string",...}, possibly
+			// carrying a logicalType.
+			node.typeName = avroLogicalTypeKey(typeName, t)
 		}
 		return node, nil
 
 	default:
 		return nil, fmt.Errorf("unsupported schema node %T", raw)
 	}
+}
+
+// declareNamedType is the prologue shared by every named type (record, enum,
+// fixed): it qualifies the declaration's name with its namespace and registers
+// node under it so later references resolve.
+func declareNamedType(t map[string]any, ns string, node *avroSchemaNode, ctx *avroSchemaBuildCtx) {
+	name, _ := t["name"].(string)
+	node.fullName = qualifyAvroName(name, ns)
+	registerAvroName(ctx, node, name, node.fullName)
+}
+
+// avroLogicalTypeKey returns the type name a primitive node must carry: the
+// bare typeName, unless goavro compiles this particular (type, logicalType)
+// pair under a compound key (see avroCompoundLogicalTypeNames), in which case
+// the node's typeName must match that compound key or union branch wrapping
+// (encode) and matching (decode) picks the wrong name.
+func avroLogicalTypeKey(typeName string, t map[string]any) string {
+	if lt, ok := t["logicalType"].(string); ok && lt != "" {
+		compound := typeName + "." + lt
+		if avroCompoundLogicalTypeNames[compound] {
+			return compound
+		}
+	}
+	return typeName
 }
 
 // registerAvroName records node under both its bare and namespace-qualified

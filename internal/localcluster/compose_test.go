@@ -33,16 +33,25 @@ func newFakeRunner() *fakeRunner {
 	}
 }
 
+// parseDockerArgv splits a compose argv such as "compose -p khaos -f FILE ps ..." into the
+// compose file and the verb that follows it. Both come back empty when there is no -f.
+func parseDockerArgv(args []string) (composeFile, verb string) {
+	for i, arg := range args {
+		if arg == "-f" && i+2 < len(args) {
+			return args[i+1], args[i+2]
+		}
+	}
+	return "", ""
+}
+
 // subcommand extracts the verb from a docker argv: "compose -p khaos -f FILE ps ..."
 // yields "ps", and a bare "ps --filter ..." yields "docker-ps".
 func subcommand(args []string) string {
 	if len(args) > 0 && args[0] != "compose" {
 		return "docker-" + args[0]
 	}
-	if len(args) > 5 {
-		return args[5]
-	}
-	return ""
+	_, verb := parseDockerArgv(args)
+	return verb
 }
 
 func (f *fakeRunner) run(_ context.Context, args ...string) (string, string, error) {
@@ -199,8 +208,8 @@ func TestDownTearsDownRegistryBeforeCluster(t *testing.T) {
 
 	var downFiles []string
 	for _, call := range f.calls {
-		if subcommand(call) == "down" {
-			downFiles = append(downFiles, call[4])
+		if file, verb := parseDockerArgv(call); verb == "down" {
+			downFiles = append(downFiles, file)
 		}
 	}
 	want := []string{"/cache/khaos/compose/" + composeSRKRaft, "/cache/khaos/compose/" + composeKRaft}
@@ -322,10 +331,11 @@ func TestUpSkipsSchemaRegistryWhenAlreadyRunning(t *testing.T) {
 
 			var gotUpFiles []string
 			for _, call := range f.calls {
-				if subcommand(call) != "up" {
+				file, verb := parseDockerArgv(call)
+				if verb != "up" {
 					continue
 				}
-				if base := filepath.Base(call[4]); base != composeKRaft {
+				if base := filepath.Base(file); base != composeKRaft {
 					gotUpFiles = append(gotUpFiles, base)
 				}
 				if call[1] != "-p" || call[2] != ProjectName {
@@ -415,11 +425,8 @@ func TestBrokerActionsIssueTheirOwnVerb(t *testing.T) {
 
 			var verbs []string
 			for _, call := range f.calls {
-				for i, arg := range call {
-					// The subcommand is whatever follows the compose file.
-					if arg == "-f" && i+2 < len(call) {
-						verbs = append(verbs, call[i+2])
-					}
+				if _, verb := parseDockerArgv(call); verb != "" {
+					verbs = append(verbs, verb)
 				}
 			}
 			if !slices.Contains(verbs, tt.verb) {

@@ -4,6 +4,7 @@ set -e
 SCHEMA_REGISTRY_URL="${SCHEMA_REGISTRY_URL:-http://localhost:8081}"
 SUBJECT="${1:-orders-value}"
 SCHEMA_FILE="${2:-order-schema.avsc}"
+SCHEMA_TYPE="${3:-AVRO}"
 
 if [ ! -f "$SCHEMA_FILE" ]; then
     echo "Error: Schema file '$SCHEMA_FILE' not found"
@@ -15,11 +16,12 @@ SCHEMA=$(cat "$SCHEMA_FILE" | jq -c '.')
 
 echo "Uploading schema to subject: $SUBJECT"
 echo "Schema Registry URL: $SCHEMA_REGISTRY_URL"
+echo "Schema type: $SCHEMA_TYPE"
 
 # Register the schema
 RESPONSE=$(curl -s -X POST \
     -H "Content-Type: application/vnd.schemaregistry.v1+json" \
-    --data "{\"schemaType\": \"AVRO\", \"schema\": $(echo "$SCHEMA" | jq -Rs '.')}" \
+    --data "{\"schemaType\": \"$SCHEMA_TYPE\", \"schema\": $(echo "$SCHEMA" | jq -Rs '.')}" \
     "$SCHEMA_REGISTRY_URL/subjects/$SUBJECT/versions")
 
 echo "Response: $RESPONSE"

@@ -33,8 +33,9 @@ cd manual_testing
 ./upload-schema.sh orders-value order-schema.avsc
 ```
 
-Both arguments are optional and default to exactly those values. The registry URL comes from
-`$SCHEMA_REGISTRY_URL`, defaulting to `http://localhost:8081`.
+Both arguments are optional and default to exactly those values; an optional third argument
+is the schema type (`AVRO`, `PROTOBUF` or `JSON`), defaulting to `AVRO`. The registry URL
+comes from `$SCHEMA_REGISTRY_URL`, defaulting to `http://localhost:8081`.
 
 ## 3. Verify the schema landed
 
@@ -71,11 +72,12 @@ carries a `uuid` logical type on a string, an enum, and a `timestamp-millis` lon
 ## Upload a custom schema
 
 ```bash
-./upload-schema.sh <subject-name> <schema-file>
+./upload-schema.sh <subject-name> <schema-file> [schema-type]
 
 # Examples:
 ./upload-schema.sh users-value user-schema.avsc
 ./upload-schema.sh payments-value payment-schema.avsc
+./upload-schema.sh events-value event.json JSON
 ```
 
 Whatever subject you pick has to match the `subject_name` of the topic in your scenario file.

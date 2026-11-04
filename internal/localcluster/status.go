@@ -116,34 +116,45 @@ func parsePS(stdout string) []ServiceStatus {
 // and JMX always on jmxTargetPort. Non-broker services publish a single port, and the
 // lowest published port is chosen so the result stays deterministic.
 func selectPublishedPort(service string, pubs []composePublisher) int {
-	isBroker := strings.HasPrefix(service, "kafka-") && service != kafkaUIServiceName
+	if isBroker(service) {
+		return brokerClientPort(pubs)
+	}
+	return lowestPublishedPort(pubs)
+}
 
+// isBroker reports whether a compose service is one of the Kafka brokers: those named
+// "kafka-*" other than kafka-ui.
+func isBroker(service string) bool {
+	return strings.HasPrefix(service, "kafka-") && service != kafkaUIServiceName
+}
+
+// brokerClientPort returns the published port whose container side is a known client
+// listener, or, when no publisher advertises one, the lowest non-JMX published port
+// rather than reporting nothing.
+func brokerClientPort(pubs []composePublisher) int {
+	for _, p := range pubs {
+		if p.PublishedPort > 0 && kafkaClientPorts[p.TargetPort] {
+			return p.PublishedPort
+		}
+	}
+	var nonJMX []composePublisher
+	for _, p := range pubs {
+		if p.TargetPort != jmxTargetPort {
+			nonJMX = append(nonJMX, p)
+		}
+	}
+	return lowestPublishedPort(nonJMX)
+}
+
+// lowestPublishedPort returns the smallest positive published port, or 0.
+func lowestPublishedPort(pubs []composePublisher) int {
 	best := 0
 	for _, p := range pubs {
 		if p.PublishedPort <= 0 {
 			continue
 		}
-		if isBroker {
-			if p.TargetPort == jmxTargetPort || !kafkaClientPorts[p.TargetPort] {
-				continue
-			}
-			return p.PublishedPort
-		}
 		if best == 0 || p.PublishedPort < best {
 			best = p.PublishedPort
-		}
-	}
-
-	if isBroker {
-		// No publisher advertised a known client port. Fall back to the lowest
-		// non-JMX published port rather than reporting nothing.
-		for _, p := range pubs {
-			if p.PublishedPort <= 0 || p.TargetPort == jmxTargetPort {
-				continue
-			}
-			if best == 0 || p.PublishedPort < best {
-				best = p.PublishedPort
-			}
 		}
 	}
 	return best
@@ -156,10 +167,7 @@ func selectPublishedPort(service string, pubs []composePublisher) int {
 func brokerAddresses(statuses []ServiceStatus) string {
 	var brokers []string
 	for _, s := range statuses {
-		if !strings.HasPrefix(s.Service, "kafka-") || s.Service == kafkaUIServiceName {
-			continue
-		}
-		if s.PublishedPort <= 0 {
+		if !isBroker(s.Service) || s.PublishedPort <= 0 {
 			continue
 		}
 		brokers = append(brokers, hostPort(s.PublishedPort))

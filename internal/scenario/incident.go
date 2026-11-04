@@ -10,12 +10,12 @@ import (
 //
 // This is a closed set; an unrecognised `type:` is a hard error.
 const (
-	IncidentStopBroker           = "stop_broker"
-	IncidentStartBroker          = "start_broker"
-	IncidentPauseConsumer        = "pause_consumer"
-	IncidentRebalanceConsumer    = "rebalance_consumer"
-	IncidentIncreaseConsumerDlay = "increase_consumer_delay"
-	IncidentChangeProducerRate   = "change_producer_rate"
+	IncidentStopBroker            = "stop_broker"
+	IncidentStartBroker           = "start_broker"
+	IncidentPauseConsumer         = "pause_consumer"
+	IncidentRebalanceConsumer     = "rebalance_consumer"
+	IncidentIncreaseConsumerDelay = "increase_consumer_delay"
+	IncidentChangeProducerRate    = "change_producer_rate"
 )
 
 // Schedule controls when an incident fires.
@@ -413,7 +413,7 @@ type IncreaseConsumerDelay struct {
 	Schedule Schedule
 }
 
-func (i IncreaseConsumerDelay) Type() string    { return IncidentIncreaseConsumerDlay }
+func (i IncreaseConsumerDelay) Type() string    { return IncidentIncreaseConsumerDelay }
 func (i IncreaseConsumerDelay) Sched() Schedule { return i.Schedule }
 
 func (i IncreaseConsumerDelay) Commands(ctx *Context) []Command {

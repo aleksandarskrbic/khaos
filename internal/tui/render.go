@@ -52,6 +52,23 @@ const (
 // titles compact, buying the name column room it otherwise loses whole names to.
 const narrowWidth = 96
 
+// Height budget. The frame lines are chrome that costs the same at any height; the
+// floors are the terminal heights below which an optional piece is dropped outright.
+const (
+	// fixedChromeLines is the header, the totals bar and the quit hint.
+	fixedChromeLines = 3
+	// tableFrameLines is a bordered table's frame: top border, header, header rule,
+	// bottom border.
+	tableFrameLines = 4
+	// minTableRows is how many body rows the tables keep before events start giving
+	// up lines.
+	minTableRows = 4
+
+	minRuleHeight   = 16
+	minFlowHeight   = 13
+	minIssuesHeight = 12
+)
+
 // render draws the frame top-down: header, topic table, optional flow table, rule, totals,
 // issues, events, quit hint. An unknown terminal size falls back to 100x40, the same
 // default New starts at, so every frame before the first WindowSizeMsg renders at that
@@ -71,14 +88,12 @@ func (m model) render() string {
 	// Height budget: fixed chrome first (header, totals, quit hint, optional rule and
 	// issues line), then remaining space splits between the topic table, flow table (capped
 	// at a third) and events, which give up lines one by one first since losing an old event
-	// beats losing sight of a topic. The recurring 4 is a bordered table's frame -- top
-	// border, header, header rule, bottom border -- and the floor is an 8-line frame
-	// (header, one-row table, totals, hint); below that the layout clips rather than
-	// contorts.
+	// beats losing sight of a topic. The floor is an 8-line frame (header, one-row table,
+	// totals, hint); below that the layout clips rather than contorts.
 	issues := m.issuesLine(w)
-	showRule := h >= 16
-	showIssues := issues != "" && h >= 12
-	fixed := 3
+	showRule := h >= minRuleHeight
+	showIssues := issues != "" && h >= minIssuesHeight
+	fixed := fixedChromeLines
 	if showRule {
 		fixed++
 	}
@@ -90,16 +105,16 @@ func (m model) render() string {
 	if len(s.Events) > 0 {
 		eventsWant = min(6, len(s.Events))
 	}
-	showFlows := len(s.Flows) > 0 && h >= 13
+	showFlows := len(s.Flows) > 0 && h >= minFlowHeight
 	flowFrame := 0
 	if showFlows {
-		flowFrame = 4
+		flowFrame = tableFrameLines
 	}
 
-	avail := h - fixed - eventsHeight(eventsWant) - 4 - flowFrame
-	for avail < 4 && eventsWant > 0 {
+	avail := h - fixed - eventsHeight(eventsWant) - tableFrameLines - flowFrame
+	for avail < minTableRows && eventsWant > 0 {
 		eventsWant--
-		avail = h - fixed - eventsHeight(eventsWant) - 4 - flowFrame
+		avail = h - fixed - eventsHeight(eventsWant) - tableFrameLines - flowFrame
 	}
 	flowBudget := 0
 	if showFlows {
@@ -472,16 +487,7 @@ func (m model) topicTable(w, budget int) string {
 		}
 	}
 
-	// Name-column width: whatever the numeric block leaves behind, within its bounds.
-	// If even the minimum does not fit, retry with compact padding before letting the
-	// table clamp -- a clamped table shrinks columns of its own choosing.
-	nameW := firstColWidth(w, colWidths(specs, allCells), pad)
-	if nameW < minNameWidth && pad > 2 {
-		pad = 2
-		nameW = firstColWidth(w, colWidths(specs, allCells), pad)
-	}
-	nameW = max(min(nameW, maxNameWidth), minNameWidth)
-	tw := min(w, nameW+pad+2+sumPlus(colWidths(specs, allCells), pad))
+	nameW, tw, pad := solveWidths(w, specs, allCells, pad)
 
 	headers := make([]string, 0, len(specs)+1)
 	headers = append(headers, padHeader("TOPIC", nameW))
@@ -503,6 +509,23 @@ func (m model) topicTable(w, budget int) string {
 		rows = append(rows, note)
 	}
 	return styledTable(headers, rows, tw, pad)
+}
+
+// solveWidths settles the name column and the table width once the column set is fixed.
+// The name column gets whatever the numeric block leaves behind, within its bounds. If
+// even the minimum does not fit, it retries with compact padding before letting the table
+// clamp -- a clamped table shrinks columns of its own choosing -- and returns the padding
+// it settled on, since the table must be drawn with the same one.
+func solveWidths(w int, specs []colSpec, cells []map[string]string, pad int) (nameW, tableW, usedPad int) {
+	numeric := colWidths(specs, cells)
+	nameW = firstColWidth(w, numeric, pad)
+	if nameW < minNameWidth && pad > 2 {
+		pad = 2
+		nameW = firstColWidth(w, numeric, pad)
+	}
+	nameW = max(min(nameW, maxNameWidth), minNameWidth)
+	tableW = min(w, nameW+pad+2+sumPlus(numeric, pad))
+	return nameW, tableW, pad
 }
 
 func sumPlus(ws []int, pad int) int {
@@ -700,33 +723,38 @@ func (m model) totalsBar(w int, flowsShown bool) string {
 
 	// Each level sheds the least essential remaining piece: bytes, then the sparkline,
 	// then the rates, then the words themselves.
-	build := func(level int) string {
+	build := func(level shedLevel) string {
+		showBytes := totBytes > 0 && level < levelNoBytes
+		showSpark := level < levelNoSpark
+		showRates := haveRates && level < levelNoRates
+		compact := level >= levelCompact
+
 		segs := []string{headerStyle.Render("TOTAL")}
-		if level < 4 {
+		if compact {
+			segs = append(segs,
+				prodBold.Render("↑ "+comma(s.TotalProduced)),
+				consBold.Render("↓ "+comma(s.TotalConsumed)))
+		} else {
 			prod := prodBold.Render(comma(s.TotalProduced)) + dimStyle.Render(" produced")
 			cons := consBold.Render(comma(s.TotalConsumed)) + dimStyle.Render(" consumed")
-			if haveRates && level < 3 {
+			if showRates {
 				prod += dimStyle.Render(" · ") + prodStyle.Render(humanRate(pr))
 				cons += dimStyle.Render(" · ") + consStyle.Render(humanRate(cr))
 			}
 			segs = append(segs, prod, cons)
-		} else {
-			segs = append(segs,
-				prodBold.Render("↑ "+comma(s.TotalProduced)),
-				consBold.Render("↓ "+comma(s.TotalConsumed)))
 		}
 		segs = append(segs, dimStyle.Render("lag ")+lagCell(s.TotalProduced-s.TotalConsumed))
 		if brokerSeg != "" {
 			segs = append(segs, brokerSeg)
 		}
-		if totBytes > 0 && level < 1 {
+		if showBytes {
 			bs := dimStyle.Render(humanBytes(totBytes))
 			if haveRates {
 				bs += dimStyle.Render(" · " + humanByteRate(br))
 			}
 			segs = append(segs, bs)
 		}
-		if level < 2 {
+		if showSpark {
 			if sv := m.sparkVals(8); sv != nil {
 				segs = append(segs, prodStyle.Render(sparkline(sv)))
 			}
@@ -742,18 +770,30 @@ func (m model) totalsBar(w int, flowsShown bool) string {
 			segs = append(segs, dimStyle.Render(plural(int64(len(s.Flows)), "flow")+" not shown"))
 		}
 		sep := "   "
-		if level >= 4 {
+		if compact {
 			sep = "  "
 		}
 		return " " + strings.Join(segs, sep)
 	}
-	for level := 0; level <= 4; level++ {
+	for level := levelFull; level <= levelCompact; level++ {
 		if line := build(level); lipgloss.Width(line) <= w {
 			return line
 		}
 	}
-	return truncate(build(4), w)
+	return truncate(build(levelCompact), w)
 }
+
+// shedLevel is a rung of the totals bar's degradation ladder. Each rung keeps everything
+// the rungs below it keep and sheds one more piece.
+type shedLevel int
+
+const (
+	levelFull    shedLevel = iota // everything
+	levelNoBytes                  // drops the byte count and byte rate
+	levelNoSpark                  // also drops the sparkline
+	levelNoRates                  // also drops the per-second rates
+	levelCompact                  // arrows for words, and tighter separators
+)
 
 // issuesLine surfaces produce/consume/commit errors and duplicates as one aggregated line,
 // present only when something is non-zero, so a clean run pays no space for it.

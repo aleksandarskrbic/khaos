@@ -50,33 +50,74 @@ func conflictingPort(stderr string) string {
 	return ""
 }
 
+// composeFailure recognises one docker failure mode by substring-matching stderr.
+type composeFailure struct {
+	patterns []string // any one of these in stderr identifies the failure
+	fold     bool     // match against lowercased stderr
+	sentinel error
+	// detail renders what follows the sentinel in the returned error.
+	detail func(composeFile, stderr string) string
+}
+
+// composeFailures is walked in order and the first match wins, so a stderr that mentions
+// both the daemon and a missing file is reported as the daemon problem, the actionable one.
+var composeFailures = []composeFailure{
+	{
+		patterns: []string{"Cannot connect to the Docker daemon", "Is the docker daemon running"},
+		sentinel: ErrDockerNotRunning,
+		detail:   func(string, string) string { return msgDockerNotRunning },
+	},
+	{
+		patterns: []string{"port is already allocated"},
+		sentinel: ErrPortAllocated,
+		detail:   portAllocatedDetail,
+	},
+	{
+		patterns: []string{"no such file or directory", "not found"},
+		fold:     true,
+		sentinel: ErrComposeFileNotFound,
+		detail: func(composeFile, stderr string) string {
+			return composeFile + ": " + strings.TrimSpace(stderr)
+		},
+	},
+}
+
+func (f composeFailure) matches(stderr string) bool {
+	if f.fold {
+		stderr = strings.ToLower(stderr)
+	}
+	for _, p := range f.patterns {
+		if strings.Contains(stderr, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// portAllocatedDetail names the port docker actually failed to bind.
+//
+// The bundled stack also publishes 8080 (kafka-ui) and 8081 (schema-registry), so a
+// generic "port already allocated" message would send you hunting for a stray Kafka when
+// the actual clash is elsewhere. Name the real port when it can be extracted, and always
+// append what docker actually said.
+func portAllocatedDetail(_, stderr string) string {
+	if port := conflictingPort(stderr); port != "" {
+		return fmt.Sprintf("port %s is already in use: %s", port, strings.TrimSpace(stderr))
+	}
+	return msgPortAllocated + ": " + strings.TrimSpace(stderr)
+}
+
 // classifyComposeError turns a failed docker invocation into a typed error.
 //
-// The last branch treats any stderr containing "not found" (case insensitive) as a missing
-// compose file, so e.g. `manifest ... not found` from a failed image pull is also reported
-// as ErrComposeFileNotFound rather than narrowed to the exact case. The wrapped stderr is
-// always included so the real cause is never lost.
+// The last entry of composeFailures treats any stderr containing "not found" (case
+// insensitive) as a missing compose file, so e.g. `manifest ... not found` from a failed
+// image pull is also reported as ErrComposeFileNotFound rather than narrowed to the exact
+// case. The wrapped stderr is always included so the real cause is never lost.
 func classifyComposeError(action, composeFile, stderr string, err error) error {
-	low := strings.ToLower(stderr)
-
-	switch {
-	case strings.Contains(stderr, "Cannot connect to the Docker daemon"),
-		strings.Contains(stderr, "Is the docker daemon running"):
-		return fmt.Errorf("%s: %w: %s", action, ErrDockerNotRunning, msgDockerNotRunning)
-
-	case strings.Contains(stderr, "port is already allocated"):
-		// The bundled stack also publishes 8080 (kafka-ui) and 8081 (schema-registry), so
-		// a generic "port already allocated" message would send you hunting for a stray
-		// Kafka when the actual clash is elsewhere. Name the real port when it can be
-		// extracted, and always append what docker actually said.
-		if port := conflictingPort(stderr); port != "" {
-			return fmt.Errorf("%s: %w: port %s is already in use: %s",
-				action, ErrPortAllocated, port, strings.TrimSpace(stderr))
+	for _, f := range composeFailures {
+		if f.matches(stderr) {
+			return fmt.Errorf("%s: %w: %s", action, f.sentinel, f.detail(composeFile, stderr))
 		}
-		return fmt.Errorf("%s: %w: %s: %s", action, ErrPortAllocated, msgPortAllocated, strings.TrimSpace(stderr))
-
-	case strings.Contains(low, "no such file or directory"), strings.Contains(low, "not found"):
-		return fmt.Errorf("%s: %w: %s: %s", action, ErrComposeFileNotFound, composeFile, strings.TrimSpace(stderr))
 	}
 
 	if stderr = strings.TrimSpace(stderr); stderr != "" {
